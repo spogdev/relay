@@ -23,8 +23,12 @@ under attack.
 - **Java 25**
 - Optional: [Mod Menu](https://modrinth.com/mod/modmenu) for in-game config access
 
-The mod must be installed on **both the server and all clients** — the server relays position and
-ping payloads between mutually trusting players.
+The mod is **client-only** and works on **any Minecraft server** — coordinates and pings travel
+through a small relay service you host (see [relay/README.md](relay/README.md)), never through the
+Minecraft server. Each teammate installs the mod and points it at the same relay URL in the config.
+Identity on the relay is verified against Mojang's session server, so nobody can impersonate a
+teammate; trust gating is enforced on the relay, so a patched client can't see anyone who didn't
+share with them.
 
 ## Building
 

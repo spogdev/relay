@@ -9,11 +9,8 @@
   ],
   "license": "MIT",
   "icon": "assets/teamlocator/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
-    "main": [
-      "dev.spog.teamlocator.TeamLocator"
-    ],
     "client": [
       "dev.spog.teamlocator.client.TeamLocatorClient"
     ],

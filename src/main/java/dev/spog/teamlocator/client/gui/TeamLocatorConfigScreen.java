@@ -36,6 +36,9 @@ public class TeamLocatorConfigScreen extends Screen {
     private Tab tab = Tab.TRUST;
     private int scroll;
     private EditBox nameInput;
+    private EditBox relayUrlInput;
+    /** URL as it was when the screen opened, to detect a change on close and reconnect. */
+    private final String initialRelayUrl;
 
     private static final int ROW_H = 24;
     private static final int LIST_TOP = 96;
@@ -45,6 +48,7 @@ public class TeamLocatorConfigScreen extends Screen {
         super(Component.translatable("teamlocator.config.title"));
         this.parent = parent;
         this.config = config;
+        this.initialRelayUrl = config.relayUrl;
     }
 
     @Override
@@ -112,9 +116,21 @@ public class TeamLocatorConfigScreen extends Screen {
             buildRow(cx, y, entry, entries);
         }
 
+        // --- Relay URL (the WebSocket service that routes coords; see relay/README.md) ---
+        relayUrlInput = new EditBox(this.font, cx - 205, this.height - 28, 200, 20,
+                Component.translatable("teamlocator.config.relay_url"));
+        relayUrlInput.setMaxLength(256);
+        relayUrlInput.setHint(Component.translatable("teamlocator.config.relay_url"));
+        relayUrlInput.setValue(config.relayUrl);
+        relayUrlInput.setResponder(value -> {
+            config.relayUrl = value.trim();
+            config.save();
+        });
+        addRenderableWidget(relayUrlInput);
+
         // --- Done ---
         addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.done"),
-                b -> onClose()).bounds(cx - 100, this.height - 28, 200, 20).build());
+                b -> onClose()).bounds(cx + 5, this.height - 28, 200, 20).build());
     }
 
     private void buildRow(int cx, int y, TrustEntry entry, List<TrustEntry> backing) {
@@ -264,6 +280,9 @@ public class TeamLocatorConfigScreen extends Screen {
     @Override
     public void onClose() {
         config.save();
+        if (!config.relayUrl.equals(initialRelayUrl)) {
+            TeamLocatorClient.connectRelay();
+        }
         this.minecraft.setScreen(parent);
     }
 }

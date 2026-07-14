@@ -19,5 +19,6 @@
   "teamlocator.config.hidden": "Hidden",
   "teamlocator.config.visible": "Visible",
   "teamlocator.config.no_server": "Not connected to a server",
+  "teamlocator.config.relay_url": "Relay URL (wss://...)",
   "teamlocator.config.done": "Done"
 }

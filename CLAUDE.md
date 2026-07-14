@@ -43,13 +43,22 @@ Some classes were also renamed since older Mojang mappings, e.g.:
 ## Architecture
 
 - **mod id**: `teamlocator`, base package `dev.spog.teamlocator`
-- `environment: "*"` — the mod has a server component that relays position/ping payloads between
-  mutually-trusting players. Custom payloads via `CustomPacketPayload` + `StreamCodec` +
-  `PayloadTypeRegistry` / `ClientPlayNetworking` / `ServerPlayNetworking`.
-- Client config (trust lists, toggles, HUD position) lives client-side in
-  `config/teamlocator.json`; trust decisions are enforced by what each client chooses to send.
-- Single source set: `src/main/java` (client-only classes guarded with `@Environment(EnvType.CLIENT)`),
-  matching the reference project layout.
+- The mod is **client-only** (`environment: "client"`, no `main` entrypoint). Coordinates and pings
+  travel through a standalone **relay service** (`relay/` Gradle subproject, plain Java 25 + 
+  Java-WebSocket + Gson + authlib, no Minecraft deps) that the user hosts on a VPS — never through
+  the Minecraft server, so the mod works on any server.
+- Client transport: `client/net/RelayClient.java`, a JDK-builtin `java.net.http.WebSocket` (zero
+  shipped dependencies) speaking JSON (`relay/.../protocol/Messages.java` defines the shapes).
+- **Identity**: Mojang session-server handshake. Relay issues a nonce; client calls
+  `Minecraft.getInstance().services().sessionService().joinServer(profileId, accessToken, nonce)`
+  (note: `services().sessionService()`, NOT the older `getMinecraftSessionService()`); relay
+  confirms via `hasJoinedServer` and uses Mojang's UUID, never a claimed one.
+- **Trust gating is enforced on the relay** (`relay/.../RelayRouter.java`) and covered by
+  `relay/src/test` (8 WebSocket integration tests: no leak to untrusted, mutual-trust pings,
+  block filtering, cross-MC-server scoping, unauthenticated-socket rejection). Run with
+  `./gradlew :relay:test` after touching routing.
+- Client config (trust lists, toggles, HUD position, relay URL) lives in `config/teamlocator.json`.
+- Single source set: `src/main/java`, client classes guarded with `@Environment(EnvType.CLIENT)`.
 
 ## Working agreements
 

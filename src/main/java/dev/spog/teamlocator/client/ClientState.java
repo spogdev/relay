@@ -1,33 +1,55 @@
 package dev.spog.teamlocator.client;
 
-import dev.spog.teamlocator.net.PositionSnapshotPayload;
-
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Client-side view state: the latest position snapshot from the server and the set of players
- * currently flashing red (they signalled they are under attack). Read by the HUD each frame,
- * written by the network receivers on the client thread.
+ * Client-side view state: the last known position of each teammate and the set of players
+ * currently flashing red (they signalled they are under attack). Written by the relay client's
+ * receiver thread, read by the HUD each frame — all containers are concurrent.
+ *
+ * <p>The relay fans positions out one player at a time, so entries are merged per-UUID rather than
+ * replaced wholesale, and an entry expires if its player stops reporting (logged off, untrusted us,
+ * or lost connection) so stale coordinates never linger on the HUD.
  */
 public final class ClientState {
     /** How long a player stays red after an attack ping, in milliseconds. */
     private static final long ATTACK_FLASH_MS = 5_000L;
 
-    private static volatile List<PositionSnapshotPayload.PlayerPos> latest = List.of();
+    /** Drop a teammate from the HUD if we haven't heard a position for this long. */
+    private static final long POSITION_EXPIRE_MS = 10_000L;
+
+    private record Timestamped(TrackedPos pos, long atMillis) {
+    }
+
+    private static final Map<UUID, Timestamped> positions = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> attackUntil = new ConcurrentHashMap<>();
 
     private ClientState() {
     }
 
-    public static void setLatest(List<PositionSnapshotPayload.PlayerPos> entries) {
-        latest = entries;
+    /** Merge one player's freshly-reported position. */
+    public static void updatePosition(TrackedPos pos) {
+        positions.put(pos.id(), new Timestamped(pos, System.currentTimeMillis()));
     }
 
-    public static List<PositionSnapshotPayload.PlayerPos> latest() {
-        return latest;
+    /** Current non-stale positions in a stable order for HUD rendering. */
+    public static List<TrackedPos> latest() {
+        long now = System.currentTimeMillis();
+        List<TrackedPos> out = new ArrayList<>();
+        for (Map.Entry<UUID, Timestamped> e : positions.entrySet()) {
+            if (now - e.getValue().atMillis() > POSITION_EXPIRE_MS) {
+                positions.remove(e.getKey(), e.getValue());
+            } else {
+                out.add(e.getValue().pos());
+            }
+        }
+        out.sort(Comparator.comparing(TrackedPos::id));
+        return out;
     }
 
     public static void flagAttacked(UUID player) {
@@ -41,7 +63,7 @@ public final class ClientState {
 
     /** Clear everything on disconnect so stale positions don't linger into the next session. */
     public static void reset() {
-        latest = List.of();
+        positions.clear();
         attackUntil.clear();
     }
 }

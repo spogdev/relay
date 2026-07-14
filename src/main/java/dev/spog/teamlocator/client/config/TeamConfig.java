@@ -2,7 +2,7 @@ package dev.spog.teamlocator.client.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import dev.spog.teamlocator.TeamLocator;
+import dev.spog.teamlocator.TeamLocatorConstants;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerData;
@@ -34,6 +34,8 @@ public class TeamConfig {
     // ---- persisted fields (Gson) ----
     public Mode activeMode = Mode.GLOBAL;
     public boolean globalShareEnabled = true;
+    /** WebSocket URL of the user's relay service, e.g. {@code wss://relay.example.com}. */
+    public String relayUrl = "";
     /** HUD anchor as a fraction of screen size so it survives resolution / GUI-scale changes. */
     public double hudX = 0.01;
     public double hudY = 0.30;
@@ -44,7 +46,7 @@ public class TeamConfig {
     // ---- persistence ----
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH =
-            FabricLoader.getInstance().getConfigDir().resolve(TeamLocator.MOD_ID + ".json");
+            FabricLoader.getInstance().getConfigDir().resolve(TeamLocatorConstants.MOD_ID + ".json");
 
     public static TeamConfig load() {
         try {
@@ -57,7 +59,7 @@ public class TeamConfig {
                 }
             }
         } catch (Exception e) {
-            TeamLocator.LOGGER.error("Failed to load TeamLocator config, using defaults", e);
+            TeamLocatorConstants.LOGGER.error("Failed to load TeamLocator config, using defaults", e);
         }
         TeamConfig cfg = new TeamConfig();
         cfg.save();
@@ -69,13 +71,14 @@ public class TeamConfig {
             Files.createDirectories(PATH.getParent());
             Files.writeString(PATH, GSON.toJson(this), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            TeamLocator.LOGGER.error("Failed to save TeamLocator config", e);
+            TeamLocatorConstants.LOGGER.error("Failed to save TeamLocator config", e);
         }
     }
 
     /** Repair nulls that a partial/older JSON file may leave after deserialization. */
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
+        if (relayUrl == null) relayUrl = "";
         if (global == null) global = new TrustList();
         if (global.trusted == null) global.trusted = new ArrayList<>();
         if (servers == null) servers = new java.util.HashMap<>();

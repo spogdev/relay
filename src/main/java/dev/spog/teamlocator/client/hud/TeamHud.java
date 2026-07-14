@@ -1,8 +1,8 @@
 package dev.spog.teamlocator.client.hud;
 
 import dev.spog.teamlocator.client.ClientState;
+import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.config.TeamConfig;
-import dev.spog.teamlocator.net.PositionSnapshotPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
@@ -54,7 +54,7 @@ public class TeamHud implements HudElement {
         int baseY = (int) Math.round(config.hudY * graphics.guiHeight());
 
         int row = 0;
-        for (PositionSnapshotPayload.PlayerPos e : entries) {
+        for (TrackedPos e : entries) {
             int y = baseY + row * (ROW_HEIGHT + GAP);
 
             // Face from the tab-list skin, falling back to a default skin when the player isn't

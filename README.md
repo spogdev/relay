@@ -9,7 +9,7 @@ under attack.
 - **Live coordinate sharing** — trusted players' positions appear on your HUD in real time
 - **Trust lists** — a global trust list plus a per-server trust list, switchable per server
 - **Per-player visibility toggles** — hide individual teammates from your HUD without untrusting them
-- **Block list** — never share with or see specific players
+- **Block list** — suppress attack pings from specific players to prevent ping spam
 - **Attack ping** — press a keybind when you're being attacked and your entry flashes red on your
   teammates' HUDs
 - **Sharing toggle** — turn off broadcasting your own coordinates at any time

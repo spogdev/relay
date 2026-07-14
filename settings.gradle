@@ -8,3 +8,7 @@ pluginManagement {
     }
 }
 rootProject.name = 'TeamLocator'
+
+// The relay is a standalone, headless WebSocket service (no Minecraft / no Fabric Loom).
+// It lives in the same repo so it can reuse the mod's trust-routing logic and protocol shapes.
+include 'relay'

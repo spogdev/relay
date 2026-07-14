@@ -1,0 +1,59 @@
+plugins {
+    id 'application'
+    // Produces a self-contained fat jar (relay-all.jar) to drop on a VPS.
+    id 'com.gradleup.shadow' version '8.3.5'
+}
+
+// Standalone service — deliberately no Fabric Loom, no Minecraft dependency.
+group = 'dev.spog.teamlocator'
+version = rootProject.hasProperty('mod_version') ? rootProject.mod_version : '0.1.0'
+
+repositories {
+    mavenCentral()
+    // Mojang's authlib (session verification) is published here, not on Maven Central.
+    maven { url = 'https://libraries.minecraft.net/' }
+}
+
+dependencies {
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    // Same authlib the game uses; lets the relay verify Mojang sessions server-side.
+    implementation 'com.mojang:authlib:7.0.63'
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        showStandardStreams = false
+    }
+}
+
+application {
+    mainClass = 'dev.spog.teamlocator.relay.RelayMain'
+}
+
+def targetJavaVersion = 25
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+}
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = targetJavaVersion
+}
+
+tasks.named('shadowJar') {
+    archiveBaseName = 'teamlocator-relay'
+    archiveClassifier = 'all'
+    archiveVersion = ''
+}
+
+// `./gradlew :relay:run --args="--port 8080"` for local testing.
+tasks.named('run') {
+    // allow passing --args on the command line; no default args.
+}

@@ -117,9 +117,7 @@ public final class RelayClient {
                     .buildAsync(URI.create(url), new Listener())
                     .whenComplete((ws, err) -> {
                         if (err != null) {
-                            // Unwrap CompletionException so the log shows the real reason.
-                            Throwable cause = err.getCause() != null ? err.getCause() : err;
-                            TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", cause.toString());
+                            logConnectFailure(err);
                             scheduleReconnect();
                         } else {
                             socket = ws;
@@ -129,6 +127,17 @@ public final class RelayClient {
         } catch (Exception e) {
             TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", e.toString());
             scheduleReconnect();
+        }
+    }
+
+    /** Log connect failures with enough detail to diagnose in the field (status, headers). */
+    private static void logConnectFailure(Throwable err) {
+        Throwable cause = err.getCause() != null ? err.getCause() : err;
+        if (cause instanceof java.net.http.WebSocketHandshakeException whe && whe.getResponse() != null) {
+            TeamLocatorConstants.LOGGER.warn("Relay handshake rejected: HTTP {} headers={}",
+                    whe.getResponse().statusCode(), whe.getResponse().headers().map());
+        } else {
+            TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", cause.toString());
         }
     }
 

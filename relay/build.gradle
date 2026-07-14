@@ -1,12 +1,17 @@
 plugins {
-    id 'application'
-    // Produces a self-contained fat jar (relay-all.jar) to drop on a VPS.
+    id 'java'
+    // Produces a self-contained fat jar to drop on a VPS.
+    // NOTE: deliberately NOT using the 'application' plugin — its start-script/distribution tasks
+    // (and shadow's shadowDistTar/Zip) still reference Gradle's removed `mainClassName` property
+    // and fail at configuration time under Gradle 9. We only need the fat jar.
     id 'com.gradleup.shadow' version '8.3.5'
 }
 
 // Standalone service — deliberately no Fabric Loom, no Minecraft dependency.
 group = 'dev.spog.teamlocator'
 version = rootProject.hasProperty('mod_version') ? rootProject.mod_version : '0.1.0'
+
+def mainClassName = 'dev.spog.teamlocator.relay.RelayMain'
 
 repositories {
     mavenCentral()
@@ -26,18 +31,6 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
-    useJUnitPlatform()
-    testLogging {
-        events 'passed', 'failed', 'skipped'
-        showStandardStreams = false
-    }
-}
-
-application {
-    mainClass = 'dev.spog.teamlocator.relay.RelayMain'
-}
-
 def targetJavaVersion = 25
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
@@ -47,13 +40,31 @@ tasks.withType(JavaCompile).configureEach {
     it.options.release = targetJavaVersion
 }
 
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+    }
+}
+
 tasks.named('shadowJar') {
     archiveBaseName = 'teamlocator-relay'
     archiveClassifier = 'all'
     archiveVersion = ''
+    manifest {
+        attributes 'Main-Class': mainClassName
+    }
 }
 
-// `./gradlew :relay:run --args="--port 8080"` for local testing.
-tasks.named('run') {
-    // allow passing --args on the command line; no default args.
+// Fat jar is the deliverable, so make it part of `build`.
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
+}
+
+// Local testing: ./gradlew :relay:run --args="--port 8080"
+tasks.register('run', JavaExec) {
+    group = 'application'
+    description = 'Run the relay locally.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = mainClassName
 }

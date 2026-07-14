@@ -1,0 +1,56 @@
+plugins {
+    // Minecraft 26.1+ uses the new Loom plugin id. Nothing is remapped (the game is
+    // unobfuscated and ships official mappings), so there is no 'mappings' dependency
+    // and no remapJar task — 'jar' produces the final artifact.
+    id 'net.fabricmc.fabric-loom' version '1.17.11'
+}
+
+version = "${project.mod_version}+${project.minecraft_version}"
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/releases'
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Depend on the full Fabric API; per-module fabricApi.module(...) pulls are brittle in 26.1.
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    api("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filteringCharset 'UTF-8'
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+def targetJavaVersion = 25
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = targetJavaVersion
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    withSourcesJar()
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.archives_base_name}" }
+    }
+}

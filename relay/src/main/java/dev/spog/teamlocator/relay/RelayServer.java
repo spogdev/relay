@@ -153,8 +153,10 @@ public final class RelayServer extends WebSocketServer {
             return;
         }
 
-        var addr = session.conn().getRemoteSocketAddress();
-        var ip = addr != null ? addr.getAddress() : null;
+        // Skip Mojang's optional IP cross-check (pass null, like vanilla's default). Behind a
+        // reverse proxy (Caddy) the remote address is always 127.0.0.1, while Mojang recorded the
+        // player's real public IP at joinServer time — the check would fail for every player.
+        final java.net.InetAddress ip = null;
 
         authPool.submit(() -> {
             try {

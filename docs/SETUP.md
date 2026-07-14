@@ -16,9 +16,11 @@ Do this before renting anything, so you know the mod and relay work.
    - Mod: `build/libs/teamlocator-0.1.0+26.1.2.jar`
    - Relay: `relay/build/libs/teamlocator-relay-all.jar`
 
-2. **Start the relay on your PC:**
-   ```
-   java -jar relay/build/libs/teamlocator-relay-all.jar --port 8080
+2. **Start the relay on your PC** — with a Java 25 runtime. If plain `java` gives
+   `UnsupportedClassVersionError`, your PATH points at an older Java; call JDK 25 explicitly
+   (IntelliJ keeps its JDKs under `%USERPROFILE%\.jdks`):
+   ```powershell
+   & "$env:USERPROFILE\.jdks\openjdk-25.0.2\bin\java" -jar relay\build\libs\teamlocator-relay-all.jar --port 8080
    ```
    You should see `TeamLocator relay listening on /0.0.0.0:8080`. Leave it running.
 

@@ -106,13 +106,20 @@ public final class RelayClient {
             return;
         }
         try {
-            HttpClient.newHttpClient()
+            // Pin HTTP/1.1: with the default client, ALPN can negotiate HTTP/2 against servers
+            // that support it (e.g. Caddy), and a WebSocket upgrade cannot ride an h2 connection —
+            // the server answers 200 instead of 101 and the handshake fails.
+            HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build()
                     .newWebSocketBuilder()
                     .connectTimeout(java.time.Duration.ofSeconds(10))
                     .buildAsync(URI.create(url), new Listener())
                     .whenComplete((ws, err) -> {
                         if (err != null) {
-                            TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", err.toString());
+                            // Unwrap CompletionException so the log shows the real reason.
+                            Throwable cause = err.getCause() != null ? err.getCause() : err;
+                            TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", cause.toString());
                             scheduleReconnect();
                         } else {
                             socket = ws;

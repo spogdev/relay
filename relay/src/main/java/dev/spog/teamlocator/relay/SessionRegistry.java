@@ -75,6 +75,11 @@ public final class SessionRegistry {
         return m == null ? List.of() : List.copyOf(m.values());
     }
 
+    /** Every authenticated session, regardless of scope (pings cross scopes; positions don't). */
+    public Collection<Session> allSessions() {
+        return List.copyOf(byUuid.values());
+    }
+
     /** Serialize a protocol message to JSON and send it over the session's socket. */
     public void send(Session session, Object message) {
         WebSocket conn = session.conn();

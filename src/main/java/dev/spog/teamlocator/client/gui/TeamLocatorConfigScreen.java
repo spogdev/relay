@@ -96,12 +96,18 @@ public class TeamLocatorConfigScreen extends Screen {
                             TeamLocatorClient.syncToServer();
                         }));
 
-        // --- HUD position sliders ---
-        addRenderableWidget(new HudPositionSlider(cx - 205, 48, 200, 20, "HUD X", config.hudX, v -> {
+        // --- Cross-server pings toggle + HUD position sliders sharing the second row ---
+        addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
+                .create(cx - 205, 48, 200, 20, Component.translatable("relay.config.cross_server_pings"),
+                        (btn, value) -> {
+                            config.crossServerPings = value;
+                            config.save();
+                        }));
+        addRenderableWidget(new HudPositionSlider(cx + 5, 48, 95, 20, "HUD X", config.hudX, v -> {
             config.hudX = v;
             config.save();
         }));
-        addRenderableWidget(new HudPositionSlider(cx + 5, 48, 200, 20, "HUD Y", config.hudY, v -> {
+        addRenderableWidget(new HudPositionSlider(cx + 110, 48, 95, 20, "HUD Y", config.hudY, v -> {
             config.hudY = v;
             config.save();
         }));
@@ -131,7 +137,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // The EditBox itself is borderless and sits inside the frame, after the scheme label.
         int frameX = cx - 205;
         int frameY = this.height - 28;
-        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL) + 2;
+        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL) + 4;
         relayUrlInput = new EditBox(this.font, textStart, frameY + 6,
                 frameX + 200 - 4 - textStart, 12, Component.translatable("relay.config.relay_url"));
         relayUrlInput.setBordered(false);
@@ -151,15 +157,15 @@ public class TeamLocatorConfigScreen extends Screen {
     private void buildRow(int cx, int y, TrustEntry entry, List<TrustEntry> backing) {
         // Silence this player's attack pings while still sharing coordinates with them.
         addRenderableWidget(Button.builder(
-                Component.translatable(entry.mutePings ? "relay.config.pings_muted" : "relay.config.pings_on"),
+                Component.translatable(entry.mutePings ? "relay.config.pings_off" : "relay.config.pings_on"),
                 b -> {
                     entry.mutePings = !entry.mutePings;
                     config.save();
                     rebuild();
                 }).bounds(cx - 50, y, 100, 20).build());
-        // Toggle hidden/visible for this player.
+        // Toggle whether this player receives our coordinates.
         addRenderableWidget(Button.builder(
-                Component.translatable(entry.hidden ? "relay.config.hidden" : "relay.config.visible"),
+                Component.translatable(entry.hidden ? "relay.config.coords_off" : "relay.config.coords_on"),
                 b -> {
                     entry.hidden = !entry.hidden;
                     config.save();

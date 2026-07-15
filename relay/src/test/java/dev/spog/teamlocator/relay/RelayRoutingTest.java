@@ -82,6 +82,7 @@ class RelayRoutingTest {
         private final CountDownLatch authed = new CountDownLatch(1);
         final List<JsonObject> snapshots = new ArrayList<>();
         final List<String> pings = new ArrayList<>();
+        final List<String> pingServers = new ArrayList<>();
         private final Map<String, CountDownLatch> waiters = new ConcurrentHashMap<>();
 
         TestClient(String name, String mcServer) throws Exception {
@@ -123,6 +124,7 @@ class RelayRoutingTest {
                 case "ping-broadcast" -> {
                     synchronized (pings) {
                         pings.add(obj.get("attacker").getAsString());
+                        pingServers.add(obj.has("mcServer") ? obj.get("mcServer").getAsString() : null);
                     }
                     release("ping");
                 }
@@ -307,7 +309,7 @@ class RelayRoutingTest {
     }
 
     @Test
-    void playersOnDifferentMinecraftServersNeverSeeEachOther() throws Exception {
+    void positionsNeverCrossMinecraftServers() throws Exception {
         TestClient alice = connect("alice", "play.example.net");
         TestClient bob = connect("bob", "other.example.net");
 
@@ -317,11 +319,37 @@ class RelayRoutingTest {
         settle();
 
         alice.sendPosition(10, 20, 30, "minecraft:overworld");
-        alice.sendAttackPing();
         settle();
 
         assertFalse(bob.sawPositionOf(alice), "cross-server position leak");
-        assertFalse(bob.sawPingFrom(alice), "cross-server ping leak");
+    }
+
+    @Test
+    void pingCrossesServersAndCarriesTheAttackersServer() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "other.example.net");
+        TestClient menuFriend = connect("carol", "menu");
+        TestClient stranger = connect("mallory", "other.example.net");
+
+        // Alice mutually trusts Bob (another server) and Carol (sitting at the main menu).
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        menuFriend.sendTrust("alice");
+        settle();
+
+        CountDownLatch bobPing = bob.expect("ping");
+        CountDownLatch carolPing = menuFriend.expect("ping");
+        alice.sendAttackPing();
+        assertTrue(bobPing.await(5, TimeUnit.SECONDS), "ping must reach a teammate on another server");
+        assertTrue(carolPing.await(5, TimeUnit.SECONDS), "ping must reach a teammate at the menu");
+
+        assertTrue(bob.sawPingFrom(alice));
+        assertTrue(menuFriend.sawPingFrom(alice));
+        assertFalse(stranger.sawPingFrom(alice), "no mutual trust, no ping — any scope");
+        synchronized (bob.pings) {
+            assertEquals("play.example.net", bob.pingServers.get(0),
+                    "broadcast must name the attacker's server");
+        }
     }
 
     @Test

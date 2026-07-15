@@ -8,16 +8,19 @@
   "relay.config.global_list": "Global Trust List",
   "relay.config.server_list": "Server Trust List",
   "relay.config.sharing_enabled": "Share My Coordinates",
+  "relay.config.cross_server_pings": "Cross-Server Pings",
   "relay.config.add_player": "Add Player",
   "relay.config.add": "Add",
   "relay.config.remove": "Remove",
-  "relay.config.hidden": "Hidden",
-  "relay.config.visible": "Visible",
+  "relay.config.coords_on": "Coords: On",
+  "relay.config.coords_off": "Coords: Off",
   "relay.config.pings_on": "Pings: On",
-  "relay.config.pings_muted": "Pings: Muted",
+  "relay.config.pings_off": "Pings: Off",
   "relay.config.no_server": "Not connected to a server",
   "relay.config.lookup_pending": "Looking up %s...",
   "relay.config.lookup_failed": "Player not found: %s",
   "relay.config.relay_url": "Relay Address",
-  "relay.config.done": "Done"
+  "relay.config.done": "Done",
+  "relay.toast.attacked": "%s is under attack!",
+  "relay.toast.server": "on %s"
 }

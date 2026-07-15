@@ -8,6 +8,7 @@ import dev.spog.teamlocator.client.net.RelayClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -27,14 +28,21 @@ import org.lwjgl.glfw.GLFW;
 @Environment(EnvType.CLIENT)
 public class TeamLocatorClient implements ClientModInitializer {
     public static final TeamConfig CONFIG = TeamConfig.load();
-    public static final RelayClient RELAY =
-            new RelayClient(() -> CONFIG.effectiveSharingSet(), () -> CONFIG.mutedPingSet());
+    public static final RelayClient RELAY = new RelayClient(() -> CONFIG.effectiveSharingSet());
 
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
 
     private static KeyMapping pingKey;
     private int positionTickCounter;
+
+    /**
+     * True only when connected under a real multiplayer-server scope. At the menu or in
+     * singleplayer the relay connection stays up (to receive cross-server pings) but our own
+     * coordinates are never sent — the "menu"/"singleplayer" scopes are shared by every user of
+     * the relay, and positions must not leak between unrelated worlds.
+     */
+    private static volatile boolean sharePositions;
 
     @Override
     public void onInitializeClient() {
@@ -45,14 +53,17 @@ public class TeamLocatorClient implements ClientModInitializer {
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
+        // The relay connection is held for the whole client lifetime — including the title screen
+        // and singleplayer — so cross-server attack pings arrive anywhere. Only the scope changes.
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> connectRelay());
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             ClientState.reset();
             connectRelay();
         }));
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            RELAY.disconnect();
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             ClientState.reset();
-        });
+            connectRelay(); // back to the "menu" scope, not a full disconnect
+        }));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (pingKey.consumeClick()) {
@@ -69,7 +80,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         }
         positionTickCounter = 0;
         LocalPlayer player = client.player;
-        if (player == null || !RELAY.isReady()) {
+        if (player == null || !sharePositions || !RELAY.isReady()) {
             return;
         }
         RELAY.sendPosition(
@@ -78,17 +89,21 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /**
-     * (Re)connect the relay for the current context. Called on server join and when the relay URL
-     * changes in the config screen. No-op in singleplayer (nobody to share with) or when no relay
-     * URL is configured.
+     * (Re)connect the relay for the current context: the joined server's scope in multiplayer, or
+     * the shared "menu"/"singleplayer" scopes otherwise (connected for pings, never sending
+     * positions). Called at client start, on join/disconnect, and when the relay URL changes in
+     * the config screen. Disconnects only when no relay URL is configured.
      */
     public static void connectRelay() {
-        String serverKey = TeamConfig.currentServerKey();
-        if (serverKey == null || "singleplayer".equals(serverKey) || CONFIG.relayUrl.isBlank()) {
+        if (CONFIG.relayUrl.isBlank()) {
+            sharePositions = false;
             RELAY.disconnect();
             return;
         }
-        RELAY.connect(CONFIG.relayWebSocketUrl(), serverKey);
+        String serverKey = TeamConfig.currentServerKey();
+        String scope = serverKey != null ? serverKey : "menu";
+        sharePositions = serverKey != null && !"singleplayer".equals(serverKey);
+        RELAY.connect(CONFIG.relayWebSocketUrl(), scope);
     }
 
     /**

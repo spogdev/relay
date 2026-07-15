@@ -34,6 +34,8 @@ public class TeamConfig {
     // ---- persisted fields (Gson) ----
     public Mode activeMode = Mode.GLOBAL;
     public boolean globalShareEnabled = true;
+    /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
+    public boolean crossServerPings = true;
     /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
     public String relayUrl = DEFAULT_RELAY_ADDRESS;
 
@@ -174,5 +176,37 @@ public class TeamConfig {
             }
         }
         return out;
+    }
+
+    /**
+     * Best-effort display name for a player, from the cached name on any trust-list entry (global
+     * first, then every per-server list). Used for cross-server ping toasts, where the attacker is
+     * not in our tab list. Null if we have no entry for them.
+     */
+    public String nameFor(UUID id) {
+        String fromGlobal = nameIn(global, id);
+        if (fromGlobal != null) {
+            return fromGlobal;
+        }
+        for (TrustList list : servers.values()) {
+            String name = nameIn(list, id);
+            if (name != null) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    private static String nameIn(TrustList list, UUID id) {
+        for (TrustEntry e : list.trusted) {
+            try {
+                if (e.uuid().equals(id) && e.name != null && !e.name.isBlank()) {
+                    return e.name;
+                }
+            } catch (RuntimeException ignored) {
+                // corrupt uuid string in config; skip
+            }
+        }
+        return null;
     }
 }

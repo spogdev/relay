@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
+import dev.spog.teamlocator.client.PingHandler;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -49,9 +50,8 @@ public final class RelayClient {
         return t;
     });
 
-    /** Supplies the current trust / muted-ping sets from config (breaks a class cycle). */
+    /** Supplies the current trust set from config (breaks a class cycle). */
     private final Supplier<Set<UUID>> sharingSet;
-    private final Supplier<Set<UUID>> mutedPings;
 
     private volatile WebSocket socket;
     private volatile boolean authenticated;
@@ -65,9 +65,8 @@ public final class RelayClient {
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
     private final Object sendLock = new Object();
 
-    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> mutedPings) {
+    public RelayClient(Supplier<Set<UUID>> sharingSet) {
         this.sharingSet = sharingSet;
-        this.mutedPings = mutedPings;
     }
 
     public boolean isReady() {
@@ -332,28 +331,12 @@ public final class RelayClient {
     private void onPingBroadcast(JsonObject obj) {
         try {
             UUID attacker = UUID.fromString(obj.get("attacker").getAsString());
-            // Muting is a purely local preference: keep sharing coordinates with this player but
-            // ignore their attack pings.
-            if (!mutedPings.get().contains(attacker)) {
-                ClientState.flagAttacked(attacker);
-                playPingSound();
-            }
+            // An old relay omits mcServer; assume same-server, which was its only behavior.
+            String fromServer = obj.has("mcServer")
+                    ? obj.get("mcServer").getAsString() : mcServerKey;
+            PingHandler.onPing(attacker, fromServer, mcServerKey);
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Bad ping broadcast: {}", e.toString());
         }
-    }
-
-    /** Three ascending dings so an attack ping is noticed even without looking at the HUD. */
-    private static void playPingSound() {
-        Minecraft mc = Minecraft.getInstance();
-        mc.execute(() -> {
-            var sounds = mc.getSoundManager();
-            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
-                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.0f), 0);
-            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
-                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.3f), 4);
-            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
-                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.6f), 8);
-        });
     }
 }

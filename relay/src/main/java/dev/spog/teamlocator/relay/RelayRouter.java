@@ -15,9 +15,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * reaches a viewer the owner didn't share with, and a ping never reaches someone who blocked the
  * sender. Gating lives here — not on the client — so patching a client cannot bypass it.
  *
- * <p>Two differences from the in-game version: (1) routing is intersected with the MC-server
- * {@link Session#scope() scope}, so players on different servers never see each other; (2) positions
- * are pushed by clients and fanned out on arrival, rather than pulled from the world each tick.
+ * <p>Two differences from the in-game version: (1) position routing is intersected with the
+ * MC-server {@link Session#scope() scope}, so players on different servers never see each other's
+ * coordinates — pings, by contrast, cross scopes on purpose; (2) positions are pushed by clients
+ * and fanned out on arrival, rather than pulled from the world each tick.
  */
 public final class RelayRouter {
     /** player -> the viewers that player shares their position with. */
@@ -90,12 +91,18 @@ public final class RelayRouter {
         }
     }
 
-    /** Fan an attack ping to everyone (same scope) who mutually trusts the sender and hasn't blocked them. */
+    /**
+     * Fan an attack ping to everyone who mutually trusts the sender and hasn't blocked them.
+     * Unlike positions, pings deliberately cross MC-server scopes — a teammate at the main menu or
+     * on another server still gets notified. The broadcast carries the attacker's scope so the
+     * client can present the two cases differently (and let the user opt out of cross-server ones).
+     */
     public void handlePing(Session attacker) {
         UUID attackerId = attacker.uuid();
-        Messages.PingBroadcast payload = new Messages.PingBroadcast(attackerId.toString());
+        Messages.PingBroadcast payload =
+                new Messages.PingBroadcast(attackerId.toString(), attacker.scope());
 
-        for (Session viewer : registry.sessionsInScope(attacker.scope())) {
+        for (Session viewer : registry.allSessions()) {
             UUID viewerId = viewer.uuid();
             if (viewerId.equals(attackerId)) {
                 continue;

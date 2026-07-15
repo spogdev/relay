@@ -123,13 +123,20 @@ public final class Messages {
         }
     }
 
-    /** Tells the client to flash a player red — they signalled they are under attack. */
+    /**
+     * Tells the client a mutually-trusted player signalled they are under attack. Unlike positions,
+     * pings cross MC-server scopes; {@code mcServer} is the attacker's scope so the client can tell
+     * a same-server ping (flash them red on the HUD) from a cross-server one (show a toast naming
+     * that server).
+     */
     public static final class PingBroadcast {
         public String type = "ping-broadcast";
         public String attacker;
+        public String mcServer;
 
-        public PingBroadcast(String attacker) {
+        public PingBroadcast(String attacker, String mcServer) {
             this.attacker = attacker;
+            this.mcServer = mcServer;
         }
     }
 }

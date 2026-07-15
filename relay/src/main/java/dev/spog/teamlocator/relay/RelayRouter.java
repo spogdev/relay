@@ -23,6 +23,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RelayRouter {
     /** player -> the viewers that player shares their position with. */
     private final Map<UUID, Set<UUID>> sharesWith = new ConcurrentHashMap<>();
+    /**
+     * player -> the peers that player exchanges attack pings with. Kept separate from
+     * {@link #sharesWith}: the sharing set is emptied by the share toggle and scoped to the active
+     * per-server list, while alert trust must survive both so pings work from the menu or another
+     * server. An old client sends no alert set; the server falls this back to its sharing set.
+     */
+    private final Map<UUID, Set<UUID>> alertsWith = new ConcurrentHashMap<>();
     /** player -> the senders that player has blocked (their pings are dropped). */
     private final Map<UUID, Set<UUID>> blockedBy = new ConcurrentHashMap<>();
 
@@ -36,18 +43,28 @@ public final class RelayRouter {
         sharesWith.put(player, Set.copyOf(viewers));
     }
 
+    public void setAlerts(UUID player, Set<UUID> peers) {
+        alertsWith.put(player, Set.copyOf(peers));
+    }
+
     public void setBlocked(UUID player, Set<UUID> blocked) {
         blockedBy.put(player, Set.copyOf(blocked));
     }
 
     public void remove(UUID player) {
         sharesWith.remove(player);
+        alertsWith.remove(player);
         blockedBy.remove(player);
     }
 
     /** True if {@code owner} shares their position with {@code viewer}. */
     private boolean shares(UUID owner, UUID viewer) {
         return sharesWith.getOrDefault(owner, Set.of()).contains(viewer);
+    }
+
+    /** True if {@code owner} extends alert trust to {@code peer} (gates ping delivery). */
+    private boolean alerts(UUID owner, UUID peer) {
+        return alertsWith.getOrDefault(owner, Set.of()).contains(peer);
     }
 
     /**
@@ -92,7 +109,7 @@ public final class RelayRouter {
     }
 
     /**
-     * Fan an attack ping to everyone who mutually trusts the sender and hasn't blocked them.
+     * Fan an attack ping to everyone who mutually alert-trusts the sender and hasn't blocked them.
      * Unlike positions, pings deliberately cross MC-server scopes — a teammate at the main menu or
      * on another server still gets notified. The broadcast carries the attacker's scope so the
      * client can present the two cases differently (and let the user opt out of cross-server ones).
@@ -109,7 +126,7 @@ public final class RelayRouter {
             if (viewerId.equals(attackerId)) {
                 continue;
             }
-            boolean mutual = shares(attackerId, viewerId) && shares(viewerId, attackerId);
+            boolean mutual = alerts(attackerId, viewerId) && alerts(viewerId, attackerId);
             if (!mutual) {
                 continue;
             }

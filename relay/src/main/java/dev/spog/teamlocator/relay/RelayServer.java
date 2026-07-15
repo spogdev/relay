@@ -114,7 +114,7 @@ public final class RelayServer extends WebSocketServer {
             }
 
             switch (type) {
-                case "trust-update" -> router.setSharing(session.uuid(), parseUuids(obj, "sharingWith"));
+                case "trust-update" -> handleTrustUpdate(session, obj);
                 case "block-update" -> router.setBlocked(session.uuid(), parseUuids(obj, "blocked"));
                 case "position-update" -> handlePosition(session, obj);
                 case "ping" -> router.handlePing(session);
@@ -185,6 +185,18 @@ public final class RelayServer extends WebSocketServer {
     private void fail(Session session, String reason) {
         registry.send(session, new Messages.AuthFail(reason));
         session.conn().close();
+    }
+
+    /**
+     * Apply both trust sets. {@code alertsWith} gates ping delivery separately from position
+     * sharing; an old client omits it, in which case its sharing set doubles as the alert set —
+     * exactly the single-set behavior that client was written against.
+     */
+    private void handleTrustUpdate(Session session, JsonObject obj) {
+        Set<UUID> sharing = parseUuids(obj, "sharingWith");
+        router.setSharing(session.uuid(), sharing);
+        router.setAlerts(session.uuid(),
+                obj.has("alertsWith") ? parseUuids(obj, "alertsWith") : sharing);
     }
 
     private void handlePosition(Session session, JsonObject obj) {

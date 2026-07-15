@@ -168,15 +168,29 @@ class RelayRoutingTest {
             }
         }
 
+        /** Old-client shape: sharingWith only, no alertsWith (exercises the relay's fallback). */
         void sendTrust(String... names) {
             JsonObject o = new JsonObject();
             o.addProperty("type", "trust-update");
+            o.add("sharingWith", namesToArray(names));
+            send(GSON.toJson(o));
+        }
+
+        /** New-client shape: separate position-sharing and alert-trust sets. */
+        void sendTrustAndAlerts(String[] sharing, String[] alerts) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "trust-update");
+            o.add("sharingWith", namesToArray(sharing));
+            o.add("alertsWith", namesToArray(alerts));
+            send(GSON.toJson(o));
+        }
+
+        private com.google.gson.JsonArray namesToArray(String... names) {
             var arr = new com.google.gson.JsonArray();
             for (String n : names) {
                 arr.add(uuidOf(n).toString());
             }
-            o.add("sharingWith", arr);
-            send(GSON.toJson(o));
+            return arr;
         }
 
         void sendBlocked(String... names) {
@@ -379,6 +393,40 @@ class RelayRoutingTest {
                     java.util.Set.copyOf(alice.pingAcks.get(0)),
                     "the ack must list the cross-server and menu receivers, not the stranger");
         }
+    }
+
+    @Test
+    void alertTrustDeliversPingsWhenSharingSetsAreEmpty() throws Exception {
+        // A client at the menu (or with "Share My Coordinates" off) uploads an empty sharing set
+        // but keeps its alert trust from the global list; pings must still be delivered.
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "menu");
+
+        alice.sendTrustAndAlerts(new String[] {}, new String[] {"bob"});
+        bob.sendTrustAndAlerts(new String[] {}, new String[] {"alice"});
+        settle();
+
+        CountDownLatch bobPing = bob.expect("ping");
+        alice.sendAttackPing();
+        assertTrue(bobPing.await(5, TimeUnit.SECONDS),
+                "mutual alert trust must deliver the ping even with empty sharing sets");
+        assertTrue(bob.sawPingFrom(alice));
+    }
+
+    @Test
+    void alertTrustAloneNeverRoutesPositions() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+
+        // Alert trust without position sharing (a hidden entry, or the share toggle off).
+        alice.sendTrustAndAlerts(new String[] {}, new String[] {"bob"});
+        bob.sendTrustAndAlerts(new String[] {}, new String[] {"alice"});
+        settle();
+
+        alice.sendPosition(9, 9, 9, "minecraft:overworld");
+        settle();
+
+        assertFalse(bob.sawPositionOf(alice), "alert trust must not grant position visibility");
     }
 
     @Test

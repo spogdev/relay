@@ -192,22 +192,47 @@ public class TeamConfig {
     }
 
     /**
-     * Players whose attack pings should be silenced locally. Pings can only ever arrive from
-     * players on the active list (mutual trust is enforced relay-side), so the active list is the
-     * complete set of possible senders.
+     * The alert-trust set uploaded to the server: everyone on the global list plus the active
+     * list, hidden entries included ({@code hidden} withholds coordinates, not alerts), and
+     * independent of the share toggle. This is what keeps mutual-trust pings working at the menu,
+     * in singleplayer, or on another server — anywhere the sharing set is empty or server-scoped.
+     */
+    public Set<UUID> alertTrustSet() {
+        Set<UUID> out = new HashSet<>();
+        for (TrustEntry e : global.trusted) {
+            out.add(e.uuid());
+        }
+        TrustList list = activeList();
+        if (list != null && list != global) {
+            for (TrustEntry e : list.trusted) {
+                out.add(e.uuid());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Players whose attack pings should be silenced locally. Pings can arrive from anyone in the
+     * {@link #alertTrustSet() alert-trust set} (mutual trust is enforced relay-side), so a mute on
+     * either the global or the active list wins — including at the menu, where no server list
+     * exists.
      */
     public Set<UUID> mutedPingSet() {
         Set<UUID> out = new HashSet<>();
+        collectMuted(global, out);
         TrustList list = activeList();
-        if (list == null) {
-            return out;
+        if (list != null && list != global) {
+            collectMuted(list, out);
         }
+        return out;
+    }
+
+    private static void collectMuted(TrustList list, Set<UUID> out) {
         for (TrustEntry e : list.trusted) {
             if (e.mutePings) {
                 out.add(e.uuid());
             }
         }
-        return out;
     }
 
     /**

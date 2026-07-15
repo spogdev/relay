@@ -42,6 +42,13 @@ public final class Messages {
     public static final class TrustUpdate {
         public String type = "trust-update";
         public List<String> sharingWith;
+        /**
+         * The players this client exchanges attack pings with. Unlike {@code sharingWith} it is
+         * not emptied by the share toggle and includes the global list, so alerts keep working
+         * from the menu or another server. Absent from an old client, whose {@code sharingWith}
+         * then doubles as the alert set (the pre-split behavior).
+         */
+        public List<String> alertsWith;
     }
 
     /** The set of players whose attack pings this client refuses (anti-spam). */

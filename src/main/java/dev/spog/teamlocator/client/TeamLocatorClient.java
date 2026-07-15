@@ -34,7 +34,8 @@ import java.util.UUID;
 @Environment(EnvType.CLIENT)
 public class TeamLocatorClient implements ClientModInitializer {
     public static final TeamConfig CONFIG = TeamConfig.load();
-    public static final RelayClient RELAY = new RelayClient(() -> CONFIG.effectiveSharingSet());
+    public static final RelayClient RELAY = new RelayClient(
+            () -> CONFIG.effectiveSharingSet(), () -> CONFIG.alertTrustSet());
 
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
@@ -201,13 +202,13 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /**
-     * Recompute the effective trust set from config and push it to the relay. Call after any
+     * Recompute the effective trust sets from config and push them to the relay. Call after any
      * config change so routing updates immediately. No-op when not connected.
      */
     public static void syncToServer() {
         if (!RELAY.isReady()) {
             return;
         }
-        RELAY.sendTrust(CONFIG.effectiveSharingSet());
+        RELAY.sendTrust(CONFIG.effectiveSharingSet(), CONFIG.alertTrustSet());
     }
 }

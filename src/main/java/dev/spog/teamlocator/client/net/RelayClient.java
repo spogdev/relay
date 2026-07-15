@@ -52,8 +52,10 @@ public final class RelayClient {
         return t;
     });
 
-    /** Supplies the current trust set from config (breaks a class cycle). */
+    /** Supplies the current position-sharing set from config (breaks a class cycle). */
     private final Supplier<Set<UUID>> sharingSet;
+    /** Supplies the current alert-trust set from config; gates ping delivery relay-side. */
+    private final Supplier<Set<UUID>> alertSet;
 
     private volatile WebSocket socket;
     private volatile boolean authenticated;
@@ -67,8 +69,9 @@ public final class RelayClient {
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
     private final Object sendLock = new Object();
 
-    public RelayClient(Supplier<Set<UUID>> sharingSet) {
+    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> alertSet) {
         this.sharingSet = sharingSet;
+        this.alertSet = alertSet;
     }
 
     public boolean isReady() {
@@ -165,13 +168,20 @@ public final class RelayClient {
         return o;
     }
 
-    public void sendTrust(Set<UUID> sharingWith) {
+    public void sendTrust(Set<UUID> sharingWith, Set<UUID> alertsWith) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "trust-update");
-        var arr = new com.google.gson.JsonArray();
-        sharingWith.forEach(u -> arr.add(u.toString()));
-        o.add("sharingWith", arr);
+        o.add("sharingWith", uuidArray(sharingWith));
+        // Separate from sharingWith so the share toggle / menu state never kills alert delivery.
+        // An old relay simply ignores this field and keeps its single-set behavior.
+        o.add("alertsWith", uuidArray(alertsWith));
         sendIfReady(o);
+    }
+
+    private static com.google.gson.JsonArray uuidArray(Set<UUID> ids) {
+        var arr = new com.google.gson.JsonArray();
+        ids.forEach(u -> arr.add(u.toString()));
+        return arr;
     }
 
     public void sendPosition(double x, double y, double z, String dimension) {
@@ -307,7 +317,7 @@ public final class RelayClient {
         backoffMs = 1_000L;
         TeamLocatorConstants.LOGGER.info("Relay authenticated");
         // The relay lost our routing state with the old socket; push it fresh.
-        sendTrust(sharingSet.get());
+        sendTrust(sharingSet.get(), alertSet.get());
     }
 
     private void onSnapshot(JsonObject obj) {

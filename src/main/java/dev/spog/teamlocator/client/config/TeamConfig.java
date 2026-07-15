@@ -20,8 +20,8 @@ import java.util.UUID;
 
 /**
  * Client-side persistent config: the global and per-server trust lists, active-list selection,
- * per-list share toggle, block list, and HUD position. Serialized to {@code config/teamlocator.json}
- * via Gson. All mutation goes through this instance; call {@link #save()} after changes.
+ * share toggle, and HUD position. Serialized to {@code config/relay.json} via Gson. All mutation
+ * goes through this instance; call {@link #save()} after changes.
  */
 public class TeamConfig {
     public enum Mode { SERVER, GLOBAL }
@@ -56,7 +56,6 @@ public class TeamConfig {
     public double hudY = 0.30;
     public TrustList global = new TrustList();
     public java.util.Map<String, TrustList> servers = new java.util.HashMap<>();
-    public List<TrustEntry> blocked = new ArrayList<>();
 
     // ---- persistence ----
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -98,7 +97,6 @@ public class TeamConfig {
         if (global == null) global = new TrustList();
         if (global.trusted == null) global.trusted = new ArrayList<>();
         if (servers == null) servers = new java.util.HashMap<>();
-        if (blocked == null) blocked = new ArrayList<>();
         servers.values().forEach(l -> {
             if (l.trusted == null) l.trusted = new ArrayList<>();
         });
@@ -159,10 +157,21 @@ public class TeamConfig {
         return out;
     }
 
-    public Set<UUID> blockedSet() {
+    /**
+     * Players whose attack pings should be silenced locally. Pings can only ever arrive from
+     * players on the active list (mutual trust is enforced relay-side), so the active list is the
+     * complete set of possible senders.
+     */
+    public Set<UUID> mutedPingSet() {
         Set<UUID> out = new HashSet<>();
-        for (TrustEntry e : blocked) {
-            out.add(e.uuid());
+        TrustList list = activeList();
+        if (list == null) {
+            return out;
+        }
+        for (TrustEntry e : list.trusted) {
+            if (e.mutePings) {
+                out.add(e.uuid());
+            }
         }
         return out;
     }

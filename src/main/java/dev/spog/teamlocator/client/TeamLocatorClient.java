@@ -1,6 +1,7 @@
 package dev.spog.teamlocator.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.hud.TeamHud;
 import dev.spog.teamlocator.client.net.RelayClient;
@@ -27,7 +28,7 @@ import org.lwjgl.glfw.GLFW;
 public class TeamLocatorClient implements ClientModInitializer {
     public static final TeamConfig CONFIG = TeamConfig.load();
     public static final RelayClient RELAY =
-            new RelayClient(() -> CONFIG.effectiveSharingSet(), () -> CONFIG.blockedSet());
+            new RelayClient(() -> CONFIG.effectiveSharingSet(), () -> CONFIG.mutedPingSet());
 
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
@@ -37,10 +38,10 @@ public class TeamLocatorClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        KeyMapping.Category category =
-                KeyMapping.Category.register(Identifier.fromNamespaceAndPath("teamlocator", "main"));
+        KeyMapping.Category category = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "main"));
         pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.teamlocator.ping", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
+                "key.relay.ping", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -91,14 +92,13 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /**
-     * Recompute the effective trust and block sets from config and push them to the relay. Call
-     * after any config change so routing updates immediately. No-op when not connected.
+     * Recompute the effective trust set from config and push it to the relay. Call after any
+     * config change so routing updates immediately. No-op when not connected.
      */
     public static void syncToServer() {
         if (!RELAY.isReady()) {
             return;
         }
         RELAY.sendTrust(CONFIG.effectiveSharingSet());
-        RELAY.sendBlocked(CONFIG.blockedSet());
     }
 }

@@ -3,6 +3,7 @@ package dev.spog.teamlocator.client.gui;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.config.TrustEntry;
+import dev.spog.teamlocator.client.net.NameLookup;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
@@ -12,42 +13,50 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerSkin;
 
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Hand-rolled config screen (no cloth-config). Two tabs: the trust list for the active mode
- * (Global / This Server) with per-player hide toggles, and the block list. Global controls sit at
- * the top: active-mode cycle, the "share my coordinates" toggle, and the two HUD position sliders.
- * Any change is written to disk and pushed to the server immediately via {@link TeamLocatorClient#syncToServer()}.
+ * Hand-rolled config screen (no cloth-config). Shows the trust list for the active mode
+ * (Global / This Server) with per-player hide and mute-pings toggles. Global controls sit at the
+ * top: active-mode cycle, the "share my coordinates" toggle, and the two HUD position sliders.
+ * Any change is written to disk and pushed to the relay immediately via
+ * {@link TeamLocatorClient#syncToServer()}.
  */
 @Environment(EnvType.CLIENT)
 public class TeamLocatorConfigScreen extends Screen {
-    private enum Tab { TRUST, BLOCK }
-
     private final Screen parent;
     private final TeamConfig config;
 
     private static final String SCHEME_LABEL = "wss://";
+    private static final Identifier TEXT_FIELD_SPRITE =
+            Identifier.parse("minecraft:widget/text_field");
+    private static final Identifier TEXT_FIELD_HIGHLIGHTED_SPRITE =
+            Identifier.parse("minecraft:widget/text_field_highlighted");
 
-    private Tab tab = Tab.TRUST;
     private int scroll;
     private EditBox nameInput;
     private EditBox relayUrlInput;
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
     private final String initialRelayUrl;
+    /** Feedback for an in-flight or failed Mojang name lookup; null when idle. */
+    private Component addStatus;
+    private int addStatusColor;
 
     private static final int ROW_H = 24;
     private static final int LIST_TOP = 110;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
-        super(Component.translatable("teamlocator.config.title"));
+        super(Component.translatable("relay.config.title"));
         this.parent = parent;
         this.config = config;
         this.initialRelayUrl = config.relayUrl;
@@ -68,7 +77,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, 24, 200, 20, Component.translatable("teamlocator.config.active_list"),
+                .create(cx - 205, 24, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             config.save();
@@ -80,7 +89,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         // --- Global master toggle: stop sharing my coordinates with everyone at once ---
         addRenderableWidget(CycleButton.onOffBuilder(config.globalShareEnabled)
-                .create(cx + 5, 24, 200, 20, Component.translatable("teamlocator.config.sharing_enabled"),
+                .create(cx + 5, 24, 200, 20, Component.translatable("relay.config.sharing_enabled"),
                         (btn, value) -> {
                             config.globalShareEnabled = value;
                             config.save();
@@ -97,21 +106,16 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }));
 
-        // --- Tab selectors + add-player row (one centered 410px band: 95|95|10 gap|145|5|50) ---
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.trust_lists"),
-                b -> { tab = Tab.TRUST; scroll = 0; rebuild(); }).bounds(cx - 205, 72, 95, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.block_list"),
-                b -> { tab = Tab.BLOCK; scroll = 0; rebuild(); }).bounds(cx - 105, 72, 95, 20).build());
-
-        nameInput = new EditBox(this.font, cx + 5, 72, 145, 20,
-                Component.translatable("teamlocator.config.add_player"));
-        nameInput.setHint(Component.translatable("teamlocator.config.add_player"));
+        // --- Add-player row spanning the full 410px band: name box | 5 gap | Add ---
+        nameInput = new EditBox(this.font, cx - 205, 72, 340, 20,
+                Component.translatable("relay.config.add_player"));
+        nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 155, 72, 50, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
+                b -> addTypedPlayer()).bounds(cx + 140, 72, 65, 20).build());
 
-        // --- List rows for the current tab ---
+        // --- List rows ---
         List<TrustEntry> entries = currentList();
         int visibleRows = Math.max(1, (this.height - LIST_TOP - LIST_BOTTOM_MARGIN) / ROW_H);
         int maxScroll = Math.max(0, entries.size() - visibleRows);
@@ -123,12 +127,15 @@ public class TeamLocatorConfigScreen extends Screen {
             buildRow(cx, y, entry, entries);
         }
 
-        // --- Relay address (host only; the wss:// scheme is fixed and drawn as a label) ---
-        int schemeWidth = this.font.width(SCHEME_LABEL) + 4;
-        relayUrlInput = new EditBox(this.font, cx - 205 + schemeWidth, this.height - 28,
-                200 - schemeWidth, 20, Component.translatable("teamlocator.config.relay_url"));
+        // --- Relay address: one Done-sized frame with the fixed wss:// scheme drawn inside ---
+        // The EditBox itself is borderless and sits inside the frame, after the scheme label.
+        int frameX = cx - 205;
+        int frameY = this.height - 28;
+        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL) + 2;
+        relayUrlInput = new EditBox(this.font, textStart, frameY + 6,
+                frameX + 200 - 4 - textStart, 12, Component.translatable("relay.config.relay_url"));
+        relayUrlInput.setBordered(false);
         relayUrlInput.setMaxLength(256);
-        relayUrlInput.setHint(Component.translatable("teamlocator.config.relay_url"));
         relayUrlInput.setValue(config.relayUrl);
         relayUrlInput.setResponder(value -> {
             config.relayUrl = TeamConfig.normalizeRelayAddress(value);
@@ -137,24 +144,29 @@ public class TeamLocatorConfigScreen extends Screen {
         addRenderableWidget(relayUrlInput);
 
         // --- Done ---
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.done"),
+        addRenderableWidget(Button.builder(Component.translatable("relay.config.done"),
                 b -> onClose()).bounds(cx + 5, this.height - 28, 200, 20).build());
     }
 
     private void buildRow(int cx, int y, TrustEntry entry, List<TrustEntry> backing) {
-        if (tab == Tab.TRUST) {
-            // Toggle hidden/visible for this player.
-            boolean hidden = entry.hidden;
-            addRenderableWidget(Button.builder(
-                    Component.translatable(hidden ? "teamlocator.config.hidden" : "teamlocator.config.visible"),
-                    b -> {
-                        entry.hidden = !entry.hidden;
-                        config.save();
-                        TeamLocatorClient.syncToServer();
-                        rebuild();
-                    }).bounds(cx + 55, y, 90, 20).build());
-        }
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.remove"),
+        // Silence this player's attack pings while still sharing coordinates with them.
+        addRenderableWidget(Button.builder(
+                Component.translatable(entry.mutePings ? "relay.config.pings_muted" : "relay.config.pings_on"),
+                b -> {
+                    entry.mutePings = !entry.mutePings;
+                    config.save();
+                    rebuild();
+                }).bounds(cx - 50, y, 100, 20).build());
+        // Toggle hidden/visible for this player.
+        addRenderableWidget(Button.builder(
+                Component.translatable(entry.hidden ? "relay.config.hidden" : "relay.config.visible"),
+                b -> {
+                    entry.hidden = !entry.hidden;
+                    config.save();
+                    TeamLocatorClient.syncToServer();
+                    rebuild();
+                }).bounds(cx + 55, y, 90, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("relay.config.remove"),
                 b -> {
                     backing.remove(entry);
                     config.save();
@@ -165,21 +177,28 @@ public class TeamLocatorConfigScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        // The relay-address frame goes under the borderless EditBox that super renders.
+        int cx = this.width / 2;
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED,
+                relayUrlInput != null && relayUrlInput.isFocused()
+                        ? TEXT_FIELD_HIGHLIGHTED_SPRITE : TEXT_FIELD_SPRITE,
+                cx - 205, this.height - 28, 200, 20);
+        graphics.text(this.font, SCHEME_LABEL, cx - 205 + 4, this.height - 28 + 6, 0xFFA0A0A0, false);
+
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         graphics.centeredText(this.font, this.title, this.width / 2, 8, 0xFFFFFFFF);
 
-        int cx = this.width / 2;
-        // Section header for the list, plus a hint when the server list is unavailable.
-        Component header = tab == Tab.TRUST
-                ? Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
-                        ? "teamlocator.config.global_list" : "teamlocator.config.server_list")
-                : Component.translatable("teamlocator.config.block_list");
+        // Section header for the list, plus lookup feedback on the right.
+        Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
+                ? "relay.config.global_list" : "relay.config.server_list");
         graphics.text(this.font, header, cx - 205, LIST_TOP - 12, 0xFFA0A0A0, false);
-        graphics.text(this.font, SCHEME_LABEL, cx - 205, this.height - 22, 0xFFA0A0A0, false);
+        if (addStatus != null) {
+            graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
+                    LIST_TOP - 12, addStatusColor, false);
+        }
 
-        if (tab == Tab.TRUST && config.activeMode == TeamConfig.Mode.SERVER
-                && TeamConfig.currentServerKey() == null) {
-            graphics.text(this.font, Component.translatable("teamlocator.config.no_server"),
+        if (config.activeMode == TeamConfig.Mode.SERVER && TeamConfig.currentServerKey() == null) {
+            graphics.text(this.font, Component.translatable("relay.config.no_server"),
                     cx - 205, LIST_TOP + 4, 0xFFFF5555, false);
             return;
         }
@@ -211,38 +230,61 @@ public class TeamLocatorConfigScreen extends Screen {
         graphics.text(this.font, name, x + 22, y + 6, 0xFFFFFFFF, false);
     }
 
-    /** Resolve the typed name against the tab list and add it to the current tab's list. */
+    /**
+     * Add the typed name to the active list. Players currently on this server resolve instantly
+     * via the tab list; anyone else is resolved through Mojang's name-to-UUID API so teammates can
+     * be added while offline.
+     */
     private void addTypedPlayer() {
         if (nameInput == null) {
             return;
         }
         String typed = nameInput.getValue().trim();
-        if (typed.isEmpty() || Minecraft.getInstance().getConnection() == null) {
+        if (typed.isEmpty()) {
             return;
         }
-        PlayerInfo info = Minecraft.getInstance().getConnection().getPlayerInfo(typed);
-        if (info == null) {
-            return; // unknown name — must be someone currently visible in the tab list
+        nameInput.setValue("");
+
+        PlayerInfo info = Minecraft.getInstance().getConnection() != null
+                ? Minecraft.getInstance().getConnection().getPlayerInfo(typed) : null;
+        if (info != null) {
+            addEntry(info.getProfile().id(), info.getProfile().name());
+            rebuild();
+            return;
         }
-        UUID id = info.getProfile().id();
+
+        addStatus = Component.translatable("relay.config.lookup_pending", typed);
+        addStatusColor = 0xFFA0A0A0;
+        NameLookup.resolve(typed).whenComplete((resolved, err) ->
+                Minecraft.getInstance().execute(() -> {
+                    if (resolved == null || err != null) {
+                        addStatus = Component.translatable("relay.config.lookup_failed", typed);
+                        addStatusColor = 0xFFFF5555;
+                        return;
+                    }
+                    addStatus = null;
+                    addEntry(resolved.id(), resolved.name());
+                    if (Minecraft.getInstance().screen == this) {
+                        rebuild();
+                    }
+                }));
+    }
+
+    /** Add to the active list (deduplicated by UUID), persist, and push to the relay. */
+    private void addEntry(UUID id, String name) {
         List<TrustEntry> list = currentList();
         boolean present = list.stream().anyMatch(e -> {
             UUID u = safeUuid(e);
             return u != null && u.equals(id);
         });
         if (!present) {
-            list.add(new TrustEntry(id, info.getProfile().name()));
+            list.add(new TrustEntry(id, name));
             config.save();
             TeamLocatorClient.syncToServer();
         }
-        nameInput.setValue("");
-        rebuild();
     }
 
     private List<TrustEntry> currentList() {
-        if (tab == Tab.BLOCK) {
-            return config.blocked;
-        }
         TeamConfig.TrustList list = config.activeList();
         // Return a mutable list even when disconnected in SERVER mode, so add/remove callbacks that
         // slip past their guards can't throw UnsupportedOperationException.
@@ -252,7 +294,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private Component modeLabel(TeamConfig.Mode mode) {
         // CycleButton already renders "<name>: <value>", so return only the value here.
         String key = mode == TeamConfig.Mode.GLOBAL
-                ? "teamlocator.config.active_list.global" : "teamlocator.config.active_list.server";
+                ? "relay.config.active_list.global" : "relay.config.active_list.server";
         return Component.translatable(key);
     }
 
@@ -267,6 +309,23 @@ public class TeamLocatorConfigScreen extends Screen {
     private void rebuild() {
         this.clearWidgets();
         this.init();
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        if (super.mouseClicked(event, doubled)) {
+            return true;
+        }
+        // Clicking the wss:// prefix (inside the frame but left of the borderless EditBox) should
+        // still focus the address field — the whole frame reads as one text box.
+        int cx = this.width / 2;
+        if (relayUrlInput != null
+                && event.x() >= cx - 205 && event.x() < cx - 5
+                && event.y() >= this.height - 28 && event.y() < this.height - 8) {
+            this.setFocused(relayUrlInput);
+            return true;
+        }
+        return false;
     }
 
     @Override

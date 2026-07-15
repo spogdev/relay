@@ -26,7 +26,8 @@ import java.util.Locale;
  */
 @Environment(EnvType.CLIENT)
 public class TeamHud implements HudElement {
-    public static final Identifier ID = Identifier.fromNamespaceAndPath("teamlocator", "hud");
+    public static final Identifier ID =
+            Identifier.fromNamespaceAndPath(dev.spog.teamlocator.TeamLocatorConstants.MOD_ID, "hud");
 
     private static final int FACE_SIZE = 8;
     private static final int ROW_HEIGHT = 10;

@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
  * in the standalone relay service under {@code relay/}), so there is no ModInitializer here.
  */
 public final class TeamLocatorConstants {
-    public static final String MOD_ID = "teamlocator";
+    public static final String MOD_ID = "relay";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private TeamLocatorConstants() {

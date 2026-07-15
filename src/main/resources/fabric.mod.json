@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "teamlocator",
+  "id": "relay",
   "version": "${version}",
   "name": "Relay",
   "description": "Private team communication.",
@@ -8,7 +8,7 @@
     "Spog"
   ],
   "license": "MIT",
-  "icon": "assets/teamlocator/icon.png",
+  "icon": "assets/relay/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [

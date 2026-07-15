@@ -3,15 +3,17 @@ package dev.spog.teamlocator.client.config;
 import java.util.UUID;
 
 /**
- * One entry in a trust or block list. Identity is the {@link #uuid} (stable and authoritative on
+ * One entry in a trust list. Identity is the {@link #uuid} (stable and authoritative on
  * online-mode servers); {@link #name} is a display cache refreshed from the tab list and never
  * used for routing. {@link #hidden} lets the user hide their coordinates from this specific player
- * while keeping them on the list.
+ * while keeping them on the list; {@link #mutePings} keeps sharing coordinates with them but
+ * silences their attack pings locally.
  */
 public class TrustEntry {
     public String uuid;
     public String name;
     public boolean hidden;
+    public boolean mutePings;
 
     public TrustEntry() {
     }

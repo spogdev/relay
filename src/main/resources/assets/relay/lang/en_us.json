@@ -1,0 +1,23 @@
+{
+  "key.relay.ping": "Send Attack Ping",
+  "key.categories.relay": "Relay",
+  "relay.config.title": "Relay Config",
+  "relay.config.active_list": "Active List",
+  "relay.config.active_list.global": "Global",
+  "relay.config.active_list.server": "This Server",
+  "relay.config.global_list": "Global Trust List",
+  "relay.config.server_list": "Server Trust List",
+  "relay.config.sharing_enabled": "Share My Coordinates",
+  "relay.config.add_player": "Add Player",
+  "relay.config.add": "Add",
+  "relay.config.remove": "Remove",
+  "relay.config.hidden": "Hidden",
+  "relay.config.visible": "Visible",
+  "relay.config.pings_on": "Pings: On",
+  "relay.config.pings_muted": "Pings: Muted",
+  "relay.config.no_server": "Not connected to a server",
+  "relay.config.lookup_pending": "Looking up %s...",
+  "relay.config.lookup_failed": "Player not found: %s",
+  "relay.config.relay_url": "Relay Address",
+  "relay.config.done": "Done"
+}

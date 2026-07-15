@@ -49,9 +49,9 @@ public final class RelayClient {
         return t;
     });
 
-    /** Supplies the current trust/block sets for the post-auth sync (breaks a class cycle). */
+    /** Supplies the current trust / muted-ping sets from config (breaks a class cycle). */
     private final Supplier<Set<UUID>> sharingSet;
-    private final Supplier<Set<UUID>> blockedSet;
+    private final Supplier<Set<UUID>> mutedPings;
 
     private volatile WebSocket socket;
     private volatile boolean authenticated;
@@ -65,9 +65,9 @@ public final class RelayClient {
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
     private final Object sendLock = new Object();
 
-    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> blockedSet) {
+    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> mutedPings) {
         this.sharingSet = sharingSet;
-        this.blockedSet = blockedSet;
+        this.mutedPings = mutedPings;
     }
 
     public boolean isReady() {
@@ -170,15 +170,6 @@ public final class RelayClient {
         var arr = new com.google.gson.JsonArray();
         sharingWith.forEach(u -> arr.add(u.toString()));
         o.add("sharingWith", arr);
-        sendIfReady(o);
-    }
-
-    public void sendBlocked(Set<UUID> blocked) {
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "block-update");
-        var arr = new com.google.gson.JsonArray();
-        blocked.forEach(u -> arr.add(u.toString()));
-        o.add("blocked", arr);
         sendIfReady(o);
     }
 
@@ -315,7 +306,6 @@ public final class RelayClient {
         TeamLocatorConstants.LOGGER.info("Relay authenticated");
         // The relay lost our routing state with the old socket; push it fresh.
         sendTrust(sharingSet.get());
-        sendBlocked(blockedSet.get());
     }
 
     private void onSnapshot(JsonObject obj) {
@@ -342,9 +332,9 @@ public final class RelayClient {
     private void onPingBroadcast(JsonObject obj) {
         try {
             UUID attacker = UUID.fromString(obj.get("attacker").getAsString());
-            // Defense in depth: the relay already filters blocked senders, but honor our local
-            // block list too in case of a stale or misbehaving relay.
-            if (!blockedSet.get().contains(attacker)) {
+            // Muting is a purely local preference: keep sharing coordinates with this player but
+            // ignore their attack pings.
+            if (!mutedPings.get().contains(attacker)) {
                 ClientState.flagAttacked(attacker);
                 playPingSound();
             }

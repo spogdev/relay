@@ -25,9 +25,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Hand-rolled config screen (no cloth-config). Shows the trust list for the active mode
- * (Global / This Server) with per-player hide and mute-pings toggles. Global controls sit at the
- * top: active-mode cycle, the "share my coordinates" toggle, and the HUD position/size sliders.
+ * Hand-rolled config screen (no cloth-config). Grouped into HUD, Pings, and Trust List sections,
+ * with the trust list at the bottom: the trust list shows the active mode (Global / This Server)
+ * with per-player hide and mute-pings toggles.
  * Any change is written to disk and pushed to the relay immediately via
  * {@link TeamLocatorClient#syncToServer()}.
  */
@@ -52,7 +52,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 134;
+    private static final int LIST_TOP = 170;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -66,7 +66,30 @@ public class TeamLocatorConfigScreen extends Screen {
     protected void init() {
         int cx = this.width / 2;
 
-        // --- Active-list mode cycle (Global / This Server) ---
+        // --- HUD section: position sliders side by side, size slider below ---
+        addRenderableWidget(new HudPositionSlider(cx - 205, 30, 200, 20, "HUD X", config.hudX, v -> {
+            config.hudX = v;
+            config.save();
+        }));
+        addRenderableWidget(new HudPositionSlider(cx + 5, 30, 200, 20, "HUD Y", config.hudY, v -> {
+            config.hudY = v;
+            config.save();
+        }));
+        addRenderableWidget(new HudPositionSlider(cx - 205, 54, 200, 20, "HUD Size", 0.5, 2.0,
+                config.hudScale, v -> {
+            config.hudScale = v;
+            config.save();
+        }));
+
+        // --- Pings section: cross-server pings toggle ---
+        addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
+                .create(cx - 205, 88, 200, 20, Component.translatable("relay.config.cross_server_pings"),
+                        (btn, value) -> {
+                            config.crossServerPings = value;
+                            config.save();
+                        }));
+
+        // --- Trust List section: active-list mode cycle (Global / This Server) ---
         // With no server there is no server list to edit: pin the mode to GLOBAL and grey the
         // button out entirely instead of letting it cycle into an unusable state.
         boolean serverAvailable = TeamConfig.currentServerKey() != null;
@@ -77,7 +100,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, 24, 200, 20, Component.translatable("relay.config.active_list"),
+                .create(cx - 205, 122, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             config.save();
@@ -89,44 +112,21 @@ public class TeamLocatorConfigScreen extends Screen {
 
         // --- Global master toggle: stop sharing my coordinates with everyone at once ---
         addRenderableWidget(CycleButton.onOffBuilder(config.globalShareEnabled)
-                .create(cx + 5, 24, 200, 20, Component.translatable("relay.config.sharing_enabled"),
+                .create(cx + 5, 122, 200, 20, Component.translatable("relay.config.sharing_enabled"),
                         (btn, value) -> {
                             config.globalShareEnabled = value;
                             config.save();
                             TeamLocatorClient.syncToServer();
                         }));
 
-        // --- HUD position sliders side by side, each a full column wide ---
-        addRenderableWidget(new HudPositionSlider(cx - 205, 48, 200, 20, "HUD X", config.hudX, v -> {
-            config.hudX = v;
-            config.save();
-        }));
-        addRenderableWidget(new HudPositionSlider(cx + 5, 48, 200, 20, "HUD Y", config.hudY, v -> {
-            config.hudY = v;
-            config.save();
-        }));
-
-        // --- Cross-server pings toggle + HUD size slider on the third row ---
-        addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx - 205, 72, 200, 20, Component.translatable("relay.config.cross_server_pings"),
-                        (btn, value) -> {
-                            config.crossServerPings = value;
-                            config.save();
-                        }));
-        addRenderableWidget(new HudPositionSlider(cx + 5, 72, 200, 20, "HUD Size", 0.5, 2.0,
-                config.hudScale, v -> {
-            config.hudScale = v;
-            config.save();
-        }));
-
         // --- Add-player row spanning the full 410px band: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx - 205, 96, 340, 20,
+        nameInput = new EditBox(this.font, cx - 205, 146, 340, 20,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
         addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, 96, 65, 20).build());
+                b -> addTypedPlayer()).bounds(cx + 140, 146, 65, 20).build());
 
         // --- List rows ---
         List<TrustEntry> entries = currentList();
@@ -144,7 +144,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // The EditBox itself is borderless and sits inside the frame, after the scheme label.
         int frameX = cx - 205;
         int frameY = this.height - 28;
-        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL) + 4;
+        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL);
         relayUrlInput = new EditBox(this.font, textStart, frameY + 6,
                 frameX + 200 - 4 - textStart, 12, Component.translatable("relay.config.relay_url"));
         relayUrlInput.setBordered(false);
@@ -200,6 +200,12 @@ public class TeamLocatorConfigScreen extends Screen {
 
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         graphics.centeredText(this.font, this.title, this.width / 2, 8, 0xFFFFFFFF);
+
+        // Section headers for the HUD and Pings groups.
+        graphics.text(this.font, Component.translatable("relay.config.section.hud"),
+                cx - 205, 20, 0xFFA0A0A0, false);
+        graphics.text(this.font, Component.translatable("relay.config.section.pings"),
+                cx - 205, 78, 0xFFA0A0A0, false);
 
         // Section header for the list, plus lookup feedback on the right.
         Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL

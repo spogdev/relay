@@ -22,6 +22,8 @@
   "relay.config.no_server": "Not connected to a server",
   "relay.config.lookup_pending": "Looking up %s...",
   "relay.config.lookup_failed": "Player not found: %s",
+  "relay.config.section.hud": "HUD",
+  "relay.config.section.pings": "Pings",
   "relay.config.relay_url": "Relay Address",
   "relay.config.done": "Done",
   "relay.toast.attacked": "%s is requesting support",

@@ -36,6 +36,8 @@ public class TeamConfig {
     public boolean globalShareEnabled = true;
     /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
     public boolean crossServerPings = true;
+    /** Per-player client-side ping display cooldown, in seconds (0 = no cooldown). */
+    public int pingCooldownSeconds = 15;
     /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
     public String relayUrl = DEFAULT_RELAY_ADDRESS;
 
@@ -99,6 +101,7 @@ public class TeamConfig {
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
+        if (pingCooldownSeconds < 0 || pingCooldownSeconds > 60) pingCooldownSeconds = 15;
         if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
         relayUrl = normalizeRelayAddress(relayUrl);
         if (global == null) global = new TrustList();

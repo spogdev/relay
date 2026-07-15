@@ -52,7 +52,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 170;
+    private static final int LIST_TOP = 216;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -66,28 +66,42 @@ public class TeamLocatorConfigScreen extends Screen {
     protected void init() {
         int cx = this.width / 2;
 
+        // --- Location section: global master toggle — stop sharing my coordinates with everyone at once ---
+        addRenderableWidget(CycleButton.onOffBuilder(config.globalShareEnabled)
+                .create(cx - 205, 36, 200, 20, Component.translatable("relay.config.sharing_enabled"),
+                        (btn, value) -> {
+                            config.globalShareEnabled = value;
+                            config.save();
+                            TeamLocatorClient.syncToServer();
+                        }));
+
         // --- HUD section: position sliders side by side, size slider below ---
-        addRenderableWidget(new HudPositionSlider(cx - 205, 30, 200, 20, "HUD X", config.hudX, v -> {
+        addRenderableWidget(new HudPositionSlider(cx - 205, 80, 200, 20, "HUD X", config.hudX, v -> {
             config.hudX = v;
             config.save();
         }));
-        addRenderableWidget(new HudPositionSlider(cx + 5, 30, 200, 20, "HUD Y", config.hudY, v -> {
+        addRenderableWidget(new HudPositionSlider(cx + 5, 80, 200, 20, "HUD Y", config.hudY, v -> {
             config.hudY = v;
             config.save();
         }));
-        addRenderableWidget(new HudPositionSlider(cx - 205, 54, 200, 20, "HUD Size", 0.5, 2.0,
+        addRenderableWidget(new HudPositionSlider(cx - 205, 104, 200, 20, "HUD Size", 0.5, 2.0,
                 config.hudScale, v -> {
             config.hudScale = v;
             config.save();
         }));
 
-        // --- Pings section: cross-server pings toggle ---
+        // --- Pings section: cross-server pings toggle | ping display cooldown ---
         addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx - 205, 88, 200, 20, Component.translatable("relay.config.cross_server_pings"),
+                .create(cx - 205, 148, 200, 20, Component.translatable("relay.config.cross_server_pings"),
                         (btn, value) -> {
                             config.crossServerPings = value;
                             config.save();
                         }));
+        addRenderableWidget(new SecondsSlider(cx + 5, 148, 200, 20, "Ping Cooldown", 0, 60,
+                config.pingCooldownSeconds, v -> {
+            config.pingCooldownSeconds = v;
+            config.save();
+        }));
 
         // --- Trust List section: active-list mode cycle (Global / This Server) ---
         // With no server there is no server list to edit: pin the mode to GLOBAL and grey the
@@ -100,7 +114,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, 122, 200, 20, Component.translatable("relay.config.active_list"),
+                .create(cx - 205, 192, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             config.save();
@@ -110,23 +124,14 @@ public class TeamLocatorConfigScreen extends Screen {
         modeButton.active = serverAvailable;
         addRenderableWidget(modeButton);
 
-        // --- Global master toggle: stop sharing my coordinates with everyone at once ---
-        addRenderableWidget(CycleButton.onOffBuilder(config.globalShareEnabled)
-                .create(cx + 5, 122, 200, 20, Component.translatable("relay.config.sharing_enabled"),
-                        (btn, value) -> {
-                            config.globalShareEnabled = value;
-                            config.save();
-                            TeamLocatorClient.syncToServer();
-                        }));
-
-        // --- Add-player row spanning the full 410px band: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx - 205, 146, 340, 20,
+        // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
+        nameInput = new EditBox(this.font, cx + 5, 192, 130, 20,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
         addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, 146, 65, 20).build());
+                b -> addTypedPlayer()).bounds(cx + 140, 192, 65, 20).build());
 
         // --- List rows ---
         List<TrustEntry> entries = currentList();
@@ -201,19 +206,21 @@ public class TeamLocatorConfigScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         graphics.centeredText(this.font, this.title, this.width / 2, 8, 0xFFFFFFFF);
 
-        // Section headers for the HUD and Pings groups.
+        // Section headers for the Location, HUD, and Pings groups.
+        graphics.text(this.font, Component.translatable("relay.config.section.location"),
+                cx - 205, 24, 0xFFA0A0A0, false);
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
-                cx - 205, 20, 0xFFA0A0A0, false);
+                cx - 205, 68, 0xFFA0A0A0, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
-                cx - 205, 78, 0xFFA0A0A0, false);
+                cx - 205, 136, 0xFFA0A0A0, false);
 
         // Section header for the list, plus lookup feedback on the right.
         Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.global_list" : "relay.config.server_list");
-        graphics.text(this.font, header, cx - 205, LIST_TOP - 12, 0xFFA0A0A0, false);
+        graphics.text(this.font, header, cx - 205, 180, 0xFFA0A0A0, false);
         if (addStatus != null) {
             graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
-                    LIST_TOP - 12, addStatusColor, false);
+                    180, addStatusColor, false);
         }
 
         if (config.activeMode == TeamConfig.Mode.SERVER && TeamConfig.currentServerKey() == null) {

@@ -11,19 +11,25 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
  * Decides how a received attack ping is presented. Every ping shows a toast naming the attacker
  * and their server, wherever we are — in-game, at the menu, on another server — and plays the
  * three-ding alert. A ping from someone on our own MC server additionally flashes them red on the
- * HUD. Cross-server pings can be opted out of; muted players are silenced entirely.
+ * HUD. Cross-server pings can be opted out of; muted players are silenced entirely, and repeat
+ * pings from the same attacker are hidden for the configured per-player display cooldown.
  */
 @Environment(EnvType.CLIENT)
 public final class PingHandler {
     private static final SystemToast.SystemToastId PING_TOAST = new SystemToast.SystemToastId();
     private static final SystemToast.SystemToastId PING_ACK_TOAST = new SystemToast.SystemToastId();
+
+    /** When each attacker's ping was last shown, for the anti-spam display cooldown. */
+    private static final Map<UUID, Long> lastDisplayedAt = new ConcurrentHashMap<>();
 
     private PingHandler() {
     }
@@ -42,6 +48,15 @@ public final class PingHandler {
         if (!sameServer && !config.crossServerPings) {
             return;
         }
+        // Anti-spam: the ping is still received, just not shown while this attacker pinged
+        // within the last pingCooldownSeconds.
+        long now = System.currentTimeMillis();
+        long cooldownMs = config.pingCooldownSeconds * 1000L;
+        Long last = lastDisplayedAt.get(attacker);
+        if (last != null && now - last < cooldownMs) {
+            return;
+        }
+        lastDisplayedAt.put(attacker, now);
         Minecraft mc = Minecraft.getInstance();
         if (sameServer) {
             ClientState.flagAttacked(attacker);

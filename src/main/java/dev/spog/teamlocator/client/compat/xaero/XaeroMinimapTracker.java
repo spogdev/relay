@@ -6,8 +6,6 @@ import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
@@ -59,23 +57,19 @@ public final class XaeroMinimapTracker implements IRenderedPlayerTracker<Tracked
     }
 
     /**
-     * A live view of the relay store — same entries and expiry semantics as the HUD, minus anyone
-     * whose real player entity is loaded in the local level: Xaero's own radar already renders
-     * them, and feeding a second (slightly stale) copy makes its radar-vs-tracker dedup flicker.
-     * Config is checked per call, so the map-icons toggle applies instantly.
+     * A live view of the relay store — same entries and expiry semantics as the HUD. Deliberately
+     * unfiltered: Xaero draws the IN_WORLD floating icon only from tracker elements, so nearby
+     * teammates must stay in the feed or they lose it. Dedup against Xaero's native radar on the
+     * map passes lives in the tracked-player renderer mixin instead (Xaero's own flag-based dedup
+     * races our 5 Hz updates and flickers). Config is checked per call, so the map-icons toggle
+     * applies instantly.
      */
     @Override
     public Iterator<TrackedPos> getTrackedPlayerIterator() {
         if (!TeamLocatorClient.CONFIG.xaeroMapIcons) {
             return Collections.emptyIterator();
         }
-        ClientLevel level = Minecraft.getInstance().level;
-        if (level == null) {
-            return ClientState.latest().iterator();
-        }
-        return ClientState.latest().stream()
-                .filter(pos -> level.getPlayerByUUID(pos.id()) == null)
-                .iterator();
+        return ClientState.latest().iterator();
     }
 
     private static final class Reader implements ITrackedPlayerReader<TrackedPos> {

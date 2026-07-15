@@ -24,6 +24,8 @@
     "minecraft": ">=26.1"
   },
   "suggests": {
-    "modmenu": "*"
+    "modmenu": "*",
+    "xaerominimap": "*",
+    "xaeroworldmap": "*"
   }
 }

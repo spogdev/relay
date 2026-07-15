@@ -2,6 +2,7 @@ package dev.spog.teamlocator.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.spog.teamlocator.TeamLocatorConstants;
+import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.gui.TeamLocatorConfigScreen;
 import dev.spog.teamlocator.client.hud.TeamHud;
@@ -72,6 +73,9 @@ public class TeamLocatorClient implements ClientModInitializer {
                 "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
+
+        // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.
+        XaeroCompat.init();
 
         // The relay connection is held for the whole client lifetime — including the title screen
         // and singleplayer — so cross-server attack pings arrive anywhere. Only the scope changes.

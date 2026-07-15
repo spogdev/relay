@@ -15,6 +15,8 @@ import net.minecraft.resources.Identifier;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -268,6 +270,7 @@ public final class RelayClient {
             }
             case "position-snapshot" -> onSnapshot(obj);
             case "ping-broadcast" -> onPingBroadcast(obj);
+            case "ping-ack" -> onPingAck(obj);
             default -> { }
         }
     }
@@ -338,5 +341,21 @@ public final class RelayClient {
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Bad ping broadcast: {}", e.toString());
         }
+    }
+
+    /** The relay telling us who received our own ping (an old relay never sends this). */
+    private void onPingAck(JsonObject obj) {
+        if (!obj.has("receivers") || !obj.get("receivers").isJsonArray()) {
+            return;
+        }
+        List<UUID> receivers = new ArrayList<>();
+        for (var el : obj.getAsJsonArray("receivers")) {
+            try {
+                receivers.add(UUID.fromString(el.getAsString()));
+            } catch (RuntimeException ignored) {
+                // skip a malformed uuid rather than dropping the whole ack
+            }
+        }
+        PingHandler.onPingAck(receivers);
     }
 }

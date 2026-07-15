@@ -27,7 +27,7 @@ import java.util.UUID;
 /**
  * Hand-rolled config screen (no cloth-config). Shows the trust list for the active mode
  * (Global / This Server) with per-player hide and mute-pings toggles. Global controls sit at the
- * top: active-mode cycle, the "share my coordinates" toggle, and the two HUD position sliders.
+ * top: active-mode cycle, the "share my coordinates" toggle, and the HUD position/size sliders.
  * Any change is written to disk and pushed to the relay immediately via
  * {@link TeamLocatorClient#syncToServer()}.
  */
@@ -52,7 +52,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 110;
+    private static final int LIST_TOP = 134;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -96,30 +96,37 @@ public class TeamLocatorConfigScreen extends Screen {
                             TeamLocatorClient.syncToServer();
                         }));
 
-        // --- Cross-server pings toggle + HUD position sliders sharing the second row ---
-        addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx - 205, 48, 200, 20, Component.translatable("relay.config.cross_server_pings"),
-                        (btn, value) -> {
-                            config.crossServerPings = value;
-                            config.save();
-                        }));
-        addRenderableWidget(new HudPositionSlider(cx + 5, 48, 95, 20, "HUD X", config.hudX, v -> {
+        // --- HUD position sliders side by side, each a full column wide ---
+        addRenderableWidget(new HudPositionSlider(cx - 205, 48, 200, 20, "HUD X", config.hudX, v -> {
             config.hudX = v;
             config.save();
         }));
-        addRenderableWidget(new HudPositionSlider(cx + 110, 48, 95, 20, "HUD Y", config.hudY, v -> {
+        addRenderableWidget(new HudPositionSlider(cx + 5, 48, 200, 20, "HUD Y", config.hudY, v -> {
             config.hudY = v;
             config.save();
         }));
 
+        // --- Cross-server pings toggle + HUD size slider on the third row ---
+        addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
+                .create(cx - 205, 72, 200, 20, Component.translatable("relay.config.cross_server_pings"),
+                        (btn, value) -> {
+                            config.crossServerPings = value;
+                            config.save();
+                        }));
+        addRenderableWidget(new HudPositionSlider(cx + 5, 72, 200, 20, "HUD Size", 0.5, 2.0,
+                config.hudScale, v -> {
+            config.hudScale = v;
+            config.save();
+        }));
+
         // --- Add-player row spanning the full 410px band: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx - 205, 72, 340, 20,
+        nameInput = new EditBox(this.font, cx - 205, 96, 340, 20,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
         addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, 72, 65, 20).build());
+                b -> addTypedPlayer()).bounds(cx + 140, 96, 65, 20).build());
 
         // --- List rows ---
         List<TrustEntry> entries = currentList();

@@ -3,7 +3,7 @@
   "id": "relay",
   "version": "${version}",
   "name": "Relay",
-  "description": "Private team communication.",
+  "description": "Secure and private team communication/organisation network",
   "authors": [
     "Spog"
   ],

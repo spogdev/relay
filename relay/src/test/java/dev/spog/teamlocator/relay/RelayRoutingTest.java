@@ -83,6 +83,8 @@ class RelayRoutingTest {
         final List<JsonObject> snapshots = new ArrayList<>();
         final List<String> pings = new ArrayList<>();
         final List<String> pingServers = new ArrayList<>();
+        /** Each element is one ping-ack's receiver-UUID list. */
+        final List<List<String>> pingAcks = new ArrayList<>();
         private final Map<String, CountDownLatch> waiters = new ConcurrentHashMap<>();
 
         TestClient(String name, String mcServer) throws Exception {
@@ -127,6 +129,14 @@ class RelayRoutingTest {
                         pingServers.add(obj.has("mcServer") ? obj.get("mcServer").getAsString() : null);
                     }
                     release("ping");
+                }
+                case "ping-ack" -> {
+                    List<String> receivers = new ArrayList<>();
+                    obj.getAsJsonArray("receivers").forEach(e -> receivers.add(e.getAsString()));
+                    synchronized (pingAcks) {
+                        pingAcks.add(receivers);
+                    }
+                    release("ping-ack");
                 }
                 default -> { }
             }
@@ -268,11 +278,17 @@ class RelayRoutingTest {
         settle();
 
         CountDownLatch bobPing = bob.expect("ping");
+        CountDownLatch aliceAck = alice.expect("ping-ack");
         alice.sendAttackPing();
         assertTrue(bobPing.await(5, TimeUnit.SECONDS), "Bob mutually trusts Alice and must get the ping");
+        assertTrue(aliceAck.await(5, TimeUnit.SECONDS), "Alice must be told who received her ping");
 
         assertTrue(bob.sawPingFrom(alice));
         assertFalse(carol.sawPingFrom(alice), "one-way trust must NOT deliver a ping");
+        synchronized (alice.pingAcks) {
+            assertEquals(List.of(bob.uuid.toString()), alice.pingAcks.get(0),
+                    "the ack must name exactly the players who got the ping");
+        }
     }
 
     @Test
@@ -286,10 +302,16 @@ class RelayRoutingTest {
         bob.sendBlocked("alice");
         settle();
 
+        CountDownLatch aliceAck = alice.expect("ping-ack");
         alice.sendAttackPing();
         settle();
 
         assertFalse(bob.sawPingFrom(alice), "a blocked sender's ping must be dropped");
+        assertTrue(aliceAck.await(5, TimeUnit.SECONDS));
+        synchronized (alice.pingAcks) {
+            assertTrue(alice.pingAcks.get(0).isEmpty(),
+                    "nobody received the ping, so the ack must be empty");
+        }
     }
 
     @Test
@@ -339,9 +361,11 @@ class RelayRoutingTest {
 
         CountDownLatch bobPing = bob.expect("ping");
         CountDownLatch carolPing = menuFriend.expect("ping");
+        CountDownLatch aliceAck = alice.expect("ping-ack");
         alice.sendAttackPing();
         assertTrue(bobPing.await(5, TimeUnit.SECONDS), "ping must reach a teammate on another server");
         assertTrue(carolPing.await(5, TimeUnit.SECONDS), "ping must reach a teammate at the menu");
+        assertTrue(aliceAck.await(5, TimeUnit.SECONDS));
 
         assertTrue(bob.sawPingFrom(alice));
         assertTrue(menuFriend.sawPingFrom(alice));
@@ -349,6 +373,11 @@ class RelayRoutingTest {
         synchronized (bob.pings) {
             assertEquals("play.example.net", bob.pingServers.get(0),
                     "broadcast must name the attacker's server");
+        }
+        synchronized (alice.pingAcks) {
+            assertEquals(java.util.Set.of(bob.uuid.toString(), menuFriend.uuid.toString()),
+                    java.util.Set.copyOf(alice.pingAcks.get(0)),
+                    "the ack must list the cross-server and menu receivers, not the stranger");
         }
     }
 

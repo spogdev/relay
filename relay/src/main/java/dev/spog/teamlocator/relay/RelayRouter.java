@@ -96,12 +96,14 @@ public final class RelayRouter {
      * Unlike positions, pings deliberately cross MC-server scopes — a teammate at the main menu or
      * on another server still gets notified. The broadcast carries the attacker's scope so the
      * client can present the two cases differently (and let the user opt out of cross-server ones).
+     * The attacker gets a {@link Messages.PingAck} back listing who was actually reached.
      */
     public void handlePing(Session attacker) {
         UUID attackerId = attacker.uuid();
         Messages.PingBroadcast payload =
                 new Messages.PingBroadcast(attackerId.toString(), attacker.scope());
 
+        List<String> receivers = new ArrayList<>();
         for (Session viewer : registry.allSessions()) {
             UUID viewerId = viewer.uuid();
             if (viewerId.equals(attackerId)) {
@@ -115,6 +117,8 @@ public final class RelayRouter {
                 continue; // viewer blocked this sender
             }
             registry.send(viewer, payload);
+            receivers.add(viewerId.toString());
         }
+        registry.send(attacker, new Messages.PingAck(receivers));
     }
 }

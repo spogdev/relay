@@ -139,4 +139,17 @@ public final class Messages {
             this.mcServer = mcServer;
         }
     }
+
+    /**
+     * Relay's reply to {@link Ping}: the UUIDs the ping was actually delivered to (possibly
+     * nobody), so the pinger's client can tell them whether help was alerted.
+     */
+    public static final class PingAck {
+        public String type = "ping-ack";
+        public List<String> receivers;
+
+        public PingAck(List<String> receivers) {
+            this.receivers = receivers;
+        }
+    }
 }

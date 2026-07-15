@@ -3,6 +3,7 @@ package dev.spog.teamlocator.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.config.TeamConfig;
+import dev.spog.teamlocator.client.gui.TeamLocatorConfigScreen;
 import dev.spog.teamlocator.client.hud.TeamHud;
 import dev.spog.teamlocator.client.net.RelayClient;
 import net.fabricmc.api.ClientModInitializer;
@@ -15,9 +16,14 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.UUID;
 
 /**
  * Client entrypoint. The mod is client-only: coordinates and pings travel through the user's relay
@@ -33,7 +39,13 @@ public class TeamLocatorClient implements ClientModInitializer {
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
 
+    /** How far the remove-target keybind searches along the crosshair ray, in blocks. */
+    private static final double TARGET_RANGE = 64.0;
+
     private static KeyMapping pingKey;
+    private static KeyMapping removeTargetKey;
+    private static KeyMapping configKey;
+    private static KeyMapping hudToggleKey;
     private int positionTickCounter;
 
     /**
@@ -50,6 +62,13 @@ public class TeamLocatorClient implements ClientModInitializer {
                 Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "main"));
         pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.ping", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
+        int unbound = InputConstants.UNKNOWN.getValue();
+        removeTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.remove_target", InputConstants.Type.KEYSYM, unbound, category));
+        configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.open_config", InputConstants.Type.KEYSYM, unbound, category));
+        hudToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -69,8 +88,83 @@ public class TeamLocatorClient implements ClientModInitializer {
             while (pingKey.consumeClick()) {
                 RELAY.sendAttackPing();
             }
+            while (removeTargetKey.consumeClick()) {
+                removeTargetedPlayer(client);
+            }
+            while (configKey.consumeClick()) {
+                client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
+            }
+            while (hudToggleKey.consumeClick()) {
+                toggleHud(client);
+            }
             broadcastOwnPosition(client);
         });
+    }
+
+    /** Remove the player under the crosshair from the active trust list (keybind action). */
+    private static void removeTargetedPlayer(Minecraft client) {
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) {
+            return;
+        }
+        AbstractClientPlayer target = playerUnderCrosshair(client, player);
+        TeamConfig.TrustList list = CONFIG.activeList();
+        if (target == null || list == null) {
+            return;
+        }
+        UUID id = target.getUUID();
+        boolean removed = list.trusted.removeIf(e -> {
+            try {
+                return e.uuid().equals(id);
+            } catch (RuntimeException ex) {
+                return false; // corrupt uuid string in config; leave it alone
+            }
+        });
+        if (removed) {
+            CONFIG.save();
+            syncToServer();
+            player.sendOverlayMessage(
+                    Component.translatable("relay.remove_target.removed", target.getName()));
+        } else {
+            player.sendOverlayMessage(
+                    Component.translatable("relay.remove_target.not_listed", target.getName()));
+        }
+    }
+
+    /**
+     * The nearest player intersecting the crosshair ray. Vanilla's {@code crosshairPickEntity}
+     * only reaches melee range, so cast our own ray against slightly-inflated player boxes —
+     * a teammate being pointed at across a field should still be removable.
+     */
+    private static AbstractClientPlayer playerUnderCrosshair(Minecraft client, LocalPlayer player) {
+        Vec3 eye = player.getEyePosition();
+        Vec3 end = eye.add(player.getViewVector(1.0f).scale(TARGET_RANGE));
+        AbstractClientPlayer best = null;
+        double bestDistSq = Double.MAX_VALUE;
+        for (AbstractClientPlayer candidate : client.level.players()) {
+            if (candidate == player || candidate.isSpectator()) {
+                continue;
+            }
+            var hit = candidate.getBoundingBox().inflate(0.3).clip(eye, end);
+            if (hit.isEmpty()) {
+                continue;
+            }
+            double distSq = hit.get().distanceToSqr(eye);
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static void toggleHud(Minecraft client) {
+        CONFIG.hudEnabled = !CONFIG.hudEnabled;
+        CONFIG.save();
+        if (client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable(
+                    CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
+        }
     }
 
     /** The client now sources its own coordinates — they no longer come from a server mod. */

@@ -56,6 +56,10 @@ public class TeamConfig {
     /** HUD anchor as a fraction of screen size so it survives resolution / GUI-scale changes. */
     public double hudX = 0.01;
     public double hudY = 0.30;
+    /** HUD size multiplier (0.5–2.0). */
+    public double hudScale = 1.0;
+    /** Master HUD visibility, flipped by the toggle-HUD keybind. */
+    public boolean hudEnabled = true;
     public TrustList global = new TrustList();
     public java.util.Map<String, TrustList> servers = new java.util.HashMap<>();
 
@@ -94,6 +98,7 @@ public class TeamConfig {
     /** Repair nulls that a partial/older JSON file may leave after deserialization. */
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
+        if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
         if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
         relayUrl = normalizeRelayAddress(relayUrl);
         if (global == null) global = new TrustList();

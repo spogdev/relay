@@ -48,7 +48,8 @@ public class TeamHud implements HudElement {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.getConnection() == null || mc.options.hideGui) {
+        if (!config.hudEnabled || mc.player == null || mc.getConnection() == null
+                || mc.options.hideGui) {
             return;
         }
         List<TrackedPos> entries = ClientState.latest();
@@ -83,20 +84,29 @@ public class TeamHud implements HudElement {
             return;
         }
 
-        // Clamp the anchor so every row stays fully on screen even at extreme slider values.
+        // Clamp the anchor so every row stays fully on screen even at extreme slider values,
+        // measuring in post-scale pixels since the whole block is drawn under a scale transform.
+        float scale = (float) config.hudScale;
         int totalHeight = rows.size() * (ROW_HEIGHT + GAP) - GAP;
+        int scaledWidth = Math.round(maxWidth * scale);
+        int scaledHeight = Math.round(totalHeight * scale);
         int baseX = (int) Math.round(config.hudX * graphics.guiWidth());
         int baseY = (int) Math.round(config.hudY * graphics.guiHeight());
-        baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.guiWidth() - maxWidth - EDGE_MARGIN));
-        baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.guiHeight() - totalHeight - EDGE_MARGIN));
+        baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.guiWidth() - scaledWidth - EDGE_MARGIN));
+        baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.guiHeight() - scaledHeight - EDGE_MARGIN));
 
+        var pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(baseX, baseY);
+        pose.scale(scale, scale);
         for (int i = 0; i < rows.size(); i++) {
             Row row = rows.get(i);
-            int y = baseY + i * (ROW_HEIGHT + GAP);
-            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), baseX, y, FACE_SIZE);
+            int y = i * (ROW_HEIGHT + GAP);
+            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0, y, FACE_SIZE);
             int textY = y + (FACE_SIZE - mc.font.lineHeight / 2) / 2;
-            graphics.text(mc.font, row.text(), baseX + FACE_SIZE + 3, textY, row.color(), true);
+            graphics.text(mc.font, row.text(), FACE_SIZE + 3, textY, row.color(), true);
         }
+        pose.popMatrix();
     }
 
     /** {@code minecraft:the_nether} -> "Nether"; unknown ids get their path title-cased. */

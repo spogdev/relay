@@ -1,6 +1,9 @@
 {
   "key.relay.ping": "Send Attack Ping",
-  "key.categories.relay": "Relay",
+  "key.relay.remove_target": "Remove Targeted Player",
+  "key.relay.open_config": "Open Config",
+  "key.relay.toggle_hud": "Toggle HUD",
+  "key.category.relay.main": "Relay",
   "relay.config.title": "Relay Config",
   "relay.config.active_list": "Active List",
   "relay.config.active_list.global": "Global",
@@ -21,6 +24,12 @@
   "relay.config.lookup_failed": "Player not found: %s",
   "relay.config.relay_url": "Relay Address",
   "relay.config.done": "Done",
-  "relay.toast.attacked": "%s is under attack!",
-  "relay.toast.server": "on %s"
+  "relay.toast.attacked": "%s is requesting support",
+  "relay.toast.server": "on %s",
+  "relay.ping.received_by": "Ping received by %s",
+  "relay.ping.no_receivers": "Nobody received your ping",
+  "relay.remove_target.removed": "Removed %s from your trust list",
+  "relay.remove_target.not_listed": "%s is not on your trust list",
+  "relay.hud.shown": "Relay HUD shown",
+  "relay.hud.hidden": "Relay HUD hidden"
 }

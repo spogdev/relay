@@ -32,13 +32,15 @@ public class TeamHud implements HudElement {
     private static final int FACE_SIZE = 8;
     private static final int ROW_HEIGHT = 10;
     private static final int GAP = 2;
-    private static final int COLOR_NORMAL = 0xFFFFFFFF;
     private static final int COLOR_ATTACKED = 0xFFFF5555;
     private static final int EDGE_MARGIN = 2;
 
     private final TeamConfig config;
 
-    private record Row(TrackedPos entry, PlayerSkin skin, String text, int color) {
+    private record Segment(String text, int color) {
+    }
+
+    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments) {
     }
 
     public TeamHud(TeamConfig config) {
@@ -65,20 +67,34 @@ public class TeamHud implements HudElement {
         // UUID until the position entry expires.
         List<Row> rows = new ArrayList<>(entries.size());
         int maxWidth = 0;
+        int primary = config.hudPrimaryArgb();
+        int secondary = config.hudSecondaryArgb();
         for (TrackedPos e : entries) {
             PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
             if (info == null) {
                 continue;
             }
-            String text = "%s  %d, %d, %d".formatted(
-                    info.getProfile().name(),
-                    (int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z()));
+            boolean attacked = ClientState.isUnderAttack(e.id());
+            int pri = attacked ? COLOR_ATTACKED : primary;
+            int sec = attacked ? COLOR_ATTACKED : secondary;
+            List<Segment> segments = new ArrayList<>();
+            segments.add(new Segment(info.getProfile().name() + "  ", pri));
+            segments.add(new Segment(Integer.toString((int) Math.floor(e.x())), sec));
+            segments.add(new Segment(", ", pri));
+            segments.add(new Segment(Integer.toString((int) Math.floor(e.y())), sec));
+            segments.add(new Segment(", ", pri));
+            segments.add(new Segment(Integer.toString((int) Math.floor(e.z())), sec));
             if (!e.dimension().equals(viewerDim)) {
-                text += " (" + prettyDimension(e.dimension()) + ")";
+                segments.add(new Segment(" (", pri));
+                segments.add(new Segment(prettyDimension(e.dimension()), sec));
+                segments.add(new Segment(")", pri));
             }
-            int color = ClientState.isUnderAttack(e.id()) ? COLOR_ATTACKED : COLOR_NORMAL;
-            rows.add(new Row(e, info.getSkin(), text, color));
-            maxWidth = Math.max(maxWidth, FACE_SIZE + 3 + font.width(text));
+            rows.add(new Row(e, info.getSkin(), segments));
+            int textWidth = 0;
+            for (Segment seg : segments) {
+                textWidth += font.width(seg.text());
+            }
+            maxWidth = Math.max(maxWidth, FACE_SIZE + 3 + textWidth);
         }
         if (rows.isEmpty()) {
             return;
@@ -104,7 +120,11 @@ public class TeamHud implements HudElement {
             int y = i * (ROW_HEIGHT + GAP);
             PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0, y, FACE_SIZE);
             int textY = y + (FACE_SIZE - mc.font.lineHeight / 2) / 2;
-            graphics.text(mc.font, row.text(), FACE_SIZE + 3, textY, row.color(), true);
+            int x = FACE_SIZE + 3;
+            for (Segment seg : row.segments()) {
+                graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
+                x += mc.font.width(seg.text());
+            }
         }
         pose.popMatrix();
     }

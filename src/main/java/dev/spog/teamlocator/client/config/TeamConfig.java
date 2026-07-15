@@ -60,6 +60,9 @@ public class TeamConfig {
     public double hudY = 0.30;
     /** HUD size multiplier (0.5–2.0). */
     public double hudScale = 1.0;
+    /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
+    public String hudPrimaryColor = "#FFFFFF";
+    public String hudSecondaryColor = "#AAAAAA";
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
     public TrustList global = new TrustList();
@@ -101,6 +104,8 @@ public class TeamConfig {
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
+        if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
+        if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
         if (pingCooldownSeconds < 0 || pingCooldownSeconds > 60) pingCooldownSeconds = 15;
         if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
         relayUrl = normalizeRelayAddress(relayUrl);
@@ -145,6 +150,25 @@ public class TeamConfig {
             return null; // not connected: the server list is unavailable
         }
         return servers.computeIfAbsent(key, k -> new TrustList());
+    }
+
+    // ---- HUD color helpers ----
+
+    /** True for a "#RRGGBB" hex string. */
+    public static boolean isValidHex(String s) {
+        return s != null && s.matches("#[0-9a-fA-F]{6}");
+    }
+
+    public int hudPrimaryArgb() {
+        return parseHex(hudPrimaryColor, 0xFFFFFFFF);
+    }
+
+    public int hudSecondaryArgb() {
+        return parseHex(hudSecondaryColor, 0xFFAAAAAA);
+    }
+
+    private static int parseHex(String s, int fallback) {
+        return isValidHex(s) ? 0xFF000000 | Integer.parseInt(s.substring(1), 16) : fallback;
     }
 
     // ---- derived sets used by networking ----

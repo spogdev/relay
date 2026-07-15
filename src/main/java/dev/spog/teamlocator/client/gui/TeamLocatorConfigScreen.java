@@ -12,6 +12,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -45,6 +46,8 @@ public class TeamLocatorConfigScreen extends Screen {
     private int scroll;
     private EditBox nameInput;
     private EditBox relayUrlInput;
+    private EditBox primaryColorInput;
+    private EditBox secondaryColorInput;
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
     private final String initialRelayUrl;
     /** Feedback for an in-flight or failed Mojang name lookup; null when idle. */
@@ -90,6 +93,40 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }));
 
+        // --- HUD text colors: hex inputs with live swatches (drawn in extractRenderState) ---
+        primaryColorInput = new EditBox(this.font, cx + 5, 104, 70, 20,
+                Component.translatable("relay.config.hud_primary_color"));
+        primaryColorInput.setTooltip(Tooltip.create(
+                Component.translatable("relay.config.hud_primary_color")));
+        primaryColorInput.setMaxLength(7);
+        primaryColorInput.setValue(config.hudPrimaryColor);
+        primaryColorInput.setResponder(value -> {
+            if (TeamConfig.isValidHex(value)) {
+                config.hudPrimaryColor = value;
+                config.save();
+                primaryColorInput.setTextColor(0xFFFFFFFF);
+            } else {
+                primaryColorInput.setTextColor(0xFFFF5555);
+            }
+        });
+        addRenderableWidget(primaryColorInput);
+        secondaryColorInput = new EditBox(this.font, cx + 107, 104, 70, 20,
+                Component.translatable("relay.config.hud_secondary_color"));
+        secondaryColorInput.setTooltip(Tooltip.create(
+                Component.translatable("relay.config.hud_secondary_color")));
+        secondaryColorInput.setMaxLength(7);
+        secondaryColorInput.setValue(config.hudSecondaryColor);
+        secondaryColorInput.setResponder(value -> {
+            if (TeamConfig.isValidHex(value)) {
+                config.hudSecondaryColor = value;
+                config.save();
+                secondaryColorInput.setTextColor(0xFFFFFFFF);
+            } else {
+                secondaryColorInput.setTextColor(0xFFFF5555);
+            }
+        });
+        addRenderableWidget(secondaryColorInput);
+
         // --- Pings section: cross-server pings toggle | ping display cooldown ---
         addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
                 .create(cx - 205, 148, 200, 20, Component.translatable("relay.config.cross_server_pings"),
@@ -97,7 +134,7 @@ public class TeamLocatorConfigScreen extends Screen {
                             config.crossServerPings = value;
                             config.save();
                         }));
-        addRenderableWidget(new SecondsSlider(cx + 5, 148, 200, 20, "Ping Cooldown", 0, 60,
+        addRenderableWidget(new SecondsSlider(cx + 5, 148, 200, 20, "Alert Cooldown", 0, 60,
                 config.pingCooldownSeconds, v -> {
             config.pingCooldownSeconds = v;
             config.save();
@@ -203,21 +240,25 @@ public class TeamLocatorConfigScreen extends Screen {
                 cx - 205, this.height - 28, 200, 20);
         graphics.text(this.font, SCHEME_LABEL, cx - 205 + 4, this.height - 28 + 6, 0xFFA0A0A0, false);
 
+        // Live color swatches beside the HUD hex inputs: white border, current color inside.
+        drawSwatch(graphics, cx + 78, config.hudPrimaryArgb());
+        drawSwatch(graphics, cx + 180, config.hudSecondaryArgb());
+
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         graphics.centeredText(this.font, this.title, this.width / 2, 8, 0xFFFFFFFF);
 
         // Section headers for the Location, HUD, and Pings groups.
         graphics.text(this.font, Component.translatable("relay.config.section.location"),
-                cx - 205, 24, 0xFFA0A0A0, false);
+                cx - 205, 24, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
-                cx - 205, 68, 0xFFA0A0A0, false);
+                cx - 205, 68, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
-                cx - 205, 136, 0xFFA0A0A0, false);
+                cx - 205, 136, 0xFFFFFFFF, false);
 
         // Section header for the list, plus lookup feedback on the right.
         Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.global_list" : "relay.config.server_list");
-        graphics.text(this.font, header, cx - 205, 180, 0xFFA0A0A0, false);
+        graphics.text(this.font, header, cx - 205, 180, 0xFFFFFFFF, false);
         if (addStatus != null) {
             graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
                     180, addStatusColor, false);
@@ -237,6 +278,12 @@ public class TeamLocatorConfigScreen extends Screen {
             int y = LIST_TOP + i * ROW_H;
             drawFaceAndName(graphics, cx - 205, y, entry);
         }
+    }
+
+    /** 20x20 color preview at (x, 104): a white 1px border around the configured color. */
+    private static void drawSwatch(GuiGraphicsExtractor graphics, int x, int argb) {
+        graphics.fill(x, 104, x + 20, 124, 0xFFFFFFFF);
+        graphics.fill(x + 1, 105, x + 19, 123, argb);
     }
 
     private void drawFaceAndName(GuiGraphicsExtractor graphics, int x, int y, TrustEntry entry) {

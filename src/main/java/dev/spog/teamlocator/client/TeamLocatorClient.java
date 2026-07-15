@@ -87,7 +87,7 @@ public class TeamLocatorClient implements ClientModInitializer {
             RELAY.disconnect();
             return;
         }
-        RELAY.connect(CONFIG.relayUrl, serverKey);
+        RELAY.connect(CONFIG.relayWebSocketUrl(), serverKey);
     }
 
     /**

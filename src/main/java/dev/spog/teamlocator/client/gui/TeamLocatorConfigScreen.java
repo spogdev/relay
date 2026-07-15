@@ -33,6 +33,8 @@ public class TeamLocatorConfigScreen extends Screen {
     private final Screen parent;
     private final TeamConfig config;
 
+    private static final String SCHEME_LABEL = "wss://";
+
     private Tab tab = Tab.TRUST;
     private int scroll;
     private EditBox nameInput;
@@ -41,7 +43,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private final String initialRelayUrl;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 96;
+    private static final int LIST_TOP = 110;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -56,7 +58,13 @@ public class TeamLocatorConfigScreen extends Screen {
         int cx = this.width / 2;
 
         // --- Active-list mode cycle (Global / This Server) ---
+        // With no server there is no server list to edit: pin the mode to GLOBAL and grey the
+        // button out entirely instead of letting it cycle into an unusable state.
         boolean serverAvailable = TeamConfig.currentServerKey() != null;
+        if (!serverAvailable && config.activeMode == TeamConfig.Mode.SERVER) {
+            config.activeMode = TeamConfig.Mode.GLOBAL;
+            config.save();
+        }
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
@@ -67,7 +75,7 @@ public class TeamLocatorConfigScreen extends Screen {
                             TeamLocatorClient.syncToServer();
                             rebuild();
                         });
-        modeButton.active = serverAvailable || config.activeMode == TeamConfig.Mode.GLOBAL;
+        modeButton.active = serverAvailable;
         addRenderableWidget(modeButton);
 
         // --- Global master toggle: stop sharing my coordinates with everyone at once ---
@@ -89,19 +97,18 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }));
 
-        // --- Tab selectors ---
+        // --- Tab selectors + add-player row (one centered 410px band: 95|95|10 gap|145|5|50) ---
         addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.trust_lists"),
-                b -> { tab = Tab.TRUST; scroll = 0; rebuild(); }).bounds(cx - 205, 72, 100, 20).build());
+                b -> { tab = Tab.TRUST; scroll = 0; rebuild(); }).bounds(cx - 205, 72, 95, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.block_list"),
-                b -> { tab = Tab.BLOCK; scroll = 0; rebuild(); }).bounds(cx - 100, 72, 100, 20).build());
+                b -> { tab = Tab.BLOCK; scroll = 0; rebuild(); }).bounds(cx - 105, 72, 95, 20).build());
 
-        // --- Add-player row ---
-        nameInput = new EditBox(this.font, cx + 10, 72, 140, 20,
+        nameInput = new EditBox(this.font, cx + 5, 72, 145, 20,
                 Component.translatable("teamlocator.config.add_player"));
         nameInput.setHint(Component.translatable("teamlocator.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
-        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.add_player"),
+        addRenderableWidget(Button.builder(Component.translatable("teamlocator.config.add"),
                 b -> addTypedPlayer()).bounds(cx + 155, 72, 50, 20).build());
 
         // --- List rows for the current tab ---
@@ -116,14 +123,15 @@ public class TeamLocatorConfigScreen extends Screen {
             buildRow(cx, y, entry, entries);
         }
 
-        // --- Relay URL (the WebSocket service that routes coords; see relay/README.md) ---
-        relayUrlInput = new EditBox(this.font, cx - 205, this.height - 28, 200, 20,
-                Component.translatable("teamlocator.config.relay_url"));
+        // --- Relay address (host only; the wss:// scheme is fixed and drawn as a label) ---
+        int schemeWidth = this.font.width(SCHEME_LABEL) + 4;
+        relayUrlInput = new EditBox(this.font, cx - 205 + schemeWidth, this.height - 28,
+                200 - schemeWidth, 20, Component.translatable("teamlocator.config.relay_url"));
         relayUrlInput.setMaxLength(256);
         relayUrlInput.setHint(Component.translatable("teamlocator.config.relay_url"));
         relayUrlInput.setValue(config.relayUrl);
         relayUrlInput.setResponder(value -> {
-            config.relayUrl = value.trim();
+            config.relayUrl = TeamConfig.normalizeRelayAddress(value);
             config.save();
         });
         addRenderableWidget(relayUrlInput);
@@ -166,7 +174,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 ? Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
                         ? "teamlocator.config.global_list" : "teamlocator.config.server_list")
                 : Component.translatable("teamlocator.config.block_list");
-        graphics.text(this.font, header, cx - 205, LIST_TOP - 10, 0xFFA0A0A0, false);
+        graphics.text(this.font, header, cx - 205, LIST_TOP - 12, 0xFFA0A0A0, false);
+        graphics.text(this.font, SCHEME_LABEL, cx - 205, this.height - 22, 0xFFA0A0A0, false);
 
         if (tab == Tab.TRUST && config.activeMode == TeamConfig.Mode.SERVER
                 && TeamConfig.currentServerKey() == null) {
@@ -241,10 +250,10 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     private Component modeLabel(TeamConfig.Mode mode) {
+        // CycleButton already renders "<name>: <value>", so return only the value here.
         String key = mode == TeamConfig.Mode.GLOBAL
                 ? "teamlocator.config.active_list.global" : "teamlocator.config.active_list.server";
-        return Component.translatable("teamlocator.config.active_list")
-                .append(": ").append(Component.translatable(key));
+        return Component.translatable(key);
     }
 
     private static UUID safeUuid(TrustEntry entry) {

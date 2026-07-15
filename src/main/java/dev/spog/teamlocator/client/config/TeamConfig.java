@@ -34,8 +34,23 @@ public class TeamConfig {
     // ---- persisted fields (Gson) ----
     public Mode activeMode = Mode.GLOBAL;
     public boolean globalShareEnabled = true;
-    /** WebSocket URL of the user's relay service, e.g. {@code wss://relay.example.com}. */
-    public String relayUrl = "";
+    /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
+    public String relayUrl = DEFAULT_RELAY_ADDRESS;
+
+    public static final String DEFAULT_RELAY_ADDRESS = "relay.spog.dev";
+
+    /** The full WebSocket URL for the configured relay host. */
+    public String relayWebSocketUrl() {
+        return relayUrl.isBlank() ? "" : "wss://" + relayUrl;
+    }
+
+    /** Strip a pasted scheme so the stored value is always a bare host. */
+    public static String normalizeRelayAddress(String raw) {
+        String s = raw == null ? "" : raw.trim();
+        if (s.regionMatches(true, 0, "wss://", 0, 6)) s = s.substring(6);
+        if (s.regionMatches(true, 0, "ws://", 0, 5)) s = s.substring(5);
+        return s;
+    }
     /** HUD anchor as a fraction of screen size so it survives resolution / GUI-scale changes. */
     public double hudX = 0.01;
     public double hudY = 0.30;
@@ -78,7 +93,8 @@ public class TeamConfig {
     /** Repair nulls that a partial/older JSON file may leave after deserialization. */
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
-        if (relayUrl == null) relayUrl = "";
+        if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
+        relayUrl = normalizeRelayAddress(relayUrl);
         if (global == null) global = new TrustList();
         if (global.trusted == null) global.trusted = new ArrayList<>();
         if (servers == null) servers = new java.util.HashMap<>();

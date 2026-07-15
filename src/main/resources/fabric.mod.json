@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "teamlocator",
   "version": "${version}",
-  "name": "TeamLocator",
-  "description": "Team communication for PvP: share your coordinates with trusted players, see teammates on a HUD, and ping your team when you're under attack.",
+  "name": "Relay",
+  "description": "Private team communication.",
   "authors": [
-    "spogdev"
+    "Spog"
   ],
   "license": "MIT",
   "icon": "assets/teamlocator/icon.png",

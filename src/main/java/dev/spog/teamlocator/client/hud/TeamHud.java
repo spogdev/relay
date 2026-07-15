@@ -12,14 +12,17 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerSkin;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
 /**
  * Draws one row per tracked player: {@code <face> <name> <x>, <y>, <z>}, with the dimension
- * appended only when that player is in a different dimension than the local viewer. A player
- * flashes red while they are signalling that they are under attack.
+ * appended (in parentheses, prettified) only when that player is in a different dimension than the
+ * local viewer. A player flashes red while they are signalling that they are under attack.
  */
 @Environment(EnvType.CLIENT)
 public class TeamHud implements HudElement {
@@ -30,8 +33,12 @@ public class TeamHud implements HudElement {
     private static final int GAP = 2;
     private static final int COLOR_NORMAL = 0xFFFFFFFF;
     private static final int COLOR_ATTACKED = 0xFFFF5555;
+    private static final int EDGE_MARGIN = 2;
 
     private final TeamConfig config;
+
+    private record Row(TrackedPos entry, PlayerSkin skin, String text, int color) {
+    }
 
     public TeamHud(TeamConfig config) {
         this.config = config;
@@ -43,42 +50,74 @@ public class TeamHud implements HudElement {
         if (mc.player == null || mc.getConnection() == null || mc.options.hideGui) {
             return;
         }
-        var entries = ClientState.latest();
+        List<TrackedPos> entries = ClientState.latest();
         if (entries.isEmpty()) {
             return;
         }
 
         Font font = mc.font;
         Identifier viewerDim = mc.player.level().dimension().identifier();
+
+        // First pass: build the rows so we know their widths before placing anything. A player
+        // with no PlayerInfo has left this server — drop the row immediately instead of showing a
+        // UUID until the position entry expires.
+        List<Row> rows = new ArrayList<>(entries.size());
+        int maxWidth = 0;
+        for (TrackedPos e : entries) {
+            PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
+            if (info == null) {
+                continue;
+            }
+            String text = "%s  %d, %d, %d".formatted(
+                    info.getProfile().name(),
+                    (int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z()));
+            if (!e.dimension().equals(viewerDim)) {
+                text += " (" + prettyDimension(e.dimension()) + ")";
+            }
+            int color = ClientState.isUnderAttack(e.id()) ? COLOR_ATTACKED : COLOR_NORMAL;
+            rows.add(new Row(e, info.getSkin(), text, color));
+            maxWidth = Math.max(maxWidth, FACE_SIZE + 3 + font.width(text));
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        // Clamp the anchor so every row stays fully on screen even at extreme slider values.
+        int totalHeight = rows.size() * (ROW_HEIGHT + GAP) - GAP;
         int baseX = (int) Math.round(config.hudX * graphics.guiWidth());
         int baseY = (int) Math.round(config.hudY * graphics.guiHeight());
+        baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.guiWidth() - maxWidth - EDGE_MARGIN));
+        baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.guiHeight() - totalHeight - EDGE_MARGIN));
 
-        int row = 0;
-        for (TrackedPos e : entries) {
-            int y = baseY + row * (ROW_HEIGHT + GAP);
-
-            // Face from the tab-list skin, falling back to a default skin when the player isn't
-            // in the client's player info (e.g. filtered tab list on some proxies).
-            PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
-            PlayerSkin skin = info != null ? info.getSkin() : DefaultPlayerSkin.get(e.id());
-            PlayerFaceExtractor.extractRenderState(graphics, skin, baseX, y, FACE_SIZE);
-
-            int color = ClientState.isUnderAttack(e.id()) ? COLOR_ATTACKED : COLOR_NORMAL;
-            String name = info != null ? info.getProfile().name() : shortId(e.id());
-            String coords = "%s  %d, %d, %d".formatted(
-                    name, (int) Math.floor(e.x()), (int) Math.floor(e.y()), (int) Math.floor(e.z()));
-            if (!e.dimension().equals(viewerDim)) {
-                coords += " [" + e.dimension().getPath() + "]";
-            }
-
-            int textX = baseX + FACE_SIZE + 3;
-            int textY = y + (FACE_SIZE - font.lineHeight / 2) / 2;
-            graphics.text(font, coords, textX, textY, color, true);
-            row++;
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
+            int y = baseY + i * (ROW_HEIGHT + GAP);
+            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), baseX, y, FACE_SIZE);
+            int textY = y + (FACE_SIZE - mc.font.lineHeight / 2) / 2;
+            graphics.text(mc.font, row.text(), baseX + FACE_SIZE + 3, textY, row.color(), true);
         }
     }
 
-    private static String shortId(java.util.UUID id) {
-        return id.toString().substring(0, 8);
+    /** {@code minecraft:the_nether} -> "Nether"; unknown ids get their path title-cased. */
+    static String prettyDimension(Identifier dim) {
+        return switch (dim.toString()) {
+            case "minecraft:overworld" -> "Overworld";
+            case "minecraft:the_nether" -> "Nether";
+            case "minecraft:the_end" -> "End";
+            default -> {
+                StringBuilder out = new StringBuilder();
+                for (String word : dim.getPath().split("[_/]")) {
+                    if (word.isEmpty() || word.equals("the")) {
+                        continue;
+                    }
+                    if (!out.isEmpty()) {
+                        out.append(' ');
+                    }
+                    out.append(Character.toUpperCase(word.charAt(0)))
+                       .append(word.substring(1).toLowerCase(Locale.ROOT));
+                }
+                yield out.isEmpty() ? dim.getPath() : out.toString();
+            }
+        };
     }
 }

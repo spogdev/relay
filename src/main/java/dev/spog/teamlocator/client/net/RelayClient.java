@@ -346,9 +346,24 @@ public final class RelayClient {
             // block list too in case of a stale or misbehaving relay.
             if (!blockedSet.get().contains(attacker)) {
                 ClientState.flagAttacked(attacker);
+                playPingSound();
             }
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Bad ping broadcast: {}", e.toString());
         }
+    }
+
+    /** Three ascending dings so an attack ping is noticed even without looking at the HUD. */
+    private static void playPingSound() {
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            var sounds = mc.getSoundManager();
+            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.0f), 0);
+            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.3f), 4);
+            sounds.playDelayed(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING, 1.6f), 8);
+        });
     }
 }

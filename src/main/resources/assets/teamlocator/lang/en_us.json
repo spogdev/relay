@@ -1,8 +1,8 @@
 {
   "key.teamlocator.ping": "Send Attack Ping",
-  "key.categories.teamlocator": "TeamLocator",
+  "key.categories.teamlocator": "Relay",
   "teamlocator.hud.attacked": "%s is being attacked!",
-  "teamlocator.config.title": "TeamLocator Config",
+  "teamlocator.config.title": "Relay Config",
   "teamlocator.config.trust_lists": "Trust Lists",
   "teamlocator.config.active_list": "Active List",
   "teamlocator.config.active_list.global": "Global",
@@ -15,10 +15,11 @@
   "teamlocator.config.sharing.off": "Sharing: OFF",
   "teamlocator.config.hud_position": "HUD Position",
   "teamlocator.config.add_player": "Add Player",
+  "teamlocator.config.add": "Add",
   "teamlocator.config.remove": "Remove",
   "teamlocator.config.hidden": "Hidden",
   "teamlocator.config.visible": "Visible",
   "teamlocator.config.no_server": "Not connected to a server",
-  "teamlocator.config.relay_url": "Relay URL (wss://...)",
+  "teamlocator.config.relay_url": "Relay Address",
   "teamlocator.config.done": "Done"
 }

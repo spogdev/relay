@@ -2,9 +2,12 @@ package dev.spog.teamlocator.client.compat.xaero;
 
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
+import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
@@ -13,6 +16,7 @@ import xaero.map.radar.tracker.system.IPlayerTrackerSystem;
 import xaero.map.radar.tracker.system.ITrackedPlayerReader;
 import xaero.map.radar.tracker.system.PlayerTrackerSystemManager;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.UUID;
 
@@ -50,10 +54,24 @@ final class XaeroWorldMapTracker implements IPlayerTrackerSystem<TrackedPos> {
         return reader;
     }
 
-    /** A live view of the relay store — same entries and expiry semantics as the HUD. */
+    /**
+     * A live view of the relay store — same entries and expiry semantics as the HUD, minus anyone
+     * whose real player entity is loaded in the local level: the map's own radar already renders
+     * them, and feeding a second (slightly stale) copy makes its radar-vs-tracker dedup flicker.
+     * Config is checked per call, so the map-icons toggle applies instantly.
+     */
     @Override
     public Iterator<TrackedPos> getTrackedPlayerIterator() {
-        return ClientState.latest().iterator();
+        if (!TeamLocatorClient.CONFIG.xaeroMapIcons) {
+            return Collections.emptyIterator();
+        }
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return ClientState.latest().iterator();
+        }
+        return ClientState.latest().stream()
+                .filter(pos -> level.getPlayerByUUID(pos.id()) == null)
+                .iterator();
     }
 
     private static final class Reader implements ITrackedPlayerReader<TrackedPos> {

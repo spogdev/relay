@@ -65,6 +65,13 @@ public class TeamConfig {
     public String hudSecondaryColor = "#AAAAAA";
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
+    /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */
+    public boolean xaeroMapIcons = true;
+    /**
+     * Show Xaero's floating in-world icon for relay teammates (enforced by the tracked-player
+     * renderer mixin). Minimap/world-map markers are unaffected.
+     */
+    public boolean xaeroInWorldIcons = true;
     public TrustList global = new TrustList();
     public java.util.Map<String, TrustList> servers = new java.util.HashMap<>();
 

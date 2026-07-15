@@ -18,6 +18,9 @@
       "dev.spog.teamlocator.client.gui.ModMenuIntegration"
     ]
   },
+  "mixins": [
+    "relay.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19",
     "fabric-api": "*",

@@ -55,7 +55,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 216;
+    private static final int LIST_TOP = 260;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -140,6 +140,20 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }));
 
+        // --- Xaero's section: map icons | in-world icons (read live by the Xaero trackers) ---
+        addRenderableWidget(CycleButton.onOffBuilder(config.xaeroMapIcons)
+                .create(cx - 205, 192, 200, 20, Component.translatable("relay.config.xaero_map_icons"),
+                        (btn, value) -> {
+                            config.xaeroMapIcons = value;
+                            config.save();
+                        }));
+        addRenderableWidget(CycleButton.onOffBuilder(config.xaeroInWorldIcons)
+                .create(cx + 5, 192, 200, 20, Component.translatable("relay.config.xaero_world_icons"),
+                        (btn, value) -> {
+                            config.xaeroInWorldIcons = value;
+                            config.save();
+                        }));
+
         // --- Trust List section: active-list mode cycle (Global / This Server) ---
         // With no server there is no server list to edit: pin the mode to GLOBAL and grey the
         // button out entirely instead of letting it cycle into an unusable state.
@@ -151,7 +165,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, 192, 200, 20, Component.translatable("relay.config.active_list"),
+                .create(cx - 205, 236, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             config.save();
@@ -162,13 +176,13 @@ public class TeamLocatorConfigScreen extends Screen {
         addRenderableWidget(modeButton);
 
         // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx + 5, 192, 130, 20,
+        nameInput = new EditBox(this.font, cx + 5, 236, 130, 20,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
         addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, 192, 65, 20).build());
+                b -> addTypedPlayer()).bounds(cx + 140, 236, 65, 20).build());
 
         // --- List rows ---
         List<TrustEntry> entries = currentList();
@@ -247,21 +261,23 @@ public class TeamLocatorConfigScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         graphics.centeredText(this.font, this.title, this.width / 2, 8, 0xFFFFFFFF);
 
-        // Section headers for the Location, HUD, and Pings groups.
+        // Section headers for the Location, HUD, Pings, and Xaero's groups.
         graphics.text(this.font, Component.translatable("relay.config.section.location"),
                 cx - 205, 24, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
                 cx - 205, 68, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
                 cx - 205, 136, 0xFFFFFFFF, false);
+        graphics.text(this.font, Component.translatable("relay.config.section.xaero"),
+                cx - 205, 180, 0xFFFFFFFF, false);
 
         // Section header for the list, plus lookup feedback on the right.
         Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.global_list" : "relay.config.server_list");
-        graphics.text(this.font, header, cx - 205, 180, 0xFFFFFFFF, false);
+        graphics.text(this.font, header, cx - 205, 224, 0xFFFFFFFF, false);
         if (addStatus != null) {
             graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
-                    180, addStatusColor, false);
+                    224, addStatusColor, false);
         }
 
         if (config.activeMode == TeamConfig.Mode.SERVER && TeamConfig.currentServerKey() == null) {

@@ -27,7 +27,7 @@ import java.util.UUID;
  * never import this class from anywhere else.
  */
 @Environment(EnvType.CLIENT)
-final class XaeroWorldMapTracker implements IPlayerTrackerSystem<TrackedPos> {
+public final class XaeroWorldMapTracker implements IPlayerTrackerSystem<TrackedPos> {
     private final ITrackedPlayerReader<TrackedPos> reader = new Reader();
 
     private XaeroWorldMapTracker() {

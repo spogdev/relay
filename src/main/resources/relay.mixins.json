@@ -4,7 +4,8 @@
   "package": "dev.spog.teamlocator.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "client.PlayerTrackerMinimapElementRendererMixin"
+    "client.PlayerTrackerMinimapElementRendererMixin",
+    "client.PlayerTrackerMapElementRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

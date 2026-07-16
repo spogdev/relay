@@ -3,7 +3,7 @@
   "id": "relay",
   "version": "${version}",
   "name": "Relay",
-  "description": "Secure and private team communication/organisation network",
+  "description": "A team communications mod easily allowing teams to locate each other and view other stats about their team in combat.",
   "authors": [
     "Spog"
   ],

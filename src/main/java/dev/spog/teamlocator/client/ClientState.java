@@ -34,7 +34,16 @@ public final class ClientState {
 
     /** Merge one player's freshly-reported position. */
     public static void updatePosition(TrackedPos pos) {
-        positions.put(pos.id(), new Timestamped(pos, System.currentTimeMillis()));
+        long now = System.currentTimeMillis();
+        positions.compute(pos.id(), (id, existing) -> {
+            // Reuse the existing TrackedPos instance when the position is unchanged, so downstream
+            // identity checks (Xaero's element reuse compares the player object by ==) stay stable
+            // and don't rebuild/flicker the tracker element every update.
+            if (existing != null && existing.pos().equals(pos)) {
+                return new Timestamped(existing.pos(), now);
+            }
+            return new Timestamped(pos, now);
+        });
     }
 
     /** Current non-stale positions in a stable order for HUD rendering. */

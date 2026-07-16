@@ -6,6 +6,7 @@ import com.google.gson.JsonParseException;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.RelayToasts;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -71,6 +72,13 @@ public final class RelayClient {
     private volatile String url = "";
     private volatile String mcServerKey = "";
     private volatile long backoffMs = 1_000L;
+    /**
+     * True once we have told the user the connection dropped. Gates the connection toasts to real
+     * state changes: reconnect attempts run every 15s while a relay is down, and toasting each
+     * failure — or each success after a merely momentary blip — would be noise. Set when a
+     * previously-authenticated connection is lost, cleared when auth succeeds again.
+     */
+    private volatile boolean notifiedDisconnect;
 
     /** Serializes sendText calls; the JDK WebSocket rejects overlapping sends. */
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
@@ -102,6 +110,9 @@ public final class RelayClient {
     public void disconnect() {
         active = false;
         authenticated = false;
+        // A deliberate teardown is not an outage: clear the edge so the next connect does not
+        // report itself as a recovery from a drop the user never saw.
+        notifiedDisconnect = false;
         WebSocket ws = socket;
         socket = null;
         if (ws != null) {
@@ -153,10 +164,18 @@ public final class RelayClient {
     }
 
     private void scheduleReconnect() {
+        boolean wasAuthenticated = authenticated;
         authenticated = false;
         socket = null;
         if (!active) {
             return;
+        }
+        // Only the first failure after a working connection is worth a toast: every retry while the
+        // relay stays down funnels through here too. A never-authenticated connection (relay down
+        // when we joined) stays silent — the user never had the feature to lose.
+        if (wasAuthenticated && !notifiedDisconnect) {
+            notifiedDisconnect = true;
+            RelayToasts.connectionLost();
         }
         long delay = backoffMs;
         backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
@@ -343,6 +362,12 @@ public final class RelayClient {
         authenticated = true;
         backoffMs = 1_000L;
         TeamLocatorConstants.LOGGER.info("Relay authenticated");
+        // Balance the "lost" toast, so the user knows teammates are live again. Silent on a first
+        // connect, which announced nothing to begin with.
+        if (notifiedDisconnect) {
+            notifiedDisconnect = false;
+            RelayToasts.connectionRestored();
+        }
         // The relay lost our routing state with the old socket; push it fresh.
         sendTrust(sharingSet.get(), alertSet.get());
     }

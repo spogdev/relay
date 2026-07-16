@@ -50,5 +50,9 @@
   "relay.hud.shown": "Relay HUD shown",
   "relay.hud.hidden": "Relay HUD hidden",
   "relay.in_world_icons.shown": "In-world icons shown",
-  "relay.in_world_icons.hidden": "In-world icons hidden"
+  "relay.in_world_icons.hidden": "In-world icons hidden",
+  "relay.connection.lost": "Relay disconnected",
+  "relay.connection.lost.detail": "Teammates hidden — retrying...",
+  "relay.connection.restored": "Relay reconnected",
+  "relay.connection.restored.detail": "Teammates are back"
 }

@@ -79,6 +79,17 @@ public final class RelayClient {
     private volatile String mcServerKey = "";
     private volatile long backoffMs = 1_000L;
     /**
+     * Generation counter for connection attempts. Every open() claims the next number, and every
+     * async callback (handshake completion, listener events, the Mojang auth task) first checks it
+     * still holds the latest one; a superseded attempt aborts its socket and goes silent instead of
+     * acting. Without this, an attempt whose handshake was still in flight when a reconnect timer
+     * fired could complete anyway, leaving TWO live sockets for one account — the relay then kicks
+     * whichever authenticated first, the kicked one's listener schedules another connection, and
+     * the two sockets kick each other forever (each cycle also burning a Mojang joinServer call,
+     * which trips their rate limiter).
+     */
+    private final java.util.concurrent.atomic.AtomicLong attempt = new java.util.concurrent.atomic.AtomicLong();
+    /**
      * True once we have told the user the connection dropped. Gates the connection toasts to real
      * state changes: reconnect attempts run every 15s while a relay is down, and toasting each
      * failure — or each success after a merely momentary blip — would be noise. Set when a
@@ -118,6 +129,9 @@ public final class RelayClient {
     public void disconnect() {
         active = false;
         authenticated = false;
+        // Invalidate every in-flight attempt: a handshake completing after this must abort itself,
+        // not install a socket the teardown could no longer see.
+        attempt.incrementAndGet();
         // A deliberate teardown is not an outage: clear the edge so the next connect does not
         // report itself as a recovery from a drop the user never saw.
         notifiedDisconnect = false;
@@ -135,6 +149,7 @@ public final class RelayClient {
         if (!active) {
             return;
         }
+        long gen = attempt.incrementAndGet();
         try {
             // Pin HTTP/1.1: with the default client, ALPN can negotiate HTTP/2 against servers
             // that support it (e.g. Caddy), and a WebSocket upgrade cannot ride an h2 connection —
@@ -144,11 +159,15 @@ public final class RelayClient {
                     .build()
                     .newWebSocketBuilder()
                     .connectTimeout(java.time.Duration.ofSeconds(10))
-                    .buildAsync(URI.create(url), new Listener())
+                    .buildAsync(URI.create(url), new Listener(gen))
                     .whenComplete((ws, err) -> {
                         if (err != null) {
                             logConnectFailure(err);
-                            scheduleReconnect();
+                            scheduleReconnect(gen);
+                        } else if (gen != attempt.get() || !active) {
+                            // A newer attempt (or a disconnect) superseded this handshake while it
+                            // was in flight; installing it would leave two live sockets.
+                            abortQuietly(ws);
                         } else {
                             socket = ws;
                             sendJson(hello());
@@ -156,7 +175,14 @@ public final class RelayClient {
                     });
         } catch (Exception e) {
             TeamLocatorConstants.LOGGER.warn("Relay connect failed: {}", e.toString());
-            scheduleReconnect();
+            scheduleReconnect(gen);
+        }
+    }
+
+    private static void abortQuietly(WebSocket ws) {
+        try {
+            ws.abort();
+        } catch (Exception ignored) {
         }
     }
 
@@ -171,7 +197,13 @@ public final class RelayClient {
         }
     }
 
-    private void scheduleReconnect() {
+    private void scheduleReconnect(long gen) {
+        // Only the latest attempt may drive the retry loop. A superseded socket reporting its own
+        // death (the relay kicks the older of two connections for the same account) must not spawn
+        // yet another connection — that is the two-sockets-kicking-each-other loop.
+        if (gen != attempt.get()) {
+            return;
+        }
         boolean wasAuthenticated = authenticated;
         authenticated = false;
         socket = null;
@@ -284,6 +316,12 @@ public final class RelayClient {
     private final class Listener implements WebSocket.Listener {
         /** The JDK WebSocket may deliver a text frame in fragments; accumulate until last. */
         private final StringBuilder partial = new StringBuilder();
+        /** The attempt this socket belongs to; a superseded socket must not act on anything. */
+        private final long gen;
+
+        Listener(long gen) {
+            this.gen = gen;
+        }
 
         @Override
         public void onOpen(WebSocket webSocket) {
@@ -292,12 +330,18 @@ public final class RelayClient {
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            if (gen != attempt.get()) {
+                // Superseded while still receiving (e.g. its auth-ok racing a newer attempt):
+                // acting on the frame would corrupt the newer connection's state.
+                abortQuietly(webSocket);
+                return null;
+            }
             partial.append(data);
             if (last) {
                 String message = partial.toString();
                 partial.setLength(0);
                 try {
-                    handle(GSON.fromJson(message, JsonObject.class));
+                    handle(GSON.fromJson(message, JsonObject.class), gen);
                 } catch (JsonParseException | IllegalStateException | NullPointerException e) {
                     TeamLocatorConstants.LOGGER.debug("Malformed relay frame: {}", e.toString());
                 }
@@ -309,25 +353,25 @@ public final class RelayClient {
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             TeamLocatorConstants.LOGGER.info("Relay connection closed ({} {})", statusCode, reason);
-            scheduleReconnect();
+            scheduleReconnect(gen);
             return null;
         }
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             TeamLocatorConstants.LOGGER.warn("Relay connection error: {}", error.toString());
-            scheduleReconnect();
+            scheduleReconnect(gen);
         }
     }
 
-    private void handle(JsonObject obj) {
+    private void handle(JsonObject obj, long gen) {
         if (obj == null || !obj.has("type")) {
             return;
         }
         switch (obj.get("type").getAsString()) {
-            case "auth-challenge" -> onChallenge(obj.get("serverId").getAsString());
+            case "auth-challenge" -> onChallenge(obj.get("serverId").getAsString(), gen);
             case "auth-ok" -> onAuthOk();
-            case "auth-fail" -> onAuthFail(obj.has("reason") ? obj.get("reason").getAsString() : "?");
+            case "auth-fail" -> onAuthFail(obj.has("reason") ? obj.get("reason").getAsString() : "?", gen);
             case "position-snapshot" -> onSnapshot(obj);
             case "ping-broadcast" -> onPingBroadcast(obj);
             case "ping-ack" -> onPingAck(obj);
@@ -335,9 +379,12 @@ public final class RelayClient {
         }
     }
 
-    private void onChallenge(String serverId) {
+    private void onChallenge(String serverId, long gen) {
         // joinServer is a blocking HTTP call to Mojang — keep it off the WebSocket receive thread.
         executor.execute(() -> {
+            if (gen != attempt.get()) {
+                return; // superseded while queued; don't burn a Mojang call for a dead socket
+            }
             try {
                 Minecraft mc = Minecraft.getInstance();
                 mc.services().sessionService().joinServer(
@@ -346,18 +393,15 @@ public final class RelayClient {
                 o.addProperty("type", "auth-response");
                 sendJson(o);
             } catch (Exception e) {
-                // joinServer also fails transiently (Mojang outage, timeout); killing the relay
-                // permanently would leave the HUD silently dead for the session. Retry with
-                // backoff — the 30s cap keeps a genuinely offline account from hammering Mojang.
+                // joinServer also fails transiently (Mojang outage, rate limit, timeout); killing
+                // the relay permanently would leave the HUD silently dead for the session. Retry
+                // with backoff — the cap keeps a genuinely offline account from hammering Mojang.
                 TeamLocatorConstants.LOGGER.warn("Mojang joinServer failed, will retry: {}", e.toString());
                 WebSocket ws = socket;
                 if (ws != null) {
-                    try {
-                        ws.abort(); // abort() invokes neither onClose nor onError — no double reconnect
-                    } catch (Exception ignored) {
-                    }
+                    abortQuietly(ws); // abort() invokes neither onClose nor onError — no double reconnect
                 }
-                scheduleReconnect();
+                scheduleReconnect(gen);
             }
         });
     }
@@ -373,18 +417,15 @@ public final class RelayClient {
      * hammering Mojang's session server, and the socket is aborted first so the relay is not left
      * holding a dead connection.
      */
-    private void onAuthFail(String reason) {
+    private void onAuthFail(String reason, long gen) {
         TeamLocatorConstants.LOGGER.warn("Relay rejected auth ({}), retrying in {}s",
                 reason, AUTH_FAIL_BACKOFF_MS / 1000);
         WebSocket ws = socket;
         if (ws != null) {
-            try {
-                ws.abort(); // abort() invokes neither onClose nor onError — no double reconnect
-            } catch (Exception ignored) {
-            }
+            abortQuietly(ws); // abort() invokes neither onClose nor onError — no double reconnect
         }
         backoffMs = Math.max(backoffMs, AUTH_FAIL_BACKOFF_MS);
-        scheduleReconnect();
+        scheduleReconnect(gen);
     }
 
     private void onAuthOk() {

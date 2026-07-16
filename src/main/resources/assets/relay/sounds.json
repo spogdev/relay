@@ -1,0 +1,7 @@
+{
+  "alarm": {
+    "sounds": [
+      { "name": "relay:alarm", "stream": false }
+    ]
+  }
+}

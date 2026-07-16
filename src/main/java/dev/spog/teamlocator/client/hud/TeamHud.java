@@ -29,8 +29,8 @@ public class TeamHud implements HudElement {
     public static final Identifier ID =
             Identifier.fromNamespaceAndPath(dev.spog.teamlocator.TeamLocatorConstants.MOD_ID, "hud");
 
-    private static final int FACE_SIZE = 8;
-    private static final int ROW_HEIGHT = 10;
+    private static final int FACE_SIZE = 10;
+    private static final int ROW_HEIGHT = 11;
     private static final int GAP = 2;
     private static final int COLOR_ATTACKED = 0xFFFF5555;
     private static final int EDGE_MARGIN = 2;
@@ -118,8 +118,12 @@ public class TeamHud implements HudElement {
         for (int i = 0; i < rows.size(); i++) {
             Row row = rows.get(i);
             int y = i * (ROW_HEIGHT + GAP);
-            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0, y, FACE_SIZE);
-            int textY = y + (FACE_SIZE - mc.font.lineHeight / 2) / 2;
+            // Center the face and the text against the same vertical band so the head sits inline
+            // with the name instead of riding high above it.
+            int contentHeight = Math.max(FACE_SIZE, mc.font.lineHeight);
+            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0,
+                    y + (contentHeight - FACE_SIZE) / 2, FACE_SIZE);
+            int textY = y + (contentHeight - mc.font.lineHeight) / 2;
             int x = FACE_SIZE + 3;
             for (Segment seg : row.segments()) {
                 graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);

@@ -74,6 +74,9 @@ public class TeamLocatorClient implements ClientModInitializer {
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
+        // Register our custom alert sound event (client-only mod, safe at client init).
+        RelaySounds.register();
+
         // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.
         XaeroCompat.init();
 

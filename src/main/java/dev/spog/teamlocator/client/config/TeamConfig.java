@@ -26,6 +26,8 @@ import java.util.UUID;
 public class TeamConfig {
     public enum Mode { SERVER, GLOBAL }
 
+    public enum AlertSound { ALARM, NOTEBLOCKS }
+
     /** A named trust list (a set of entries). */
     public static class TrustList {
         public List<TrustEntry> trusted = new ArrayList<>();
@@ -38,6 +40,8 @@ public class TeamConfig {
     public boolean crossServerPings = true;
     /** Per-player client-side ping display cooldown, in seconds (0 = no cooldown). */
     public int pingCooldownSeconds = 15;
+    /** Which sound plays when an attack alert is received. Defaults to the new alarm. */
+    public AlertSound alertSound = AlertSound.ALARM;
     /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
     public String relayUrl = DEFAULT_RELAY_ADDRESS;
 
@@ -110,6 +114,7 @@ public class TeamConfig {
     /** Repair nulls that a partial/older JSON file may leave after deserialization. */
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
+        if (alertSound == null) alertSound = AlertSound.ALARM;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";

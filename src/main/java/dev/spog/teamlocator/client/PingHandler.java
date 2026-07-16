@@ -19,7 +19,8 @@ import java.util.stream.Collectors;
 /**
  * Decides how a received attack ping is presented. Every ping shows a toast naming the attacker
  * and their server, wherever we are — in-game, at the menu, on another server — and plays the
- * three-ding alert. A ping from someone on our own MC server additionally flashes them red on the
+ * configured alert sound (the new alarm by default, or the three-ding noteblock chord). A ping
+ * from someone on our own MC server additionally flashes them red on the
  * HUD. Cross-server pings can be opted out of; muted players are silenced entirely, and repeat
  * pings from the same attacker are hidden for the configured per-player display cooldown.
  */
@@ -102,13 +103,20 @@ public final class PingHandler {
         return player.toString().substring(0, 8);
     }
 
-    /** Three ascending dings so an attack ping is noticed even without looking at the screen. */
+    /**
+     * Play the configured alert sound so an attack ping is noticed even without looking at the
+     * screen: the new alarm plays once (the default), or the three ascending noteblock dings.
+     */
     private static void playPingSound(Minecraft mc) {
         mc.execute(() -> {
             var sounds = mc.getSoundManager();
-            sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.0f), 0);
-            sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.3f), 4);
-            sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.6f), 8);
+            if (TeamLocatorClient.CONFIG.alertSound == TeamConfig.AlertSound.NOTEBLOCKS) {
+                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.0f), 0);
+                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.3f), 4);
+                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.6f), 8);
+            } else {
+                sounds.playDelayed(SimpleSoundInstance.forUI(RelaySounds.ALARM, 1.0f), 0);
+            }
         });
     }
 }

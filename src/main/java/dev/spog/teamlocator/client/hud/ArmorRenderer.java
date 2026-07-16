@@ -3,12 +3,12 @@ package dev.spog.teamlocator.client.hud;
 import dev.spog.teamlocator.client.ArmorPiece;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import net.minecraft.item.ItemStack;
 
 import java.util.List;
 
@@ -16,8 +16,8 @@ import java.util.List;
  * Draws a teammate's armor on a HUD row: the item icon with the same durability bar the inventory
  * puts under it.
  *
- * <p>Rendering goes through {@link GuiGraphicsExtractor#item} and
- * {@link GuiGraphicsExtractor#itemDecorations} — the exact calls the inventory uses — so the bar's
+ * <p>Rendering goes through {@link DrawContext#item} and
+ * {@link DrawContext#drawStackOverlay} — the exact calls the inventory uses — so the bar's
  * geometry and green-to-red gradient are vanilla's own, not a lookalike. The durability itself
  * comes from rebuilding the relay-reported piece into a real {@link ItemStack} carrying the DAMAGE
  * component. Both calls draw a fixed 16px icon; the icon is shrunk to row height by scaling the
@@ -54,9 +54,9 @@ final class ArmorRenderer {
      * @param iconScale shrinks the 16x16 icon to fit the row height
      * @return the x just past the last icon
      */
-    static int render(GuiGraphicsExtractor graphics, List<ArmorPiece> pieces,
+    static int render(DrawContext graphics, List<ArmorPiece> pieces,
                       int x, int centerY, float iconScale) {
-        Minecraft mc = Minecraft.getInstance();
+        MinecraftClient mc = MinecraftClient.getInstance();
         int drawn = Math.round(ICON_SIZE * iconScale);
         int y = centerY - drawn / 2;
         for (ArmorPiece piece : pieces) {
@@ -64,13 +64,13 @@ final class ArmorRenderer {
             if (stack.isEmpty()) {
                 continue; // unknown item (a modded piece we don't have): skip, keep the row intact
             }
-            var pose = graphics.pose();
+            var pose = graphics.getMatrices();
             pose.pushMatrix();
             pose.translate(x, y);
             pose.scale(iconScale, iconScale);
-            graphics.item(stack, 0, 0);
+            graphics.drawItem(stack, 0, 0);
             // The inventory's decoration pass: durability bar (and cooldown etc.), vanilla's own.
-            graphics.itemDecorations(mc.font, stack, 0, 0);
+            graphics.drawStackOverlay(mc.textRenderer, stack, 0, 0);
             pose.popMatrix();
             x += drawn + ICON_GAP;
         }
@@ -86,7 +86,7 @@ final class ArmorRenderer {
         if (id == null) {
             return ItemStack.EMPTY;
         }
-        var item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        var item = Registries.ITEM.getOptionalValue(id).orElse(null);
         if (item == null) {
             return ItemStack.EMPTY;
         }
@@ -98,7 +98,7 @@ final class ArmorRenderer {
             int max = stack.getMaxDamage();
             if (max > 0) {
                 float used = piece.damage() / (float) piece.maxDamage();
-                stack.set(DataComponents.DAMAGE, Math.min(max, Math.round(used * max)));
+                stack.set(DataComponentTypes.DAMAGE, Math.min(max, Math.round(used * max)));
             }
         }
         return stack;

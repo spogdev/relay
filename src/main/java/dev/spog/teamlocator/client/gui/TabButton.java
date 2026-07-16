@@ -2,12 +2,12 @@ package dev.spog.teamlocator.client.gui;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
+import net.minecraft.client.gui.Click;
+import net.minecraft.text.Text;
 
 /**
  * A page tab, drawn flat rather than as a vanilla button.
@@ -19,7 +19,7 @@ import net.minecraft.network.chat.Component;
  * The result reads as "these two are a different kind of control" without any texture of its own.
  */
 @Environment(EnvType.CLIENT)
-public class TabButton extends AbstractWidget {
+public class TabButton extends ClickableWidget {
     private static final int ACCENT = 0xFF4C9EFF;
     private static final int SELECTED_BG = 0xFF2A2A2A;
     private static final int UNSELECTED_BG = 0xFF141414;
@@ -33,7 +33,7 @@ public class TabButton extends AbstractWidget {
     private final boolean selected;
     private final Runnable onSelect;
 
-    public TabButton(int x, int y, int width, int height, Component label, boolean selected,
+    public TabButton(int x, int y, int width, int height, Text label, boolean selected,
                      Runnable onSelect) {
         super(x, y, width, height, label);
         this.selected = selected;
@@ -43,7 +43,7 @@ public class TabButton extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+    protected void renderWidget(DrawContext graphics, int mouseX, int mouseY,
                                             float delta) {
         int x = getX();
         int y = getY();
@@ -65,17 +65,17 @@ public class TabButton extends AbstractWidget {
             graphics.fill(x + 1, bottom - UNDERLINE_H, right - 1, bottom, ACCENT);
         }
 
-        graphics.centeredText(Minecraft.getInstance().font, getMessage(), x + this.width / 2,
+        graphics.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, getMessage(), x + this.width / 2,
                 y + (this.height - 8) / 2, selected ? TEXT_SELECTED : TEXT_UNSELECTED);
     }
 
     @Override
-    public void onClick(MouseButtonEvent event, boolean doubled) {
+    public void onClick(Click event, boolean doubled) {
         onSelect.run();
     }
 
     @Override
-    protected void updateWidgetNarration(NarrationElementOutput narration) {
-        defaultButtonNarrationText(narration);
+    protected void appendClickableNarrations(NarrationMessageBuilder narration) {
+        appendDefaultNarrations(narration);
     }
 }

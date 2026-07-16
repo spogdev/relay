@@ -4,8 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ServerInfo;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -196,15 +196,15 @@ public class TeamConfig {
      * {@code host:25565} map to the same list. Singleplayer/LAN maps to {@code "singleplayer"}.
      */
     public static String currentServerKey() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.isLocalServer()) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.isInSingleplayer()) {
             return "singleplayer";
         }
-        ServerData data = mc.getCurrentServer();
-        if (data == null || data.ip == null || data.ip.isBlank()) {
+        ServerInfo data = mc.getCurrentServerEntry();
+        if (data == null || data.address == null || data.address.isBlank()) {
             return null;
         }
-        String ip = data.ip.trim().toLowerCase(Locale.ROOT);
+        String ip = data.address.trim().toLowerCase(Locale.ROOT);
         if (ip.endsWith(":25565")) {
             ip = ip.substring(0, ip.length() - ":25565".length());
         }

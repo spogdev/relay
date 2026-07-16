@@ -2,11 +2,11 @@ package dev.spog.teamlocator.client;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +35,7 @@ public final class ArmorReporter {
     private boolean retracted = true;
 
     /** Re-read our armor and push it if it changed. Called every position tick. */
-    public void tick(LocalPlayer player, boolean shareArmor) {
+    public void tick(ClientPlayerEntity player, boolean shareArmor) {
         if (!shareArmor) {
             // Opted out: retract once, then stay quiet until sharing comes back on.
             if (!retracted) {
@@ -59,21 +59,21 @@ public final class ArmorReporter {
         retracted = true;
     }
 
-    private static List<ArmorPiece> read(LocalPlayer player) {
+    private static List<ArmorPiece> read(ClientPlayerEntity player) {
         List<ArmorPiece> pieces = new ArrayList<>(SLOTS.length);
         for (EquipmentSlot slot : SLOTS) {
-            ItemStack stack = player.getItemBySlot(slot);
+            ItemStack stack = player.getEquippedStack(slot);
             if (stack.isEmpty()) {
                 continue;
             }
-            Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            Identifier id = Registries.ITEM.getId(stack.getItem());
             if (id == null) {
                 continue;
             }
             // A non-damageable piece (carved pumpkin, elytra with no durability component) reports
             // maxDamage 0, which the HUD renders as an icon with no bar.
-            int maxDamage = stack.isDamageableItem() ? stack.getMaxDamage() : 0;
-            int damage = maxDamage > 0 ? stack.getDamageValue() : 0;
+            int maxDamage = stack.isDamageable() ? stack.getMaxDamage() : 0;
+            int damage = maxDamage > 0 ? stack.getDamage() : 0;
             pieces.add(new ArmorPiece(slot.getName(), id.toString(), damage, maxDamage));
         }
         return List.copyOf(pieces);

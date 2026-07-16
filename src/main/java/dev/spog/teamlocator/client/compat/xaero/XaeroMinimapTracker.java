@@ -6,9 +6,9 @@ import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.Level;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.World;
 import xaero.common.HudMod;
 import xaero.hud.minimap.player.tracker.system.IRenderedPlayerTracker;
 import xaero.hud.minimap.player.tracker.system.ITrackedPlayerReader;
@@ -94,8 +94,8 @@ public final class XaeroMinimapTracker implements IRenderedPlayerTracker<Tracked
         }
 
         @Override
-        public ResourceKey<Level> getDimension(TrackedPos pos) {
-            return ResourceKey.create(Registries.DIMENSION, pos.dimension());
+        public RegistryKey<World> getDimension(TrackedPos pos) {
+            return RegistryKey.of(RegistryKeys.WORLD, pos.dimension());
         }
     }
 }

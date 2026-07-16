@@ -1,6 +1,6 @@
 package dev.spog.teamlocator.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.util.InputUtil;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
@@ -12,23 +12,23 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.minecraft.client.KeyMapping;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.UUID;
 
 /**
  * Client entrypoint. The mod is client-only: coordinates and pings travel through the user's relay
- * service (see {@code relay/}), never through the Minecraft server, so it works on any server. This
+ * service (see {@code relay/}), never through the MinecraftClient server, so it works on any server. This
  * class loads config, registers the keybind and HUD, connects the relay when joining a server, and
  * pushes our own position / trust state to it.
  */
@@ -48,11 +48,11 @@ public class TeamLocatorClient implements ClientModInitializer {
     /** How far the remove-target keybind searches along the crosshair ray, in blocks. */
     private static final double TARGET_RANGE = 64.0;
 
-    private static KeyMapping pingKey;
-    private static KeyMapping removeTargetKey;
-    private static KeyMapping configKey;
-    private static KeyMapping hudToggleKey;
-    private static KeyMapping inWorldIconsToggleKey;
+    private static KeyBinding pingKey;
+    private static KeyBinding removeTargetKey;
+    private static KeyBinding configKey;
+    private static KeyBinding hudToggleKey;
+    private static KeyBinding inWorldIconsToggleKey;
     private int positionTickCounter;
 
     /**
@@ -65,19 +65,19 @@ public class TeamLocatorClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        KeyMapping.Category category = KeyMapping.Category.register(
-                Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "main"));
-        pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.ping", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
-        int unbound = InputConstants.UNKNOWN.getValue();
-        removeTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.remove_target", InputConstants.Type.KEYSYM, unbound, category));
-        configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.open_config", InputConstants.Type.KEYSYM, unbound, category));
-        hudToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
-        inWorldIconsToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.toggle_in_world_icons", InputConstants.Type.KEYSYM, unbound, category));
+        KeyBinding.Category category = new KeyBinding.Category(
+                Identifier.of(TeamLocatorConstants.MOD_ID, "main"));
+        pingKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.ping", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
+        int unbound = InputUtil.UNKNOWN_KEY.getCode();
+        removeTargetKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.remove_target", InputUtil.Type.KEYSYM, unbound, category));
+        configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.open_config", InputUtil.Type.KEYSYM, unbound, category));
+        hudToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.toggle_hud", InputUtil.Type.KEYSYM, unbound, category));
+        inWorldIconsToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.toggle_in_world_icons", InputUtil.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -111,19 +111,19 @@ public class TeamLocatorClient implements ClientModInitializer {
         }));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (pingKey.consumeClick()) {
+            while (pingKey.wasPressed()) {
                 RELAY.sendAttackPing();
             }
-            while (removeTargetKey.consumeClick()) {
+            while (removeTargetKey.wasPressed()) {
                 removeTargetedPlayer(client);
             }
-            while (configKey.consumeClick()) {
+            while (configKey.wasPressed()) {
                 client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
             }
-            while (hudToggleKey.consumeClick()) {
+            while (hudToggleKey.wasPressed()) {
                 toggleHud();
             }
-            while (inWorldIconsToggleKey.consumeClick()) {
+            while (inWorldIconsToggleKey.wasPressed()) {
                 toggleInWorldIcons();
             }
             broadcastOwnPosition(client);
@@ -131,17 +131,17 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /** Remove the player under the crosshair from the active trust list (keybind action). */
-    private static void removeTargetedPlayer(Minecraft client) {
-        LocalPlayer player = client.player;
-        if (player == null || client.level == null) {
+    private static void removeTargetedPlayer(MinecraftClient client) {
+        ClientPlayerEntity player = client.player;
+        if (player == null || client.world == null) {
             return;
         }
-        AbstractClientPlayer target = playerUnderCrosshair(client, player);
+        AbstractClientPlayerEntity target = playerUnderCrosshair(client, player);
         TeamConfig.TrustList list = CONFIG.activeList();
         if (target == null || list == null) {
             return;
         }
-        UUID id = target.getUUID();
+        UUID id = target.getUuid();
         boolean removed = list.trusted.removeIf(e -> {
             try {
                 return e.uuid().equals(id);
@@ -152,10 +152,10 @@ public class TeamLocatorClient implements ClientModInitializer {
         if (removed) {
             CONFIG.save();
             syncToServer();
-            RelayChat.send(Component.translatable("relay.remove_target.removed",
+            RelayChat.send(Text.translatable("relay.remove_target.removed",
                     RelayChat.value(target.getName().getString())));
         } else {
-            RelayChat.send(Component.translatable("relay.remove_target.not_listed",
+            RelayChat.send(Text.translatable("relay.remove_target.not_listed",
                     RelayChat.value(target.getName().getString())));
         }
     }
@@ -165,20 +165,20 @@ public class TeamLocatorClient implements ClientModInitializer {
      * only reaches melee range, so cast our own ray against slightly-inflated player boxes —
      * a teammate being pointed at across a field should still be removable.
      */
-    private static AbstractClientPlayer playerUnderCrosshair(Minecraft client, LocalPlayer player) {
-        Vec3 eye = player.getEyePosition();
-        Vec3 end = eye.add(player.getViewVector(1.0f).scale(TARGET_RANGE));
-        AbstractClientPlayer best = null;
+    private static AbstractClientPlayerEntity playerUnderCrosshair(MinecraftClient client, ClientPlayerEntity player) {
+        Vec3d eye = player.getEyePos();
+        Vec3d end = eye.add(player.getRotationVec(1.0f).multiply(TARGET_RANGE));
+        AbstractClientPlayerEntity best = null;
         double bestDistSq = Double.MAX_VALUE;
-        for (AbstractClientPlayer candidate : client.level.players()) {
+        for (AbstractClientPlayerEntity candidate : client.world.getPlayers()) {
             if (candidate == player || candidate.isSpectator()) {
                 continue;
             }
-            var hit = candidate.getBoundingBox().inflate(0.3).clip(eye, end);
+            var hit = candidate.getBoundingBox().expand(0.3).raycast(eye, end);
             if (hit.isEmpty()) {
                 continue;
             }
-            double distSq = hit.get().distanceToSqr(eye);
+            double distSq = hit.get().squaredDistanceTo(eye);
             if (distSq < bestDistSq) {
                 bestDistSq = distSq;
                 best = candidate;
@@ -190,7 +190,7 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static void toggleHud() {
         CONFIG.hudEnabled = !CONFIG.hudEnabled;
         CONFIG.save();
-        RelayChat.send(Component.translatable(
+        RelayChat.send(Text.translatable(
                 CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
     }
 
@@ -201,23 +201,23 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static void toggleInWorldIcons() {
         CONFIG.xaeroInWorldIcons = !CONFIG.xaeroInWorldIcons;
         CONFIG.save();
-        RelayChat.send(Component.translatable(
+        RelayChat.send(Text.translatable(
                 CONFIG.xaeroInWorldIcons ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
     }
 
     /** The client now sources its own coordinates — they no longer come from a server mod. */
-    private void broadcastOwnPosition(Minecraft client) {
+    private void broadcastOwnPosition(MinecraftClient client) {
         if (++positionTickCounter < POSITION_INTERVAL_TICKS) {
             return;
         }
         positionTickCounter = 0;
-        LocalPlayer player = client.player;
+        ClientPlayerEntity player = client.player;
         if (player == null || !sharePositions || !RELAY.isReady()) {
             return;
         }
         RELAY.sendPosition(
                 player.getX(), player.getY(), player.getZ(),
-                player.level().dimension().identifier().toString());
+                player.getEntityWorld().getRegistryKey().getValue().toString());
         // Same gate and cadence as the position, but the reporter only actually sends when a piece
         // changes, so a geared player standing still costs nothing.
         ARMOR_REPORTER.tick(player, CONFIG.shareArmor);

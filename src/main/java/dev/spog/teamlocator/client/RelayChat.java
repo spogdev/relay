@@ -2,9 +2,9 @@ package dev.spog.teamlocator.client;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
+import net.minecraft.text.MutableText;
 
 /**
  * The mod's feedback channel. Everything the mod tells the user in-game goes to chat rather than
@@ -27,27 +27,27 @@ public final class RelayChat {
      * <p>Goes through the chat HUD directly rather than {@code player.sendSystemMessage} so it also
      * works with no player entity — the ping ack can arrive at the title screen.
      */
-    public static void send(Component message) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.gui == null) {
+    public static void send(Text message) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.inGameHud == null) {
             return;
         }
-        mc.gui.getChat().addClientSystemMessage(primary(message));
+        mc.inGameHud.getChatHud().addMessage(primary(message));
     }
 
     /** {@code message} in the HUD's primary color; call {@link #value(String)} for the parts inside. */
-    public static MutableComponent primary(Component message) {
-        return Component.empty().append(message)
-                .withStyle(style -> style.withColor(rgb(TeamLocatorClient.CONFIG.hudPrimaryArgb())));
+    public static MutableText primary(Text message) {
+        return Text.empty().append(message)
+                .styled(style -> style.withColor(rgb(TeamLocatorClient.CONFIG.hudPrimaryArgb())));
     }
 
     /**
      * A value to embed in a message — a player name, a count — in the HUD's secondary color, the
      * same way the HUD colors the coordinates inside a row.
      */
-    public static MutableComponent value(String text) {
-        return Component.literal(text)
-                .withStyle(style -> style.withColor(rgb(TeamLocatorClient.CONFIG.hudSecondaryArgb())));
+    public static MutableText value(String text) {
+        return Text.literal(text)
+                .styled(style -> style.withColor(rgb(TeamLocatorClient.CONFIG.hudSecondaryArgb())));
     }
 
     /** Style colors are plain RGB; the config stores ARGB, whose alpha would corrupt the hue. */

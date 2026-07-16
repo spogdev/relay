@@ -1,6 +1,6 @@
 package dev.spog.teamlocator.client;
 
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.item.ItemStack;
 
 /**
  * One of a teammate's equipped armor pieces, as reported through the relay.

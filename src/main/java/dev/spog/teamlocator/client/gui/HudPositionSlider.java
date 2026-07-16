@@ -1,7 +1,7 @@
 package dev.spog.teamlocator.client.gui;
 
-import net.minecraft.client.gui.components.AbstractSliderButton;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.text.Text;
 
 import java.util.function.Consumer;
 
@@ -10,7 +10,7 @@ import java.util.function.Consumer;
  * (0–1) and the HUD size multiplier (0.5–2). Reports its value live so the caller can persist it
  * and see the HUD react.
  */
-public class HudPositionSlider extends AbstractSliderButton {
+public class HudPositionSlider extends SliderWidget {
     private final String label;
     private final double min;
     private final double max;
@@ -24,7 +24,7 @@ public class HudPositionSlider extends AbstractSliderButton {
 
     public HudPositionSlider(int x, int y, int width, int height, String label, double min,
                              double max, double initial, Consumer<Double> onChange) {
-        super(x, y, width, height, Component.empty(),
+        super(x, y, width, height, Text.empty(),
                 Math.max(0.0, Math.min(1.0, (initial - min) / (max - min))));
         this.label = label;
         this.min = min;
@@ -39,7 +39,7 @@ public class HudPositionSlider extends AbstractSliderButton {
 
     @Override
     protected void updateMessage() {
-        setMessage(Component.literal("%s: %d%%".formatted(label, Math.round(scaledValue() * 100))));
+        setMessage(Text.literal("%s: %d%%".formatted(label, Math.round(scaledValue() * 100))));
     }
 
     @Override

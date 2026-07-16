@@ -1,9 +1,9 @@
 package dev.spog.teamlocator.mixin.client;
 
 import dev.spog.teamlocator.client.compat.xaero.XaeroWorldMapTracker;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.render.VertexConsumerProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -49,7 +49,7 @@ public class PlayerTrackerMapElementRendererMixin {
                                                   double optionalDepth, float partialTicks,
                                                   double cameraX, double cameraZ,
                                                   ElementRenderInfo renderInfo, MapElementGraphics graphics,
-                                                  MultiBufferSource.BufferSource bufferSource,
+                                                  VertexConsumerProvider.Immediate bufferSource,
                                                   MultiTextureRenderTypeRendererProvider rendererProvider,
                                                   CallbackInfoReturnable<Boolean> cir) {
         if (!(element.getSystem() instanceof XaeroWorldMapTracker)) {
@@ -57,8 +57,8 @@ public class PlayerTrackerMapElementRendererMixin {
         }
         // Never dedup a hovered element: a hovered icon must always render zoomed + labelled, so we
         // fall through here too, otherwise our cancel fights Xaero's re-highlight every frame.
-        ClientLevel level = Minecraft.getInstance().level;
-        if (!highlighted && level != null && level.getPlayerByUUID(element.getPlayerId()) != null) {
+        ClientWorld level = MinecraftClient.getInstance().world;
+        if (!highlighted && level != null && level.getPlayerAnyDimension(element.getPlayerId()) != null) {
             cir.setReturnValue(false);
         }
     }

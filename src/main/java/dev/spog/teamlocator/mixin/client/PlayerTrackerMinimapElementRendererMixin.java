@@ -2,9 +2,9 @@ package dev.spog.teamlocator.mixin.client;
 
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.compat.xaero.XaeroMinimapTracker;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.render.VertexConsumerProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -54,7 +54,7 @@ public class PlayerTrackerMinimapElementRendererMixin {
                                           boolean outOfBounds, double optionalDepth, float partialTicks,
                                           double cameraX, double cameraZ, MinimapElementRenderInfo renderInfo,
                                           MinimapElementGraphics graphics,
-                                          MultiBufferSource.BufferSource bufferSource,
+                                          VertexConsumerProvider.Immediate bufferSource,
                                           CallbackInfoReturnable<Boolean> cir) {
         if (!(element.getSystem() instanceof XaeroMinimapTracker)) {
             return;
@@ -68,8 +68,8 @@ public class PlayerTrackerMinimapElementRendererMixin {
         // Never dedup a hovered element: Xaero skips its own radar-dedup early-out when
         // highlighted is true (a hovered element must always render zoomed + labelled), so we must
         // fall through here too, otherwise our cancel fights Xaero's re-highlight every frame.
-        ClientLevel level = Minecraft.getInstance().level;
-        if (!highlighted && level != null && level.getPlayerByUUID(element.getPlayerId()) != null) {
+        ClientWorld level = MinecraftClient.getInstance().world;
+        if (!highlighted && level != null && level.getPlayerAnyDimension(element.getPlayerId()) != null) {
             cir.setReturnValue(false);
         }
     }

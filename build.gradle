@@ -1,8 +1,8 @@
 plugins {
-    // Minecraft 1.21.x is obfuscated, so this build maps against yarn and remaps its output:
-    // 'remapJar' produces the publishable artifact, not 'jar'. (The 26.1 branch is the other
-    // way round — unobfuscated, official mappings, no remap step.)
-    id 'fabric-loom' version '1.11-SNAPSHOT'
+    // Loom 1.12.x, NOT the 1.17.x the 26.1 branch uses: 1.17 is built for the unobfuscated
+    // toolchain and has no mappings() at all, so it cannot consume yarn. 1.21.x is obfuscated,
+    // so this build maps against yarn and 'remapJar' produces the publishable artifact.
+    id 'fabric-loom' version '1.16.3'
 }
 
 version = "${project.mod_version}+${project.minecraft_version}"

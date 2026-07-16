@@ -6,22 +6,22 @@ import dev.spog.teamlocator.client.config.TrustEntry;
 import dev.spog.teamlocator.client.net.NameLookup;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.PlayerFaceExtractor;
-import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.resources.DefaultPlayerSkin;
-import net.minecraft.network.chat.CommonComponents;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.player.PlayerSkin;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.CyclingButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.gui.PlayerSkinDrawer;
+import net.minecraft.client.gui.tooltip.Tooltip;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.Click;
+import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.client.util.DefaultSkinHelper;
+import net.minecraft.screen.ScreenTexts;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.entity.player.SkinTextures;
 
 import java.util.List;
 import java.util.UUID;
@@ -46,9 +46,9 @@ public class TeamLocatorConfigScreen extends Screen {
 
     private static final String SCHEME_LABEL = "wss://";
     private static final Identifier TEXT_FIELD_SPRITE =
-            Identifier.parse("minecraft:widget/text_field");
+            Identifier.of("minecraft:widget/text_field");
     private static final Identifier TEXT_FIELD_HIGHLIGHTED_SPRITE =
-            Identifier.parse("minecraft:widget/text_field_highlighted");
+            Identifier.of("minecraft:widget/text_field_highlighted");
 
     /**
      * How far the page is scrolled, in content pixels. Widgets are laid out at their natural Y and
@@ -61,14 +61,14 @@ public class TeamLocatorConfigScreen extends Screen {
     private int trustScroll;
     /** Total content height, measured during the last {@link #init()}; drives the scroll clamp. */
     private int contentHeight;
-    private EditBox nameInput;
-    private EditBox relayUrlInput;
-    private EditBox primaryColorInput;
-    private EditBox secondaryColorInput;
+    private TextFieldWidget nameInput;
+    private TextFieldWidget relayUrlInput;
+    private TextFieldWidget primaryColorInput;
+    private TextFieldWidget secondaryColorInput;
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
     private final String initialRelayUrl;
     /** Feedback for an in-flight or failed Mojang name lookup; null when idle. */
-    private Component addStatus;
+    private Text addStatus;
     private int addStatusColor;
 
     private static final int ROW_H = 24;
@@ -135,7 +135,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private static final int COL_ALERTS_X = COL_VISIBILITY_X - COL_GAP - COL_ALERTS_W;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
-        super(Component.translatable("relay.config.title"));
+        super(Text.translatable("relay.config.title"));
         this.parent = parent;
         this.config = config;
         this.initialRelayUrl = config.relayUrl;
@@ -170,13 +170,13 @@ public class TeamLocatorConfigScreen extends Screen {
      *
      * @param screenY the widget's screen-space Y, i.e. already through {@link #sy(int)}
      */
-    private <T extends net.minecraft.client.gui.components.events.GuiEventListener
-            & net.minecraft.client.gui.components.Renderable
-            & net.minecraft.client.gui.narration.NarratableEntry> void addScrolled(int screenY, T widget) {
+    private <T extends net.minecraft.client.gui.Element
+            & net.minecraft.client.gui.Drawable
+            & net.minecraft.client.gui.Selectable> void addScrolled(int screenY, T widget) {
         if (!visible(screenY)) {
             return;
         }
-        addRenderableWidget(widget);
+        addDrawableChild(widget);
     }
 
     /** True if a 20px-tall row at this screen Y fits entirely between the pinned bars. */
@@ -208,11 +208,11 @@ public class TeamLocatorConfigScreen extends Screen {
         // --- Tab bar: pinned above the scrolling area, so switching pages is always reachable.
         // The two tabs meet in the middle and span the page's full width, so the strip reads as one
         // unit sitting on top of the page rather than as two more buttons among the settings.
-        addRenderableWidget(new TabButton(cx - 205, TAB_BUTTON_Y, 205, BUTTON_H,
-                Component.translatable("relay.config.tab.settings"),
+        addDrawableChild(new TabButton(cx - 205, TAB_BUTTON_Y, 205, BUTTON_H,
+                Text.translatable("relay.config.tab.settings"),
                 tab == Tab.SETTINGS, () -> switchTab(Tab.SETTINGS)));
-        addRenderableWidget(new TabButton(cx, TAB_BUTTON_Y, 205, BUTTON_H,
-                Component.translatable("relay.config.tab.trust"),
+        addDrawableChild(new TabButton(cx, TAB_BUTTON_Y, 205, BUTTON_H,
+                Text.translatable("relay.config.tab.trust"),
                 tab == Tab.TRUST, () -> switchTab(Tab.TRUST)));
 
         if (tab == Tab.SETTINGS) {
@@ -252,15 +252,15 @@ public class TeamLocatorConfigScreen extends Screen {
     private void initSettingsPage(int cx) {
         // --- Sharing section: what we send to trusted players. Location is the master coordinate
         // toggle; armor is opt-in and rides the same trust gate relay-side.
-        addScrolled(sy(12), CycleButton.onOffBuilder(config.globalShareEnabled)
-                .create(cx - 205, sy(12), 200, 20, Component.translatable("relay.config.share_location"),
+        addScrolled(sy(12), CyclingButtonWidget.onOffBuilder(config.globalShareEnabled)
+                .build(cx - 205, sy(12), 200, 20, Text.translatable("relay.config.share_location"),
                         (btn, value) -> {
                             config.globalShareEnabled = value;
                             config.save();
                             TeamLocatorClient.syncToServer();
                         }));
-        addScrolled(sy(12), CycleButton.onOffBuilder(config.shareArmor)
-                .create(cx + 5, sy(12), 200, 20, Component.translatable("relay.config.share_armor"),
+        addScrolled(sy(12), CyclingButtonWidget.onOffBuilder(config.shareArmor)
+                .build(cx + 5, sy(12), 200, 20, Text.translatable("relay.config.share_armor"),
                         (btn, value) -> {
                             config.shareArmor = value;
                             config.save();
@@ -283,74 +283,74 @@ public class TeamLocatorConfigScreen extends Screen {
         }));
 
         // --- HUD text colors: hex inputs with live swatches (drawn in extractRenderState) ---
-        primaryColorInput = new EditBox(this.font, cx + 5, sy(80), 70, 20,
-                Component.translatable("relay.config.hud_primary_color"));
-        primaryColorInput.setTooltip(Tooltip.create(
-                Component.translatable("relay.config.hud_primary_color")));
+        primaryColorInput = new TextFieldWidget(this.textRenderer, cx + 5, sy(80), 70, 20,
+                Text.translatable("relay.config.hud_primary_color"));
+        primaryColorInput.setTooltip(Tooltip.of(
+                Text.translatable("relay.config.hud_primary_color")));
         primaryColorInput.setMaxLength(7);
-        primaryColorInput.setValue(config.hudPrimaryColor);
-        primaryColorInput.setResponder(value -> {
+        primaryColorInput.setText(config.hudPrimaryColor);
+        primaryColorInput.setChangedListener(value -> {
             if (TeamConfig.isValidHex(value)) {
                 config.hudPrimaryColor = value;
                 config.save();
-                primaryColorInput.setTextColor(0xFFFFFFFF);
+                primaryColorInput.setEditableColor(0xFFFFFFFF);
             } else {
-                primaryColorInput.setTextColor(0xFFFF5555);
+                primaryColorInput.setEditableColor(0xFFFF5555);
             }
         });
         addScrolled(sy(80), primaryColorInput);
-        secondaryColorInput = new EditBox(this.font, cx + 107, sy(80), 70, 20,
-                Component.translatable("relay.config.hud_secondary_color"));
-        secondaryColorInput.setTooltip(Tooltip.create(
-                Component.translatable("relay.config.hud_secondary_color")));
+        secondaryColorInput = new TextFieldWidget(this.textRenderer, cx + 107, sy(80), 70, 20,
+                Text.translatable("relay.config.hud_secondary_color"));
+        secondaryColorInput.setTooltip(Tooltip.of(
+                Text.translatable("relay.config.hud_secondary_color")));
         secondaryColorInput.setMaxLength(7);
-        secondaryColorInput.setValue(config.hudSecondaryColor);
-        secondaryColorInput.setResponder(value -> {
+        secondaryColorInput.setText(config.hudSecondaryColor);
+        secondaryColorInput.setChangedListener(value -> {
             if (TeamConfig.isValidHex(value)) {
                 config.hudSecondaryColor = value;
                 config.save();
-                secondaryColorInput.setTextColor(0xFFFFFFFF);
+                secondaryColorInput.setEditableColor(0xFFFFFFFF);
             } else {
-                secondaryColorInput.setTextColor(0xFFFF5555);
+                secondaryColorInput.setEditableColor(0xFFFF5555);
             }
         });
         addScrolled(sy(80), secondaryColorInput);
 
         // HUD row 3: row text alignment | list growth direction (down vs. up from the anchor).
-        addScrolled(sy(104), CycleButton.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
-                .withValues(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER, TeamConfig.HudAlign.RIGHT)
-                .create(cx - 205, sy(104), 200, 20, Component.translatable("relay.config.hud_align"),
+        addScrolled(sy(104), CyclingButtonWidget.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
+                .values(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER, TeamConfig.HudAlign.RIGHT)
+                .build(cx - 205, sy(104), 200, 20, Text.translatable("relay.config.hud_align"),
                         (btn, value) -> {
                             config.hudAlign = value;
                             config.save();
                         }));
-        addScrolled(sy(104), CycleButton.onOffBuilder(config.hudGrowUp)
-                .create(cx + 5, sy(104), 200, 20, Component.translatable("relay.config.hud_grow_up"),
+        addScrolled(sy(104), CyclingButtonWidget.onOffBuilder(config.hudGrowUp)
+                .build(cx + 5, sy(104), 200, 20, Text.translatable("relay.config.hud_grow_up"),
                         (btn, value) -> {
                             config.hudGrowUp = value;
                             config.save();
                         }));
 
         // HUD row 4: what each row displays. Armor only ever shows what a teammate shares.
-        addScrolled(sy(128), CycleButton.onOffBuilder(config.hudShowCoords)
-                .create(cx - 205, sy(128), 200, 20, Component.translatable("relay.config.hud_show_coords"),
+        addScrolled(sy(128), CyclingButtonWidget.onOffBuilder(config.hudShowCoords)
+                .build(cx - 205, sy(128), 200, 20, Text.translatable("relay.config.hud_show_coords"),
                         (btn, value) -> {
                             config.hudShowCoords = value;
                             config.save();
                         }));
-        addScrolled(sy(128), CycleButton
+        addScrolled(sy(128), CyclingButtonWidget
                 .<TeamConfig.ArmorDisplay>builder(this::armorDisplayLabel, config.hudArmorDisplay)
-                .withValues(TeamConfig.ArmorDisplay.OFF, TeamConfig.ArmorDisplay.ALL,
+                .values(TeamConfig.ArmorDisplay.OFF, TeamConfig.ArmorDisplay.ALL,
                         TeamConfig.ArmorDisplay.LOWEST)
-                .create(cx + 5, sy(128), 200, 20, Component.translatable("relay.config.hud_show_armor"),
+                .build(cx + 5, sy(128), 200, 20, Text.translatable("relay.config.hud_show_armor"),
                         (btn, value) -> {
                             config.hudArmorDisplay = value;
                             config.save();
                         }));
 
         // --- Pings section: cross-server pings toggle | ping display cooldown ---
-        addScrolled(sy(172), CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx - 205, sy(172), 200, 20, Component.translatable("relay.config.cross_server_pings"),
+        addScrolled(sy(172), CyclingButtonWidget.onOffBuilder(config.crossServerPings)
+                .build(cx - 205, sy(172), 200, 20, Text.translatable("relay.config.cross_server_pings"),
                         (btn, value) -> {
                             config.crossServerPings = value;
                             config.save();
@@ -361,23 +361,23 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }));
         // Alerts row 2: choose the alert sound (new alarm vs. the old 3-noteblock chord).
-        addScrolled(sy(196), CycleButton.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
-                .withValues(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
-                .create(cx - 205, sy(196), 200, 20, Component.translatable("relay.config.alert_sound"),
+        addScrolled(sy(196), CyclingButtonWidget.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
+                .values(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
+                .build(cx - 205, sy(196), 200, 20, Text.translatable("relay.config.alert_sound"),
                         (btn, value) -> {
                             config.alertSound = value;
                             config.save();
                         }));
 
         // --- Xaero's section: map icons | in-world icons (read live by the Xaero trackers) ---
-        addScrolled(sy(SETTINGS_LAST_ROW_Y), CycleButton.onOffBuilder(config.xaeroMapIcons)
-                .create(cx - 205, sy(SETTINGS_LAST_ROW_Y), 200, 20, Component.translatable("relay.config.xaero_map_icons"),
+        addScrolled(sy(SETTINGS_LAST_ROW_Y), CyclingButtonWidget.onOffBuilder(config.xaeroMapIcons)
+                .build(cx - 205, sy(SETTINGS_LAST_ROW_Y), 200, 20, Text.translatable("relay.config.xaero_map_icons"),
                         (btn, value) -> {
                             config.xaeroMapIcons = value;
                             config.save();
                         }));
-        addScrolled(sy(SETTINGS_LAST_ROW_Y), CycleButton.onOffBuilder(config.xaeroInWorldIcons)
-                .create(cx + 5, sy(SETTINGS_LAST_ROW_Y), 200, 20, Component.translatable("relay.config.xaero_world_icons"),
+        addScrolled(sy(SETTINGS_LAST_ROW_Y), CyclingButtonWidget.onOffBuilder(config.xaeroInWorldIcons)
+                .build(cx + 5, sy(SETTINGS_LAST_ROW_Y), 200, 20, Text.translatable("relay.config.xaero_world_icons"),
                         (btn, value) -> {
                             config.xaeroInWorldIcons = value;
                             config.save();
@@ -398,11 +398,11 @@ public class TeamLocatorConfigScreen extends Screen {
             config.activeMode = TeamConfig.Mode.GLOBAL;
             config.save();
         }
-        CycleButton<TeamConfig.Mode> modeButton = CycleButton
+        CyclingButtonWidget<TeamConfig.Mode> modeButton = CyclingButtonWidget
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
-                .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, sy(0), 200, BUTTON_H,
-                        Component.translatable("relay.config.active_list"),
+                .values(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
+                .build(cx - 205, sy(0), 200, BUTTON_H,
+                        Text.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             // Pin the choice to this server so rejoining restores it.
@@ -415,13 +415,13 @@ public class TeamLocatorConfigScreen extends Screen {
         addScrolled(sy(0), modeButton);
 
         // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx + 5, sy(0), 130, BUTTON_H,
-                Component.translatable("relay.config.add_player"));
-        nameInput.setHint(Component.translatable("relay.config.add_player"));
+        nameInput = new TextFieldWidget(this.textRenderer, cx + 5, sy(0), 130, BUTTON_H,
+                Text.translatable("relay.config.add_player"));
+        nameInput.setPlaceholder(Text.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addScrolled(sy(0), nameInput);
-        addScrolled(sy(0), Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, sy(0), 65, BUTTON_H).build());
+        addScrolled(sy(0), ButtonWidget.builder(Text.translatable("relay.config.add"),
+                b -> addTypedPlayer()).dimensions(cx + 140, sy(0), 65, BUTTON_H).build());
 
         // --- Table rows ---
         // Every entry gets a widget at its natural Y; the page scroll decides what's on screen, so
@@ -435,66 +435,66 @@ public class TeamLocatorConfigScreen extends Screen {
 
     private void initBottomBar(int cx) {
         // --- Relay address: one Done-sized frame with the fixed wss:// scheme drawn inside ---
-        // The EditBox itself is borderless and sits inside the frame, after the scheme label.
+        // The TextFieldWidget itself is borderless and sits inside the frame, after the scheme label.
         int frameX = cx - 205;
         int frameY = this.height - 28;
-        int textStart = frameX + 4 + this.font.width(SCHEME_LABEL);
-        relayUrlInput = new EditBox(this.font, textStart, frameY + 6,
-                frameX + 200 - 4 - textStart, 12, Component.translatable("relay.config.relay_url"));
-        relayUrlInput.setBordered(false);
+        int textStart = frameX + 4 + this.textRenderer.getWidth(SCHEME_LABEL);
+        relayUrlInput = new TextFieldWidget(this.textRenderer, textStart, frameY + 6,
+                frameX + 200 - 4 - textStart, 12, Text.translatable("relay.config.relay_url"));
+        relayUrlInput.setDrawsBackground(false);
         relayUrlInput.setMaxLength(256);
-        relayUrlInput.setValue(config.relayUrl);
-        relayUrlInput.setResponder(value -> {
+        relayUrlInput.setText(config.relayUrl);
+        relayUrlInput.setChangedListener(value -> {
             config.relayUrl = TeamConfig.normalizeRelayAddress(value);
             config.save();
         });
-        addRenderableWidget(relayUrlInput);
+        addDrawableChild(relayUrlInput);
 
         // --- Done ---
-        addRenderableWidget(Button.builder(Component.translatable("relay.config.done"),
-                b -> onClose()).bounds(cx + 5, this.height - 28, 200, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.translatable("relay.config.done"),
+                b -> close()).dimensions(cx + 5, this.height - 28, 200, 20).build());
     }
 
     private void buildRow(int cx, int y, TrustEntry entry, List<TrustEntry> backing) {
-        // Bare ON/OFF, not optionStatus's "<label>: <on|off>" — the column header names the toggle
+        // Bare ON/OFF, not composeToggleText's "<label>: <on|off>" — the column header names the toggle
         // once for the whole table, so repeating it on every row is noise. Still vanilla's own
         // components, so a pack restyling options.on/off (into check/X glyphs, say) reaches these.
-        addScrolled(y, Button.builder(onOff(!entry.mutePings),
+        addScrolled(y, ButtonWidget.builder(onOff(!entry.mutePings),
                 b -> {
                     entry.mutePings = !entry.mutePings;
                     config.save();
                     rebuild();
-                }).bounds(cx + COL_ALERTS_X, y, COL_ALERTS_W, 20).build());
+                }).dimensions(cx + COL_ALERTS_X, y, COL_ALERTS_W, 20).build());
         // Toggle whether this player sees us at all: hiding withholds the whole shared feed —
         // coordinates and armor both — since armor rides the same sharing set relay-side.
-        addScrolled(y, Button.builder(onOff(!entry.hidden),
+        addScrolled(y, ButtonWidget.builder(onOff(!entry.hidden),
                 b -> {
                     entry.hidden = !entry.hidden;
                     config.save();
                     TeamLocatorClient.syncToServer();
                     rebuild();
-                }).bounds(cx + COL_VISIBILITY_X, y, COL_VISIBILITY_W, 20).build());
-        addScrolled(y, Button.builder(Component.translatable("relay.config.remove"),
+                }).dimensions(cx + COL_VISIBILITY_X, y, COL_VISIBILITY_W, 20).build());
+        addScrolled(y, ButtonWidget.builder(Text.translatable("relay.config.remove"),
                 b -> {
                     backing.remove(entry);
                     config.save();
                     TeamLocatorClient.syncToServer();
                     rebuild();
-                }).bounds(cx + COL_REMOVE_X, y, COL_REMOVE_W, 20).build());
+                }).dimensions(cx + COL_REMOVE_X, y, COL_REMOVE_W, 20).build());
     }
 
     /** Vanilla's own On/Off components, so a resource pack restyling options.on/off reaches us. */
-    private static Component onOff(boolean on) {
-        return on ? CommonComponents.OPTION_ON : CommonComponents.OPTION_OFF;
+    private static Text onOff(boolean on) {
+        return on ? ScreenTexts.ON : ScreenTexts.OFF;
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+    public void render(DrawContext graphics, int mouseX, int mouseY, float delta) {
         int cx = this.width / 2;
 
         // Scrolling labels first, then the bars' backdrops over them, then super's widgets on top:
         // that ordering lets the backdrops hide a label that has scrolled into a bar, while the tab
-        // buttons and the borderless address EditBox still land above their own backdrop.
+        // buttons and the borderless address TextFieldWidget still land above their own backdrop.
         if (tab == Tab.SETTINGS) {
             drawSettingsLabels(graphics, cx);
         } else {
@@ -502,19 +502,19 @@ public class TeamLocatorConfigScreen extends Screen {
         }
         drawBarBackdrops(graphics, cx);
 
-        super.extractRenderState(graphics, mouseX, mouseY, delta);
+        super.render(graphics, mouseX, mouseY, delta);
 
-        graphics.centeredText(this.font, this.title, cx, TITLE_Y, 0xFFFFFFFF);
+        graphics.drawCenteredTextWithShadow(this.textRenderer, this.title, cx, TITLE_Y, 0xFFFFFFFF);
         drawScrollbar(graphics);
     }
 
     /**
-     * The two pinned bars' backdrops, plus the relay-address frame that the borderless EditBox sits
+     * The two pinned bars' backdrops, plus the relay-address frame that the borderless TextFieldWidget sits
      * inside. Drawn before {@code super} so the widgets on the bars land on top of them; the
      * backdrops cover scrolled *labels*, while scrolled widgets are culled instead (see
      * {@link #addScrolled}), since nothing this screen draws can cover them.
      */
-    private void drawBarBackdrops(GuiGraphicsExtractor graphics, int cx) {
+    private void drawBarBackdrops(DrawContext graphics, int cx) {
         // No divider under the tab strip: the selected tab's open bottom edge is what joins it to
         // the page, and a rule across there would cut that connection. The strip's own borders
         // already separate it from the content.
@@ -523,32 +523,32 @@ public class TeamLocatorConfigScreen extends Screen {
         int top = this.height - BOTTOM_BAR_H;
         graphics.fill(0, top, this.width, this.height, 0xFF101010);
         graphics.fill(0, top, this.width, top + 1, 0xFF000000);
-        graphics.blitSprite(RenderPipelines.GUI_TEXTURED,
+        graphics.drawGuiTexture(RenderPipelines.GUI_TEXTURED,
                 relayUrlInput != null && relayUrlInput.isFocused()
                         ? TEXT_FIELD_HIGHLIGHTED_SPRITE : TEXT_FIELD_SPRITE,
                 cx - 205, this.height - 28, 200, 20);
-        graphics.text(this.font, SCHEME_LABEL, cx - 205 + 4, this.height - 28 + 6, 0xFFA0A0A0, false);
+        graphics.drawText(this.textRenderer, SCHEME_LABEL, cx - 205 + 4, this.height - 28 + 6, 0xFFA0A0A0, false);
     }
 
-    private void drawSettingsLabels(GuiGraphicsExtractor graphics, int cx) {
+    private void drawSettingsLabels(DrawContext graphics, int cx) {
         // Live color swatches beside the HUD hex inputs: white border, current color inside.
         drawSwatch(graphics, cx + 78, sy(80), config.hudPrimaryArgb());
         drawSwatch(graphics, cx + 180, sy(80), config.hudSecondaryArgb());
 
         // Section headers, scrolling with the widgets they label.
-        graphics.text(this.font, Component.translatable("relay.config.section.sharing"),
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.sharing"),
                 cx - 205, sy(0), 0xFFFFFFFF, false);
-        graphics.text(this.font, Component.translatable("relay.config.section.hud"),
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.hud"),
                 cx - 205, sy(44), 0xFFFFFFFF, false);
-        graphics.text(this.font, Component.translatable("relay.config.section.pings"),
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.pings"),
                 cx - 205, sy(160), 0xFFFFFFFF, false);
-        graphics.text(this.font, Component.translatable("relay.config.section.xaero"),
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.xaero"),
                 cx - 205, sy(228), 0xFFFFFFFF, false);
     }
 
-    private void drawTrustLabels(GuiGraphicsExtractor graphics, int cx) {
+    private void drawTrustLabels(DrawContext graphics, int cx) {
         if (config.activeMode == TeamConfig.Mode.SERVER && TeamConfig.currentServerKey() == null) {
-            graphics.text(this.font, Component.translatable("relay.config.no_server"),
+            graphics.drawText(this.textRenderer, Text.translatable("relay.config.no_server"),
                     cx - 205, sy(LIST_TOP + 4), 0xFFFF5555, false);
             return;
         }
@@ -556,9 +556,9 @@ public class TeamLocatorConfigScreen extends Screen {
         // Column headers, naming each toggle once for the whole table instead of on every row.
         // Each is centered over its column so it reads as a heading for the buttons beneath it.
         int headerY = sy(LIST_TOP - COL_HEADER_OFFSET);
-        boolean headerVisible = headerY >= TAB_BAR_H && headerY + this.font.lineHeight <= viewportBottom();
+        boolean headerVisible = headerY >= TAB_BAR_H && headerY + this.textRenderer.fontHeight <= viewportBottom();
         if (headerVisible) {
-            graphics.text(this.font, Component.translatable("relay.config.column.player"),
+            graphics.drawText(this.textRenderer, Text.translatable("relay.config.column.player"),
                     cx - 205, headerY, 0xFFA0A0A0, false);
             drawColumnHeader(graphics, "relay.config.column.alerts",
                     cx + COL_ALERTS_X, COL_ALERTS_W, headerY);
@@ -566,7 +566,7 @@ public class TeamLocatorConfigScreen extends Screen {
             // replaces the Visibility heading rather than overlapping it — the status is transient
             // and the columns beneath it stay self-evident for the few seconds it shows.
             if (addStatus != null) {
-                graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
+                graphics.drawText(this.textRenderer, addStatus, cx + 205 - this.textRenderer.getWidth(addStatus),
                         headerY, addStatusColor, false);
             } else {
                 drawColumnHeader(graphics, "relay.config.column.visibility",
@@ -587,13 +587,13 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     /** One column heading, centered over a column of the given x/width. */
-    private void drawColumnHeader(GuiGraphicsExtractor graphics, String key, int colX, int colW,
+    private void drawColumnHeader(DrawContext graphics, String key, int colX, int colW,
                                   int y) {
-        graphics.centeredText(this.font, Component.translatable(key), colX + colW / 2, y, 0xFFA0A0A0);
+        graphics.drawCenteredTextWithShadow(this.textRenderer, Text.translatable(key), colX + colW / 2, y, 0xFFA0A0A0);
     }
 
     /** A slim scrollbar down the right edge, so the page's length and position are visible. */
-    private void drawScrollbar(GuiGraphicsExtractor graphics) {
+    private void drawScrollbar(DrawContext graphics) {
         int max = maxScroll();
         if (max == 0) {
             return; // everything fits; nothing to indicate
@@ -607,26 +607,26 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     /** 20x20 color preview: a white 1px border around the configured color. */
-    private static void drawSwatch(GuiGraphicsExtractor graphics, int x, int y, int argb) {
+    private static void drawSwatch(DrawContext graphics, int x, int y, int argb) {
         graphics.fill(x, y, x + 20, y + 20, 0xFFFFFFFF);
         graphics.fill(x + 1, y + 1, x + 19, y + 19, argb);
     }
 
-    private void drawFaceAndName(GuiGraphicsExtractor graphics, int x, int y, TrustEntry entry) {
+    private void drawFaceAndName(DrawContext graphics, int x, int y, TrustEntry entry) {
         UUID id = safeUuid(entry);
-        PlayerSkin skin;
+        SkinTextures skin;
         String name = entry.name != null ? entry.name : (id != null ? id.toString().substring(0, 8) : "?");
-        if (id != null && Minecraft.getInstance().getConnection() != null) {
-            PlayerInfo info = Minecraft.getInstance().getConnection().getPlayerInfo(id);
-            skin = info != null ? info.getSkin() : DefaultPlayerSkin.get(id);
+        if (id != null && MinecraftClient.getInstance().getNetworkHandler() != null) {
+            PlayerListEntry info = MinecraftClient.getInstance().getNetworkHandler().getPlayerListEntry(id);
+            skin = info != null ? info.getSkinTextures() : DefaultSkinHelper.getSkinTextures(id);
             if (info != null) {
                 name = info.getProfile().name();
             }
         } else {
-            skin = DefaultPlayerSkin.getDefaultSkin();
+            skin = DefaultSkinHelper.getSteve();
         }
-        PlayerFaceExtractor.extractRenderState(graphics, skin, x, y + 2, 16);
-        graphics.text(this.font, name, x + 22, y + 6, 0xFFFFFFFF, false);
+        PlayerSkinDrawer.draw(graphics, skin, x, y + 2, 16);
+        graphics.drawText(this.textRenderer, name, x + 22, y + 6, 0xFFFFFFFF, false);
     }
 
     /**
@@ -638,32 +638,32 @@ public class TeamLocatorConfigScreen extends Screen {
         if (nameInput == null) {
             return;
         }
-        String typed = nameInput.getValue().trim();
+        String typed = nameInput.getText().trim();
         if (typed.isEmpty()) {
             return;
         }
-        nameInput.setValue("");
+        nameInput.setText("");
 
-        PlayerInfo info = Minecraft.getInstance().getConnection() != null
-                ? Minecraft.getInstance().getConnection().getPlayerInfo(typed) : null;
+        PlayerListEntry info = MinecraftClient.getInstance().getNetworkHandler() != null
+                ? MinecraftClient.getInstance().getNetworkHandler().getPlayerListEntry(typed) : null;
         if (info != null) {
             addEntry(info.getProfile().id(), info.getProfile().name());
             rebuild();
             return;
         }
 
-        addStatus = Component.translatable("relay.config.lookup_pending", typed);
+        addStatus = Text.translatable("relay.config.lookup_pending", typed);
         addStatusColor = 0xFFA0A0A0;
         NameLookup.resolve(typed).whenComplete((resolved, err) ->
-                Minecraft.getInstance().execute(() -> {
+                MinecraftClient.getInstance().execute(() -> {
                     if (resolved == null || err != null) {
-                        addStatus = Component.translatable("relay.config.lookup_failed", typed);
+                        addStatus = Text.translatable("relay.config.lookup_failed", typed);
                         addStatusColor = 0xFFFF5555;
                         return;
                     }
                     addStatus = null;
                     addEntry(resolved.id(), resolved.name());
-                    if (Minecraft.getInstance().screen == this) {
+                    if (MinecraftClient.getInstance().currentScreen == this) {
                         rebuild();
                     }
                 }));
@@ -690,21 +690,21 @@ public class TeamLocatorConfigScreen extends Screen {
         return list != null ? list.trusted : new java.util.ArrayList<>();
     }
 
-    private Component modeLabel(TeamConfig.Mode mode) {
-        // CycleButton already renders "<name>: <value>", so return only the value here.
+    private Text modeLabel(TeamConfig.Mode mode) {
+        // CyclingButtonWidget already renders "<name>: <value>", so return only the value here.
         String key = mode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.active_list.global" : "relay.config.active_list.server";
-        return Component.translatable(key);
+        return Text.translatable(key);
     }
 
-    private Component hudAlignLabel(TeamConfig.HudAlign align) {
-        // CycleButton already renders "<name>: <value>", so return only the value here.
+    private Text hudAlignLabel(TeamConfig.HudAlign align) {
+        // CyclingButtonWidget already renders "<name>: <value>", so return only the value here.
         String key = switch (align) {
             case CENTER -> "relay.config.hud_align.center";
             case RIGHT -> "relay.config.hud_align.right";
             default -> "relay.config.hud_align.left";
         };
-        return Component.translatable(key);
+        return Text.translatable(key);
     }
 
     /**
@@ -713,18 +713,18 @@ public class TeamLocatorConfigScreen extends Screen {
      * too — an "Off" of our own would silently opt out of that. Only LOWEST, which vanilla has no
      * word for, is ours.
      */
-    private Component armorDisplayLabel(TeamConfig.ArmorDisplay display) {
+    private Text armorDisplayLabel(TeamConfig.ArmorDisplay display) {
         return switch (display) {
-            case OFF -> CommonComponents.OPTION_OFF;
-            case LOWEST -> Component.translatable("relay.config.hud_show_armor.lowest");
-            default -> CommonComponents.OPTION_ON;
+            case OFF -> ScreenTexts.OFF;
+            case LOWEST -> Text.translatable("relay.config.hud_show_armor.lowest");
+            default -> ScreenTexts.ON;
         };
     }
 
-    private Component alertSoundLabel(TeamConfig.AlertSound sound) {
+    private Text alertSoundLabel(TeamConfig.AlertSound sound) {
         String key = sound == TeamConfig.AlertSound.ALARM
                 ? "relay.config.alert_sound.alarm" : "relay.config.alert_sound.noteblocks";
-        return Component.translatable(key);
+        return Text.translatable(key);
     }
 
     private static UUID safeUuid(TrustEntry entry) {
@@ -736,16 +736,16 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     private void rebuild() {
-        this.clearWidgets();
+        this.clearChildren();
         this.init();
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+    public boolean mouseClicked(Click event, boolean doubled) {
         if (super.mouseClicked(event, doubled)) {
             return true;
         }
-        // Clicking the wss:// prefix (inside the frame but left of the borderless EditBox) should
+        // Clicking the wss:// prefix (inside the frame but left of the borderless TextFieldWidget) should
         // still focus the address field — the whole frame reads as one text box.
         int cx = this.width / 2;
         if (relayUrlInput != null
@@ -781,11 +781,11 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     @Override
-    public void onClose() {
+    public void close() {
         config.save();
         if (!config.relayUrl.equals(initialRelayUrl)) {
             TeamLocatorClient.connectRelay();
         }
-        this.minecraft.setScreen(parent);
+        this.client.setScreen(parent);
     }
 }

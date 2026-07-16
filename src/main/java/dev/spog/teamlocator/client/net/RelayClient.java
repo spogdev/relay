@@ -10,8 +10,8 @@ import dev.spog.teamlocator.client.RelayToasts;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Identifier;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -112,7 +112,7 @@ public final class RelayClient {
         return authenticated && socket != null;
     }
 
-    /** Connect (or switch) to the given relay for the given Minecraft-server scope. */
+    /** Connect (or switch) to the given relay for the given MinecraftClient-server scope. */
     public void connect(String relayUrl, String serverKey) {
         disconnect();
         if (relayUrl == null || relayUrl.isBlank() || serverKey == null) {
@@ -225,12 +225,12 @@ public final class RelayClient {
     // ---- outbound ----
 
     private JsonObject hello() {
-        Minecraft mc = Minecraft.getInstance();
+        MinecraftClient mc = MinecraftClient.getInstance();
         JsonObject o = new JsonObject();
         o.addProperty("type", "hello");
         o.addProperty("protocolVersion", PROTOCOL_VERSION);
         o.addProperty("mcServer", mcServerKey);
-        o.addProperty("profileName", mc.getUser().getName());
+        o.addProperty("profileName", mc.getSession().getUsername());
         return o;
     }
 
@@ -386,9 +386,9 @@ public final class RelayClient {
                 return; // superseded while queued; don't burn a Mojang call for a dead socket
             }
             try {
-                Minecraft mc = Minecraft.getInstance();
-                mc.services().sessionService().joinServer(
-                        mc.getUser().getProfileId(), mc.getUser().getAccessToken(), serverId);
+                MinecraftClient mc = MinecraftClient.getInstance();
+                mc.getApiServices().sessionService().joinServer(
+                        mc.getSession().getUuidOrNull(), mc.getSession().getAccessToken(), serverId);
                 JsonObject o = new JsonObject();
                 o.addProperty("type", "auth-response");
                 sendJson(o);
@@ -459,7 +459,7 @@ public final class RelayClient {
                         e.get("x").getAsDouble(),
                         e.get("y").getAsDouble(),
                         e.get("z").getAsDouble(),
-                        dim != null ? dim : Identifier.parse("minecraft:overworld"),
+                        dim != null ? dim : Identifier.of("minecraft:overworld"),
                         parseArmor(e)));
             } catch (RuntimeException ex) {
                 TeamLocatorConstants.LOGGER.debug("Bad snapshot entry: {}", ex.toString());

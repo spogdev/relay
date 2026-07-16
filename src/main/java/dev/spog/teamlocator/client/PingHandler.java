@@ -3,12 +3,12 @@ package dev.spog.teamlocator.client;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.toasts.SystemToast;
-import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.network.chat.Component;
-import net.minecraft.sounds.SoundEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.toast.SystemToast;
+import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.sound.PositionedSoundInstance;
+import net.minecraft.text.Text;
+import net.minecraft.sound.SoundEvents;
 
 import java.util.List;
 import java.util.Map;
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  */
 @Environment(EnvType.CLIENT)
 public final class PingHandler {
-    private static final SystemToast.SystemToastId PING_TOAST = new SystemToast.SystemToastId();
+    private static final SystemToast.Type PING_TOAST = new SystemToast.Type();
 
     /** When each attacker's ping was last shown, for the anti-spam display cooldown. */
     private static final Map<UUID, Long> lastDisplayedAt = new ConcurrentHashMap<>();
@@ -57,13 +57,13 @@ public final class PingHandler {
             return;
         }
         lastDisplayedAt.put(attacker, now);
-        Minecraft mc = Minecraft.getInstance();
+        MinecraftClient mc = MinecraftClient.getInstance();
         if (sameServer) {
             ClientState.flagAttacked(attacker);
         }
         mc.execute(() -> SystemToast.add(mc.getToastManager(), PING_TOAST,
-                Component.translatable("relay.toast.attacked", displayName(mc, attacker)),
-                Component.translatable("relay.toast.server", fromServer)));
+                Text.translatable("relay.toast.attacked", displayName(mc, attacker)),
+                Text.translatable("relay.toast.server", fromServer)));
         playPingSound(mc);
     }
 
@@ -74,22 +74,22 @@ public final class PingHandler {
      * needs the toast fallback for the no-player case.
      */
     public static void onPingAck(List<UUID> receivers) {
-        Minecraft mc = Minecraft.getInstance();
+        MinecraftClient mc = MinecraftClient.getInstance();
         mc.execute(() -> RelayChat.send(receivers.isEmpty()
-                ? Component.translatable("relay.ping.no_receivers")
-                : Component.translatable("relay.ping.received_by", RelayChat.value(receivers.stream()
+                ? Text.translatable("relay.ping.no_receivers")
+                : Text.translatable("relay.ping.received_by", RelayChat.value(receivers.stream()
                         .map(id -> displayName(mc, id))
                         .collect(Collectors.joining(", "))))));
     }
 
     /** Cached trust-list name first (works cross-server), then tab list, then a UUID stub. */
-    private static String displayName(Minecraft mc, UUID player) {
+    private static String displayName(MinecraftClient mc, UUID player) {
         String name = TeamLocatorClient.CONFIG.nameFor(player);
         if (name != null) {
             return name;
         }
-        if (mc.getConnection() != null) {
-            PlayerInfo info = mc.getConnection().getPlayerInfo(player);
+        if (mc.getNetworkHandler() != null) {
+            PlayerListEntry info = mc.getNetworkHandler().getPlayerListEntry(player);
             if (info != null) {
                 return info.getProfile().name();
             }
@@ -101,15 +101,15 @@ public final class PingHandler {
      * Play the configured alert sound so an attack ping is noticed even without looking at the
      * screen: the new alarm plays once (the default), or the three ascending noteblock dings.
      */
-    private static void playPingSound(Minecraft mc) {
+    private static void playPingSound(MinecraftClient mc) {
         mc.execute(() -> {
             var sounds = mc.getSoundManager();
             if (TeamLocatorClient.CONFIG.alertSound == TeamConfig.AlertSound.NOTEBLOCKS) {
-                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.0f), 0);
-                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.3f), 4);
-                sounds.playDelayed(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING, 1.6f), 8);
+                sounds.play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_PLING, 1.0f), 0);
+                sounds.play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_PLING, 1.3f), 4);
+                sounds.play(PositionedSoundInstance.ui(SoundEvents.BLOCK_NOTE_BLOCK_PLING, 1.6f), 8);
             } else {
-                sounds.playDelayed(SimpleSoundInstance.forUI(RelaySounds.ALARM, 1.0f), 0);
+                sounds.play(PositionedSoundInstance.ui(RelaySounds.ALARM, 1.0f), 0);
             }
         });
     }

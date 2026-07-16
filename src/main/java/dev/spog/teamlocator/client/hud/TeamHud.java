@@ -7,14 +7,14 @@ import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
-import net.minecraft.client.DeltaTracker;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.PlayerFaceExtractor;
-import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.player.PlayerSkin;
+import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.PlayerSkinDrawer;
+import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.util.Identifier;
+import net.minecraft.entity.player.SkinTextures;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.Locale;
 @Environment(EnvType.CLIENT)
 public class TeamHud implements HudElement {
     public static final Identifier ID =
-            Identifier.fromNamespaceAndPath(dev.spog.teamlocator.TeamLocatorConstants.MOD_ID, "hud");
+            Identifier.of(dev.spog.teamlocator.TeamLocatorConstants.MOD_ID, "hud");
 
     private static final int FACE_SIZE = 10;
     private static final int ROW_HEIGHT = 11;
@@ -45,7 +45,7 @@ public class TeamHud implements HudElement {
     private record Segment(String text, int color) {
     }
 
-    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width,
+    private record Row(TrackedPos entry, SkinTextures skin, List<Segment> segments, int width,
                        List<ArmorPiece> armor, int textWidth) {
     }
 
@@ -85,10 +85,10 @@ public class TeamHud implements HudElement {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
-        Minecraft mc = Minecraft.getInstance();
-        if (!config.hudEnabled || mc.player == null || mc.getConnection() == null
-                || mc.options.hideGui) {
+    public void render(DrawContext graphics, RenderTickCounter delta) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (!config.hudEnabled || mc.player == null || mc.getNetworkHandler() == null
+                || mc.options.hudHidden) {
             return;
         }
         List<TrackedPos> entries = ClientState.latest();
@@ -96,18 +96,18 @@ public class TeamHud implements HudElement {
             return;
         }
 
-        Font font = mc.font;
-        Identifier viewerDim = mc.player.level().dimension().identifier();
+        TextRenderer font = mc.textRenderer;
+        Identifier viewerDim = mc.player.getEntityWorld().getRegistryKey().getValue();
 
         // First pass: build the rows so we know their widths before placing anything. A player
-        // with no PlayerInfo has left this server — drop the row immediately instead of showing a
+        // with no PlayerListEntry has left this server — drop the row immediately instead of showing a
         // UUID until the position entry expires.
         List<Row> rows = new ArrayList<>(entries.size());
         int maxWidth = 0;
         int primary = config.hudPrimaryArgb();
         int secondary = config.hudSecondaryArgb();
         for (TrackedPos e : entries) {
-            PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
+            PlayerListEntry info = mc.getNetworkHandler().getPlayerListEntry(e.id());
             if (info == null) {
                 continue;
             }
@@ -134,14 +134,14 @@ public class TeamHud implements HudElement {
             }
             int textWidth = 0;
             for (Segment seg : segments) {
-                textWidth += font.width(seg.text());
+                textWidth += font.getWidth(seg.text());
             }
             // Only what the teammate actually shares; an empty list costs no width.
             List<ArmorPiece> armor = displayedArmor(e.armor());
             int armorWidth = armor.isEmpty()
                     ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
             int rowWidth = FACE_SIZE + 3 + textWidth + armorWidth;
-            rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth));
+            rows.add(new Row(e, info.getSkinTextures(), segments, rowWidth, armor, textWidth));
             maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
@@ -154,16 +154,16 @@ public class TeamHud implements HudElement {
         int totalHeight = rows.size() * (ROW_HEIGHT + GAP) - GAP;
         int scaledWidth = Math.round(maxWidth * scale);
         int scaledHeight = Math.round(totalHeight * scale);
-        int baseX = (int) Math.round(config.hudX * graphics.guiWidth());
-        int baseY = (int) Math.round(config.hudY * graphics.guiHeight());
+        int baseX = (int) Math.round(config.hudX * graphics.getScaledWindowWidth());
+        int baseY = (int) Math.round(config.hudY * graphics.getScaledWindowHeight());
         if (config.hudGrowUp) {
             // The anchor is the block's bottom edge: the list expands upward as teammates join.
             baseY -= scaledHeight;
         }
-        baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.guiWidth() - scaledWidth - EDGE_MARGIN));
-        baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.guiHeight() - scaledHeight - EDGE_MARGIN));
+        baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.getScaledWindowWidth() - scaledWidth - EDGE_MARGIN));
+        baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.getScaledWindowHeight() - scaledHeight - EDGE_MARGIN));
 
-        var pose = graphics.pose();
+        var pose = graphics.getMatrices();
         pose.pushMatrix();
         pose.translate(baseX, baseY);
         pose.scale(scale, scale);
@@ -181,14 +181,14 @@ public class TeamHud implements HudElement {
             // Center the face and the text against the same vertical band so the head sits inline
             // with the name instead of riding high above it. The head is nudged 1px up from true
             // center, which reads better against the font baseline.
-            int contentHeight = Math.max(FACE_SIZE, mc.font.lineHeight);
-            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), rowX,
+            int contentHeight = Math.max(FACE_SIZE, mc.textRenderer.fontHeight);
+            PlayerSkinDrawer.draw(graphics, row.skin(), rowX,
                     y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
-            int textY = y + (contentHeight - mc.font.lineHeight) / 2;
+            int textY = y + (contentHeight - mc.textRenderer.fontHeight) / 2;
             int x = rowX + FACE_SIZE + 3;
             for (Segment seg : row.segments()) {
-                graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
-                x += mc.font.width(seg.text());
+                graphics.drawText(mc.textRenderer, seg.text(), x, textY, seg.color(), true);
+                x += mc.textRenderer.getWidth(seg.text());
             }
             if (!row.armor().isEmpty()) {
                 // Centered on the same band as the head and text, nudged 1px up like the head —

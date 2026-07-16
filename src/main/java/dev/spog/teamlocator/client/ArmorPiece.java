@@ -22,11 +22,15 @@ public record ArmorPiece(String slot, String item, int damage, int maxDamage) {
         return maxDamage > 0;
     }
 
-    /** Remaining durability as a 0..1 fraction; 1 when the piece has no durability bar. */
-    public float durabilityFraction() {
+    /**
+     * Absolute durability remaining — the raw hits left before the piece breaks.
+     * {@link Integer#MAX_VALUE} for a piece with no durability bar, so it never ranks as the
+     * closest to breaking.
+     */
+    public int durabilityLeft() {
         if (!hasDurability()) {
-            return 1.0f;
+            return Integer.MAX_VALUE;
         }
-        return Math.max(0.0f, Math.min(1.0f, (maxDamage - damage) / (float) maxDamage));
+        return Math.max(0, maxDamage - damage);
     }
 }

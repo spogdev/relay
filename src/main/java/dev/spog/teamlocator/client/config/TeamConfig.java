@@ -37,7 +37,15 @@ public class TeamConfig {
     }
 
     // ---- persisted fields (Gson) ----
+    /**
+     * The active-list choice for the current scope. Kept as a live field rather than read from
+     * {@link #serverModes} on every access so the menu and singleplayer still have a mode, and so
+     * an older config's single choice carries forward. {@link #onScopeChanged()} swaps it to the
+     * joined server's remembered choice.
+     */
     public Mode activeMode = Mode.GLOBAL;
+    /** Remembered active-list choice per server key, so rejoining a server restores its mode. */
+    public java.util.Map<String, Mode> serverModes = new java.util.HashMap<>();
     public boolean globalShareEnabled = true;
     /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
     public boolean crossServerPings = true;
@@ -125,6 +133,8 @@ public class TeamConfig {
     /** Repair nulls that a partial/older JSON file may leave after deserialization. */
     private void sanitize() {
         if (activeMode == null) activeMode = Mode.GLOBAL;
+        if (serverModes == null) serverModes = new java.util.HashMap<>();
+        serverModes.values().removeIf(java.util.Objects::isNull);
         if (alertSound == null) alertSound = AlertSound.ALARM;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
         if (hudAlign == null) hudAlign = HudAlign.LEFT;
@@ -162,6 +172,36 @@ public class TeamConfig {
             ip = ip.substring(0, ip.length() - ":25565".length());
         }
         return ip;
+    }
+
+    /**
+     * Switch {@link #activeMode} to the joined server's remembered choice. Called on join (and on
+     * disconnect, where the scope has no memory and GLOBAL is the only usable mode — the server
+     * list is unreachable at the menu). A server we have never seen keeps the current mode, so the
+     * first join after picking a mode inherits it rather than snapping back to GLOBAL.
+     *
+     * @return true if the mode actually changed, meaning callers should re-push trust to the relay
+     */
+    public boolean onScopeChanged() {
+        String key = currentServerKey();
+        Mode previous = activeMode;
+        if (key == null) {
+            activeMode = Mode.GLOBAL; // at the menu: no server list exists to be active
+        } else {
+            activeMode = serverModes.getOrDefault(key, activeMode);
+            // Remember the inherited choice so this server is pinned from now on.
+            serverModes.put(key, activeMode);
+        }
+        save();
+        return activeMode != previous;
+    }
+
+    /** Record the user's active-list choice for the current server, if we are on one. */
+    public void rememberActiveMode() {
+        String key = currentServerKey();
+        if (key != null) {
+            serverModes.put(key, activeMode);
+        }
     }
 
     /** The trust list backing the current active mode, creating the per-server list on demand. */

@@ -35,15 +35,22 @@ import java.util.function.Supplier;
  * {@code hasJoinedServer}. The relay then attributes this connection to the UUID <em>Mojang</em>
  * reports — nothing we claim is trusted, and nobody can impersonate us.
  *
- * <p>Reconnects with capped exponential backoff while the player remains on the same Minecraft
- * server. All sends are serialized through a {@link CompletableFuture} chain because the JDK
- * WebSocket forbids overlapping send operations.
+ * <p>Reconnects with capped exponential backoff for as long as the relay is wanted — including
+ * after a rejected handshake, which a relay reboot produces for every in-flight client — so a
+ * restarted relay is picked up again automatically. All sends are serialized through a
+ * {@link CompletableFuture} chain because the JDK WebSocket forbids overlapping send operations.
  */
 @Environment(EnvType.CLIENT)
 public final class RelayClient {
     private static final Gson GSON = new Gson();
     private static final int PROTOCOL_VERSION = 1;
-    private static final long MAX_BACKOFF_MS = 30_000L;
+    /**
+     * Ceiling for reconnect backoff. 15s so a relay that goes down (reboot, redeploy) is picked up
+     * again within ~15s of returning, rather than leaving clients dark for up to half a minute.
+     */
+    private static final long MAX_BACKOFF_MS = 15_000L;
+    /** Floor for the retry delay after a rejected handshake; see {@link #onAuthFail(String)}. */
+    private static final long AUTH_FAIL_BACKOFF_MS = 15_000L;
 
     /** Runs the blocking Mojang joinServer call and reconnect timers; never the game thread. */
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -272,12 +279,7 @@ public final class RelayClient {
         switch (obj.get("type").getAsString()) {
             case "auth-challenge" -> onChallenge(obj.get("serverId").getAsString());
             case "auth-ok" -> onAuthOk();
-            case "auth-fail" -> {
-                TeamLocatorConstants.LOGGER.warn("Relay rejected auth: {}",
-                        obj.has("reason") ? obj.get("reason").getAsString() : "?");
-                // Do not hammer Mojang's session server with a doomed handshake loop.
-                disconnect();
-            }
+            case "auth-fail" -> onAuthFail(obj.has("reason") ? obj.get("reason").getAsString() : "?");
             case "position-snapshot" -> onSnapshot(obj);
             case "ping-broadcast" -> onPingBroadcast(obj);
             case "ping-ack" -> onPingAck(obj);
@@ -310,6 +312,31 @@ public final class RelayClient {
                 scheduleReconnect();
             }
         });
+    }
+
+    /**
+     * The relay refused our handshake. This is not necessarily fatal: when the relay reboots it
+     * loses the nonce it issued us, so an in-flight handshake — and any reconnect racing the
+     * restart — comes back rejected. Treating that as permanent (the old behavior) left every
+     * connected client dead until a manual reconnect, even once the relay was back.
+     *
+     * <p>So retry on the normal backoff, but floor the delay at {@link #AUTH_FAIL_BACKOFF_MS}: a
+     * genuinely doomed account (banned, bad session) then re-handshakes only every 15s rather than
+     * hammering Mojang's session server, and the socket is aborted first so the relay is not left
+     * holding a dead connection.
+     */
+    private void onAuthFail(String reason) {
+        TeamLocatorConstants.LOGGER.warn("Relay rejected auth ({}), retrying in {}s",
+                reason, AUTH_FAIL_BACKOFF_MS / 1000);
+        WebSocket ws = socket;
+        if (ws != null) {
+            try {
+                ws.abort(); // abort() invokes neither onClose nor onError — no double reconnect
+            } catch (Exception ignored) {
+            }
+        }
+        backoffMs = Math.max(backoffMs, AUTH_FAIL_BACKOFF_MS);
+        scheduleReconnect();
     }
 
     private void onAuthOk() {

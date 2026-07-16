@@ -191,6 +191,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 .create(cx - 205, 284, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
+                            // Pin the choice to this server so rejoining restores it.
+                            config.rememberActiveMode();
                             config.save();
                             TeamLocatorClient.syncToServer();
                             rebuild();

@@ -88,10 +88,19 @@ public class TeamLocatorClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> connectRelay());
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             ClientState.reset();
+            // Restore this server's remembered active list before connecting, so the very first
+            // trust push already carries the right set.
+            CONFIG.onScopeChanged();
             connectRelay();
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             ClientState.reset();
+            // Leaving a server: the server list is unreachable at the menu, so fall back to GLOBAL
+            // without touching serverModes — the next join restores that server's own choice. Done
+            // explicitly rather than via onScopeChanged() because getCurrentServer() may still be
+            // populated at this point, which would re-pin the departed server's mode.
+            CONFIG.activeMode = TeamConfig.Mode.GLOBAL;
+            CONFIG.save();
             connectRelay(); // back to the "menu" scope, not a full disconnect
         }));
 
@@ -106,10 +115,10 @@ public class TeamLocatorClient implements ClientModInitializer {
                 client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
             }
             while (hudToggleKey.consumeClick()) {
-                toggleHud(client);
+                toggleHud();
             }
             while (inWorldIconsToggleKey.consumeClick()) {
-                toggleInWorldIcons(client);
+                toggleInWorldIcons();
             }
             broadcastOwnPosition(client);
         });
@@ -137,11 +146,11 @@ public class TeamLocatorClient implements ClientModInitializer {
         if (removed) {
             CONFIG.save();
             syncToServer();
-            player.sendOverlayMessage(
-                    Component.translatable("relay.remove_target.removed", target.getName()));
+            RelayChat.send(Component.translatable("relay.remove_target.removed",
+                    RelayChat.value(target.getName().getString())));
         } else {
-            player.sendOverlayMessage(
-                    Component.translatable("relay.remove_target.not_listed", target.getName()));
+            RelayChat.send(Component.translatable("relay.remove_target.not_listed",
+                    RelayChat.value(target.getName().getString())));
         }
     }
 
@@ -172,26 +181,22 @@ public class TeamLocatorClient implements ClientModInitializer {
         return best;
     }
 
-    private static void toggleHud(Minecraft client) {
+    private static void toggleHud() {
         CONFIG.hudEnabled = !CONFIG.hudEnabled;
         CONFIG.save();
-        if (client.player != null) {
-            client.player.sendOverlayMessage(Component.translatable(
-                    CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
-        }
+        RelayChat.send(Component.translatable(
+                CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
     }
 
     /**
      * Flip the Xaero in-world icon config option (keybind action). The trackers and the renderer
      * mixin read the config live, so the icons appear/disappear on the next frame.
      */
-    private static void toggleInWorldIcons(Minecraft client) {
+    private static void toggleInWorldIcons() {
         CONFIG.xaeroInWorldIcons = !CONFIG.xaeroInWorldIcons;
         CONFIG.save();
-        if (client.player != null) {
-            client.player.sendOverlayMessage(Component.translatable(
-                    CONFIG.xaeroInWorldIcons ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
-        }
+        RelayChat.send(Component.translatable(
+                CONFIG.xaeroInWorldIcons ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
     }
 
     /** The client now sources its own coordinates — they no longer come from a server mod. */

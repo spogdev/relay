@@ -27,7 +27,6 @@ import java.util.stream.Collectors;
 @Environment(EnvType.CLIENT)
 public final class PingHandler {
     private static final SystemToast.SystemToastId PING_TOAST = new SystemToast.SystemToastId();
-    private static final SystemToast.SystemToastId PING_ACK_TOAST = new SystemToast.SystemToastId();
 
     /** When each attacker's ping was last shown, for the anti-spam display cooldown. */
     private static final Map<UUID, Long> lastDisplayedAt = new ConcurrentHashMap<>();
@@ -69,23 +68,18 @@ public final class PingHandler {
     }
 
     /**
-     * The relay's answer to our own ping: who it was actually delivered to. Shown on the actionbar
-     * in-game (the pinger is mid-fight; a toast would be easy to miss there), as a toast otherwise.
+     * The relay's answer to our own ping: who it was actually delivered to. Goes to chat, which —
+     * unlike the actionbar it used to use — persists, so a pinger mid-fight can still read who
+     * answered once the fight is over. Chat is drawn at the title screen too, so this no longer
+     * needs the toast fallback for the no-player case.
      */
     public static void onPingAck(List<UUID> receivers) {
         Minecraft mc = Minecraft.getInstance();
-        mc.execute(() -> {
-            Component message = receivers.isEmpty()
-                    ? Component.translatable("relay.ping.no_receivers")
-                    : Component.translatable("relay.ping.received_by", receivers.stream()
-                            .map(id -> displayName(mc, id))
-                            .collect(Collectors.joining(", ")));
-            if (mc.player != null) {
-                mc.player.sendOverlayMessage(message);
-            } else {
-                SystemToast.add(mc.getToastManager(), PING_ACK_TOAST, message, null);
-            }
-        });
+        mc.execute(() -> RelayChat.send(receivers.isEmpty()
+                ? Component.translatable("relay.ping.no_receivers")
+                : Component.translatable("relay.ping.received_by", RelayChat.value(receivers.stream()
+                        .map(id -> displayName(mc, id))
+                        .collect(Collectors.joining(", "))))));
     }
 
     /** Cached trust-list name first (works cross-server), then tab list, then a UUID stub. */

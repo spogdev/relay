@@ -48,6 +48,7 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static KeyMapping removeTargetKey;
     private static KeyMapping configKey;
     private static KeyMapping hudToggleKey;
+    private static KeyMapping inWorldIconsToggleKey;
     private int positionTickCounter;
 
     /**
@@ -71,6 +72,8 @@ public class TeamLocatorClient implements ClientModInitializer {
                 "key.relay.open_config", InputConstants.Type.KEYSYM, unbound, category));
         hudToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
+        inWorldIconsToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.toggle_in_world_icons", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -104,6 +107,9 @@ public class TeamLocatorClient implements ClientModInitializer {
             }
             while (hudToggleKey.consumeClick()) {
                 toggleHud(client);
+            }
+            while (inWorldIconsToggleKey.consumeClick()) {
+                toggleInWorldIcons(client);
             }
             broadcastOwnPosition(client);
         });
@@ -172,6 +178,19 @@ public class TeamLocatorClient implements ClientModInitializer {
         if (client.player != null) {
             client.player.sendOverlayMessage(Component.translatable(
                     CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
+        }
+    }
+
+    /**
+     * Flip the Xaero in-world icon config option (keybind action). The trackers and the renderer
+     * mixin read the config live, so the icons appear/disappear on the next frame.
+     */
+    private static void toggleInWorldIcons(Minecraft client) {
+        CONFIG.xaeroInWorldIcons = !CONFIG.xaeroInWorldIcons;
+        CONFIG.save();
+        if (client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable(
+                    CONFIG.xaeroInWorldIcons ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
         }
     }
 

@@ -157,7 +157,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // Alerts row 2: choose the alert sound (new alarm vs. the old 3-noteblock chord).
         addRenderableWidget(CycleButton.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
                 .withValues(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
-                .create(cx - 205, 194, 200, 20, Component.translatable("relay.config.alert_sound"),
+                .create(cx - 205, 196, 200, 20, Component.translatable("relay.config.alert_sound"),
                         (btn, value) -> {
                             config.alertSound = value;
                             config.save();

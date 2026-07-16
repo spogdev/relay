@@ -3,6 +3,7 @@
   "key.relay.remove_target": "Remove Targeted Player",
   "key.relay.open_config": "Open Config",
   "key.relay.toggle_hud": "Toggle HUD",
+  "key.relay.toggle_in_world_icons": "Toggle In-World Icons",
   "key.category.relay.main": "Relay",
   "relay.config.title": "Relay Config",
   "relay.config.active_list": "Active List",
@@ -47,5 +48,7 @@
   "relay.remove_target.removed": "Removed %s from your trust list",
   "relay.remove_target.not_listed": "%s is not on your trust list",
   "relay.hud.shown": "Relay HUD shown",
-  "relay.hud.hidden": "Relay HUD hidden"
+  "relay.hud.hidden": "Relay HUD hidden",
+  "relay.in_world_icons.shown": "In-world icons shown",
+  "relay.in_world_icons.hidden": "In-world icons hidden"
 }

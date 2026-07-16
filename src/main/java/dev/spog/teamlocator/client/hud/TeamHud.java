@@ -35,8 +35,8 @@ public class TeamHud implements HudElement {
     private static final int GAP = 2;
     private static final int COLOR_ATTACKED = 0xFFFF5555;
     private static final int EDGE_MARGIN = 2;
-    /** Shrinks the 16px item icon to sit inside an 11px row without inflating it. */
-    private static final float ARMOR_ICON_SCALE = 0.625f; // 16 * 0.625 = 10px, matching FACE_SIZE
+    /** Shrinks the 16px item icon to sit inside a row without inflating it. */
+    private static final float ARMOR_ICON_SCALE = 0.75f; // 16 * 0.75 = 12px, slightly over FACE_SIZE
     /** Space between the row text and the first armor icon. */
     private static final int ARMOR_GAP = 3;
 
@@ -160,9 +160,10 @@ public class TeamHud implements HudElement {
                 x += mc.font.width(seg.text());
             }
             if (!row.armor().isEmpty()) {
-                // Centered on the same band as the head and text, so icons sit inline with them.
+                // Centered on the same band as the head and text, nudged 1px up like the head —
+                // it reads better against the font baseline.
                 ArmorRenderer.render(graphics, row.armor(), x + ARMOR_GAP,
-                        y + contentHeight / 2, ARMOR_ICON_SCALE);
+                        y + contentHeight / 2 - 1, ARMOR_ICON_SCALE);
             }
         }
         pose.popMatrix();

@@ -2,6 +2,9 @@
 build/
 out/
 run/
+# Release jars collected from both branches' builds: build/ is per-branch and cleaned, so the
+# two clients cannot coexist there.
+dist/
 .idea/
 *.iml
 .DS_Store

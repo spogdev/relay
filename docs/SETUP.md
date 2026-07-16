@@ -34,8 +34,10 @@ Do this before renting anything, so you know the mod and relay work.
    ws://localhost:8080
    ```
    Watch the relay's console — within a few seconds you should see
-   `<your-uuid> (<your-name>) authenticated in scope '<server-address>'`.
-   That line means the Mojang auth handshake worked end-to-end.
+   `<your-uuid> (<your-name>) authenticated in scope '<ip:port>'`.
+   That line means the Mojang auth handshake worked end-to-end. The scope is the Minecraft server
+   you are on, as the resolved address your client is actually connected to: two players only see
+   each other when theirs match, so it is the first thing to compare if they cannot.
 
 5. **Test with a friend** (they do steps 3–4 pointing at `ws://YOUR-PC-IP:8080`, which needs a port
    forward — or just wait for the VPS). Add each other in the trust list (the player must be on the
@@ -206,7 +208,27 @@ Each person on the team does this (including you):
 | Teammate on HUD but frozen, then vanishes after ~10 s | They lost their relay connection; it reconnects automatically |
 | You see them, they don't see you | They haven't trusted you back (trust is one-directional), or your sharing toggle is off |
 | Certificate errors on `wss://` | DNS not pointing at the VPS yet, or port 80 blocked so Let's Encrypt can't issue |
-| Works on one MC server, not another | By design — you only see teammates on the *same* server; also check which trust list is Active |
+| You see a teammate on one MC server but not another | Expected — you only see teammates on the server you are both currently on. Also check which trust list is Active: a per-server list is separate from the global one and starts out empty |
+| Both on the **same** server, mutually trusted, still invisible to each other | A bug — not expected, so report it. Scope is keyed on the connection's resolved `ip:port`, so you should share a scope however each of you typed the address. Builds before this keyed on the typed address, which split a hostname-joiner from an IP-joiner on any server using a non-default port |
 
-**Updating the relay later:** build, `scp` the new jar over the old one, then
-`systemctl restart teamlocator-relay`.
+**Updating the relay later:** build, then
+
+```bash
+scp relay/build/libs/teamlocator-relay-all.jar root@YOUR.VPS.IP:/tmp/
+ssh root@YOUR.VPS.IP
+mv /tmp/teamlocator-relay-all.jar /opt/teamlocator/
+chown teamlocator:teamlocator /opt/teamlocator/teamlocator-relay-all.jar
+systemctl restart teamlocator-relay
+systemctl status teamlocator-relay --no-pager   # want "active (running)"
+```
+
+Stage through `/tmp` and re-`chown`: the service runs as `teamlocator`, so `scp`-ing straight into
+`/opt/teamlocator/` as root leaves a jar the service cannot read, and it fails on restart.
+
+Restarting drops every connected client. They reconnect on their own (retrying on a backoff floored
+at 15s), so a restart alone needs no announcement.
+
+**Ship the clients with it** whenever a change touches the wire: the relay rejects a client whose
+`protocolVersion` differs, and a client on an older scope key lands in a scope of its own where
+nobody can see it. Both are silent from the player's side — they just see an empty HUD — so relay
+and clients go out together.

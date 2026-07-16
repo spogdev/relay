@@ -72,24 +72,55 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    /** Height of the pinned bottom bar (relay address + Done), which the page scrolls under. */
-    private static final int BOTTOM_BAR_H = 36;
-    /** Height of the pinned tab bar at the top, which the page scrolls under. */
-    private static final int TAB_BAR_H = 44;
+    /** Standard button height, and the unit both bars are padded against. */
+    private static final int BUTTON_H = 20;
+    /** Breathing room inside each bar: the same above and below its contents, top bar and bottom. */
+    private static final int BAR_PAD = 8;
+
+    /** Title baseline, one pad down from the screen's top edge. */
+    private static final int TITLE_Y = BAR_PAD;
+    /** Tab buttons sit a pad below the title text (9px tall at default scale). */
+    private static final int TAB_BUTTON_Y = TITLE_Y + 9 + BAR_PAD;
+    /**
+     * Height of the pinned tab bar, which the page scrolls under: the tab buttons plus a matching
+     * pad beneath them, so the gap under the tabs equals the gap over them and the gap around the
+     * Done button on the opposite bar.
+     */
+    private static final int TAB_BAR_H = TAB_BUTTON_Y + BUTTON_H + BAR_PAD;
+    /** Height of the pinned bottom bar (relay address + Done), padded to match the top. */
+    private static final int BOTTOM_BAR_H = BUTTON_H + BAR_PAD * 2;
     /** Wheel notch distance, in content pixels. */
     private static final int SCROLL_STEP = 20;
 
+    /**
+     * Content Y of each page's first row. The settings page's Sharing header sits above it at
+     * content Y 0; the trust page's mode/add row starts here directly.
+     */
+    private static final int TOP_ROW_Y = 12;
     /** Content Y of the settings page's last row (Xaero's); drives that page's scroll extent. */
     private static final int SETTINGS_LAST_ROW_Y = 240;
-    /** First row of the trust table, in content pixels; the column header sits 12px above it. */
-    private static final int LIST_TOP = 28;
-    /** Column x-offsets from the screen centre, shared by the header labels and the row widgets. */
-    private static final int COL_ALERTS_X = -50;
-    private static final int COL_VISIBILITY_X = 55;
-    private static final int COL_REMOVE_X = 150;
-    private static final int COL_ALERTS_W = 100;
-    private static final int COL_VISIBILITY_W = 90;
-    private static final int COL_REMOVE_W = 55;
+    /** How far the column header's text floats above the first table row. */
+    private static final int COL_HEADER_OFFSET = 12;
+    /** Gap from one section's last row to the next section's header, on the settings page. */
+    private static final int SECTION_GAP = 44;
+    /**
+     * First row of the trust table: a section's gap below the mode/add row, matching the settings
+     * page's rhythm. That gap is what gives the column header room to sit {@link #COL_HEADER_OFFSET}
+     * above the first row without clipping into the buttons overhead.
+     */
+    private static final int LIST_TOP = TOP_ROW_Y + SECTION_GAP;
+    /**
+     * Column x-offsets from the screen centre, shared by the header labels and the row widgets.
+     * The toggles only carry ON/OFF now that the header names them, so they need far less width
+     * than the old inline labels did; the name column absorbs what they gave up. Visibility stays
+     * wider than Alerts because its heading is the longest word in the table.
+     */
+    private static final int COL_ALERTS_X = 20;
+    private static final int COL_ALERTS_W = 55;
+    private static final int COL_VISIBILITY_X = 80;
+    private static final int COL_VISIBILITY_W = 70;
+    private static final int COL_REMOVE_X = 155;
+    private static final int COL_REMOVE_W = 50;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
         super(Component.translatable("relay.config.title"));
@@ -145,15 +176,14 @@ public class TeamLocatorConfigScreen extends Screen {
         int cx = this.width / 2;
 
         // --- Tab bar: pinned above the scrolling area, so switching pages is always reachable.
-        // The active tab's button is inactive — it reads as "you are here" and can't be re-clicked.
-        Button settingsTab = Button.builder(Component.translatable("relay.config.tab.settings"),
-                b -> switchTab(Tab.SETTINGS)).bounds(cx - 205, 22, 200, 20).build();
-        settingsTab.active = tab != Tab.SETTINGS;
-        addRenderableWidget(settingsTab);
-        Button trustTab = Button.builder(Component.translatable("relay.config.tab.trust"),
-                b -> switchTab(Tab.TRUST)).bounds(cx + 5, 22, 200, 20).build();
-        trustTab.active = tab != Tab.TRUST;
-        addRenderableWidget(trustTab);
+        // The two tabs meet in the middle and span the page's full width, so the strip reads as one
+        // unit sitting on top of the page rather than as two more buttons among the settings.
+        addRenderableWidget(new TabButton(cx - 205, TAB_BUTTON_Y, 205, BUTTON_H,
+                Component.translatable("relay.config.tab.settings"),
+                tab == Tab.SETTINGS, () -> switchTab(Tab.SETTINGS)));
+        addRenderableWidget(new TabButton(cx, TAB_BUTTON_Y, 205, BUTTON_H,
+                Component.translatable("relay.config.tab.trust"),
+                tab == Tab.TRUST, () -> switchTab(Tab.TRUST)));
 
         if (tab == Tab.SETTINGS) {
             initSettingsPage(cx);
@@ -328,9 +358,9 @@ public class TeamLocatorConfigScreen extends Screen {
 
     /** The trust list page: mode cycle and add-player controls up top, then the player table. */
     private void initTrustPage(int cx) {
-        // Row 0 is the mode cycle + add-player controls; the table header sits at LIST_TOP - 12 and
-        // the rows start at LIST_TOP.
         // --- Active-list mode cycle (Global / This Server) ---
+        // Sits at TOP_ROW_Y like the settings page's first row, rather than flush against the tab
+        // bar, so both pages open with the same gap under the tabs.
         // With no server there is no server list to edit: pin the mode to GLOBAL and grey the
         // button out entirely instead of letting it cycle into an unusable state.
         boolean serverAvailable = TeamConfig.currentServerKey() != null;
@@ -341,7 +371,8 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, sy(0), 200, 20, Component.translatable("relay.config.active_list"),
+                .create(cx - 205, sy(TOP_ROW_Y), 200, BUTTON_H,
+                        Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             // Pin the choice to this server so rejoining restores it.
@@ -351,16 +382,16 @@ public class TeamLocatorConfigScreen extends Screen {
                             rebuild();
                         });
         modeButton.active = serverAvailable;
-        addScrolled(sy(0), modeButton);
+        addScrolled(sy(TOP_ROW_Y), modeButton);
 
         // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx + 5, sy(0), 130, 20,
+        nameInput = new EditBox(this.font, cx + 5, sy(TOP_ROW_Y), 130, BUTTON_H,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
-        addScrolled(sy(0), nameInput);
-        addScrolled(sy(0), Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, sy(0), 65, 20).build());
+        addScrolled(sy(TOP_ROW_Y), nameInput);
+        addScrolled(sy(TOP_ROW_Y), Button.builder(Component.translatable("relay.config.add"),
+                b -> addTypedPlayer()).bounds(cx + 140, sy(TOP_ROW_Y), 65, BUTTON_H).build());
 
         // --- Table rows ---
         // Every entry gets a widget at its natural Y; the page scroll decides what's on screen, so
@@ -443,7 +474,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         super.extractRenderState(graphics, mouseX, mouseY, delta);
 
-        graphics.centeredText(this.font, this.title, cx, 8, 0xFFFFFFFF);
+        graphics.centeredText(this.font, this.title, cx, TITLE_Y, 0xFFFFFFFF);
         drawScrollbar(graphics);
     }
 
@@ -454,8 +485,10 @@ public class TeamLocatorConfigScreen extends Screen {
      * {@link #addScrolled}), since nothing this screen draws can cover them.
      */
     private void drawBarBackdrops(GuiGraphicsExtractor graphics, int cx) {
+        // No divider under the tab strip: the selected tab's open bottom edge is what joins it to
+        // the page, and a rule across there would cut that connection. The strip's own borders
+        // already separate it from the content.
         graphics.fill(0, 0, this.width, TAB_BAR_H, 0xFF101010);
-        graphics.fill(0, TAB_BAR_H - 1, this.width, TAB_BAR_H, 0xFF000000);
 
         int top = this.height - BOTTOM_BAR_H;
         graphics.fill(0, top, this.width, this.height, 0xFF101010);
@@ -492,7 +525,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         // Column headers, naming each toggle once for the whole table instead of on every row.
         // Each is centered over its column so it reads as a heading for the buttons beneath it.
-        int headerY = sy(LIST_TOP - 12);
+        int headerY = sy(LIST_TOP - COL_HEADER_OFFSET);
         boolean headerVisible = headerY >= TAB_BAR_H && headerY + this.font.lineHeight <= viewportBottom();
         if (headerVisible) {
             graphics.text(this.font, Component.translatable("relay.config.column.player"),

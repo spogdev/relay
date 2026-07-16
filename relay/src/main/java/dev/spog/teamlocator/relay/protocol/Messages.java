@@ -16,7 +16,12 @@ public final class Messages {
     private Messages() {
     }
 
-    public static final int PROTOCOL_VERSION = 1;
+    /**
+     * Bumped to 2 for armor sharing. {@code RelayServer} rejects a mismatch outright, so relay and
+     * clients must be updated together. Within v2, armor itself is optional on the wire: a client
+     * that shares no armor simply omits the field, exactly as {@code alertsWith} was introduced.
+     */
+    public static final int PROTOCOL_VERSION = 2;
 
     // ---- client -> relay ----
 
@@ -71,6 +76,45 @@ public final class Messages {
         public String type = "ping";
     }
 
+    /**
+     * The client's own equipped armor and its durability, for teammates' HUDs. Sent separately from
+     * {@link PositionUpdate} — and far less often — because armor changes rarely while position
+     * changes constantly; the client only sends this when a piece actually changes.
+     *
+     * <p>Self-reported like everything else here (see the README's stated limits), and routed
+     * through the same sharing gate as positions, with its own client-side opt-in on top.
+     */
+    public static final class ArmorUpdate {
+        public String type = "armor-update";
+        /** Equipped pieces, head-to-feet order; absent/empty slots are simply omitted. */
+        public List<ArmorPiece> armor;
+    }
+
+    /**
+     * One equipped armor piece. {@code item} is the registry id (e.g. "minecraft:diamond_chestplate")
+     * so the viewer's client can resolve the real item and render its icon; {@code damage} and
+     * {@code maxDamage} mirror {@code ItemStack}'s own values, so the HUD can show durability the
+     * same way the inventory does. {@code maxDamage <= 0} means the piece has no durability bar
+     * (unbreakable, or a non-damageable item like a carved pumpkin).
+     */
+    public static final class ArmorPiece {
+        /** Equipment slot: "head", "chest", "legs", or "feet". */
+        public String slot;
+        public String item;
+        public int damage;
+        public int maxDamage;
+
+        public ArmorPiece() {
+        }
+
+        public ArmorPiece(String slot, String item, int damage, int maxDamage) {
+            this.slot = slot;
+            this.item = item;
+            this.damage = damage;
+            this.maxDamage = maxDamage;
+        }
+    }
+
     // ---- relay -> client ----
 
     /** Relay's reply to {@link Hello}: the single-use nonce to pass to Mojang's joinServer. */
@@ -119,13 +163,21 @@ public final class Messages {
             public double y;
             public double z;
             public String dimension;
+            /**
+             * The player's last reported armor, or null if they share none (opted out, or an
+             * unarmored player). Null rather than an empty list so "shares no armor" and "shares
+             * armor, currently wearing none" stay distinguishable on the wire.
+             */
+            public List<ArmorPiece> armor;
 
-            public Entry(String id, double x, double y, double z, String dimension) {
+            public Entry(String id, double x, double y, double z, String dimension,
+                         List<ArmorPiece> armor) {
                 this.id = id;
                 this.x = x;
                 this.y = y;
                 this.z = z;
                 this.dimension = dimension;
+                this.armor = armor;
             }
         }
     }

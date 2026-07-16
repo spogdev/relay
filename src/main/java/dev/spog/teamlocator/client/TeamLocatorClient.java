@@ -35,8 +35,12 @@ import java.util.UUID;
 @Environment(EnvType.CLIENT)
 public class TeamLocatorClient implements ClientModInitializer {
     public static final TeamConfig CONFIG = TeamConfig.load();
+    /** Declared before RELAY: RELAY's constructor captures it for the re-auth callback. */
+    private static final ArmorReporter ARMOR_REPORTER = new ArmorReporter();
     public static final RelayClient RELAY = new RelayClient(
-            () -> CONFIG.effectiveSharingSet(), () -> CONFIG.alertTrustSet());
+            () -> CONFIG.effectiveSharingSet(), () -> CONFIG.alertTrustSet(),
+            // A fresh socket means the relay holds no armor for us: re-send it on the next tick.
+            ARMOR_REPORTER::reset);
 
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
@@ -88,6 +92,8 @@ public class TeamLocatorClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> connectRelay());
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             ClientState.reset();
+            // A new connection means the relay holds no armor for us; re-send on the next tick.
+            ARMOR_REPORTER.reset();
             // Restore this server's remembered active list before connecting, so the very first
             // trust push already carries the right set.
             CONFIG.onScopeChanged();
@@ -212,6 +218,9 @@ public class TeamLocatorClient implements ClientModInitializer {
         RELAY.sendPosition(
                 player.getX(), player.getY(), player.getZ(),
                 player.level().dimension().identifier().toString());
+        // Same gate and cadence as the position, but the reporter only actually sends when a piece
+        // changes, so a geared player standing still costs nothing.
+        ARMOR_REPORTER.tick(player, CONFIG.shareArmor);
     }
 
     /**

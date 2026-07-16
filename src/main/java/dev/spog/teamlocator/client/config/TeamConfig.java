@@ -47,6 +47,13 @@ public class TeamConfig {
     /** Remembered active-list choice per server key, so rejoining a server restores its mode. */
     public java.util.Map<String, Mode> serverModes = new java.util.HashMap<>();
     public boolean globalShareEnabled = true;
+    /**
+     * Share our equipped armor and its durability with trusted players. Off by default: gear state
+     * is a bigger disclosure than coordinates, so it is opted into rather than out of. Independent
+     * of {@link #globalShareEnabled}, but the relay gates armor behind the position-sharing set, so
+     * armor never reaches anyone who cannot already see us.
+     */
+    public boolean shareArmor = false;
     /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
     public boolean crossServerPings = true;
     /** Per-player client-side ping display cooldown, in seconds (0 = no cooldown). */
@@ -83,6 +90,13 @@ public class TeamConfig {
     public boolean hudGrowUp = false;
     /** How each HUD row is aligned within the widest row. */
     public HudAlign hudAlign = HudAlign.LEFT;
+    /** Show each teammate's coordinates (and dimension) on the HUD row. */
+    public boolean hudShowCoords = true;
+    /**
+     * Show each teammate's armor and durability on the HUD row. Only ever displays what a teammate
+     * chooses to share ({@link #shareArmor}) — this toggle is our own view of it.
+     */
+    public boolean hudShowArmor = true;
     /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
     public String hudPrimaryColor = "#FFFFFF";
     public String hudSecondaryColor = "#AAAAAA";

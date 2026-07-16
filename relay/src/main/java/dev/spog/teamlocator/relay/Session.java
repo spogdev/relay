@@ -23,6 +23,15 @@ public final class Session {
     public volatile String dimension = "minecraft:overworld";
     public volatile boolean hasPosition;
 
+    /**
+     * Last reported armor, or null while the client shares none. Held per session (like the
+     * position) so it can be replayed into a late viewer's initial snapshot — armor is only sent
+     * when it changes, so a viewer joining later would otherwise see none until the owner's next
+     * equipment change. Immutable once assigned; {@code volatile} publishes it safely to the
+     * routing threads.
+     */
+    public volatile java.util.List<dev.spog.teamlocator.relay.protocol.Messages.ArmorPiece> armor;
+
     public Session(org.java_websocket.WebSocket conn) {
         this.conn = conn;
     }

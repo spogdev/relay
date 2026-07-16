@@ -1,5 +1,6 @@
 package dev.spog.teamlocator.client.hud;
 
+import dev.spog.teamlocator.client.ArmorPiece;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.config.TeamConfig;
@@ -34,13 +35,18 @@ public class TeamHud implements HudElement {
     private static final int GAP = 2;
     private static final int COLOR_ATTACKED = 0xFFFF5555;
     private static final int EDGE_MARGIN = 2;
+    /** Shrinks the 16px item icon to sit inside an 11px row without inflating it. */
+    private static final float ARMOR_ICON_SCALE = 0.625f; // 16 * 0.625 = 10px, matching FACE_SIZE
+    /** Space between the row text and the first armor icon. */
+    private static final int ARMOR_GAP = 3;
 
     private final TeamConfig config;
 
     private record Segment(String text, int color) {
     }
 
-    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width) {
+    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width,
+                       List<ArmorPiece> armor, int textWidth) {
     }
 
     public TeamHud(TeamConfig config) {
@@ -78,23 +84,33 @@ public class TeamHud implements HudElement {
             int pri = attacked ? COLOR_ATTACKED : primary;
             int sec = attacked ? COLOR_ATTACKED : secondary;
             List<Segment> segments = new ArrayList<>();
-            segments.add(new Segment(info.getProfile().name() + "  ", pri));
-            segments.add(new Segment(Integer.toString((int) Math.floor(e.x())), sec));
-            segments.add(new Segment(", ", pri));
-            segments.add(new Segment(Integer.toString((int) Math.floor(e.y())), sec));
-            segments.add(new Segment(", ", pri));
-            segments.add(new Segment(Integer.toString((int) Math.floor(e.z())), sec));
-            if (!e.dimension().equals(viewerDim)) {
-                segments.add(new Segment(" (", pri));
-                segments.add(new Segment(prettyDimension(e.dimension()), sec));
-                segments.add(new Segment(")", pri));
+            // Trailing spaces only pad toward what follows; without coords the name would
+            // otherwise carry a dangling gap before the armor icons.
+            boolean showCoords = config.hudShowCoords;
+            segments.add(new Segment(showCoords ? info.getProfile().name() + "  "
+                    : info.getProfile().name(), pri));
+            if (showCoords) {
+                segments.add(new Segment(Integer.toString((int) Math.floor(e.x())), sec));
+                segments.add(new Segment(", ", pri));
+                segments.add(new Segment(Integer.toString((int) Math.floor(e.y())), sec));
+                segments.add(new Segment(", ", pri));
+                segments.add(new Segment(Integer.toString((int) Math.floor(e.z())), sec));
+                if (!e.dimension().equals(viewerDim)) {
+                    segments.add(new Segment(" (", pri));
+                    segments.add(new Segment(prettyDimension(e.dimension()), sec));
+                    segments.add(new Segment(")", pri));
+                }
             }
             int textWidth = 0;
             for (Segment seg : segments) {
                 textWidth += font.width(seg.text());
             }
-            int rowWidth = FACE_SIZE + 3 + textWidth;
-            rows.add(new Row(e, info.getSkin(), segments, rowWidth));
+            // Only what the teammate actually shares; an empty list costs no width.
+            List<ArmorPiece> armor = config.hudShowArmor ? e.armor() : List.of();
+            int armorWidth = armor.isEmpty()
+                    ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
+            int rowWidth = FACE_SIZE + 3 + textWidth + armorWidth;
+            rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth));
             maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
@@ -142,6 +158,11 @@ public class TeamHud implements HudElement {
             for (Segment seg : row.segments()) {
                 graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
                 x += mc.font.width(seg.text());
+            }
+            if (!row.armor().isEmpty()) {
+                // Centered on the same band as the head and text, so icons sit inline with them.
+                ArmorRenderer.render(graphics, row.armor(), x + ARMOR_GAP,
+                        y + contentHeight / 2, ARMOR_ICON_SCALE);
             }
         }
         pose.popMatrix();

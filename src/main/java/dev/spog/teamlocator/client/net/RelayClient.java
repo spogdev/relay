@@ -44,7 +44,8 @@ import java.util.function.Supplier;
 @Environment(EnvType.CLIENT)
 public final class RelayClient {
     private static final Gson GSON = new Gson();
-    private static final int PROTOCOL_VERSION = 1;
+    /** 2 adds armor sharing. The relay rejects a mismatch, so both sides must be updated together. */
+    private static final int PROTOCOL_VERSION = 2;
     /**
      * Ceiling for reconnect backoff. 15s so a relay that goes down (reboot, redeploy) is picked up
      * again within ~15s of returning, rather than leaving clients dark for up to half a minute.
@@ -64,6 +65,11 @@ public final class RelayClient {
     private final Supplier<Set<UUID>> sharingSet;
     /** Supplies the current alert-trust set from config; gates ping delivery relay-side. */
     private final Supplier<Set<UUID>> alertSet;
+    /**
+     * Run once every time auth succeeds, including after a reconnect. Lets the client re-push state
+     * the relay only learns incrementally (armor), which a new socket would otherwise never see.
+     */
+    private final Runnable onReauthenticated;
 
     private volatile WebSocket socket;
     private volatile boolean authenticated;
@@ -84,9 +90,11 @@ public final class RelayClient {
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
     private final Object sendLock = new Object();
 
-    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> alertSet) {
+    public RelayClient(Supplier<Set<UUID>> sharingSet, Supplier<Set<UUID>> alertSet,
+                       Runnable onReauthenticated) {
         this.sharingSet = sharingSet;
         this.alertSet = alertSet;
+        this.onReauthenticated = onReauthenticated;
     }
 
     public boolean isReady() {
@@ -217,6 +225,27 @@ public final class RelayClient {
         o.addProperty("y", y);
         o.addProperty("z", z);
         o.addProperty("dimension", dimension);
+        sendIfReady(o);
+    }
+
+    /**
+     * Report our equipped armor. An empty list retracts what the relay holds — that is how opting
+     * out of armor sharing takes effect immediately. Only sent when it changes; see
+     * {@link dev.spog.teamlocator.client.ArmorReporter}.
+     */
+    public void sendArmor(List<dev.spog.teamlocator.client.ArmorPiece> pieces) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "armor-update");
+        var arr = new com.google.gson.JsonArray();
+        for (var piece : pieces) {
+            JsonObject p = new JsonObject();
+            p.addProperty("slot", piece.slot());
+            p.addProperty("item", piece.item());
+            p.addProperty("damage", piece.damage());
+            p.addProperty("maxDamage", piece.maxDamage());
+            arr.add(p);
+        }
+        o.add("armor", arr);
         sendIfReady(o);
     }
 
@@ -368,8 +397,11 @@ public final class RelayClient {
             notifiedDisconnect = false;
             RelayToasts.connectionRestored();
         }
-        // The relay lost our routing state with the old socket; push it fresh.
+        // The relay lost our routing state with the old socket; push it fresh. Armor is only sent
+        // on change, so without this a reconnect (a relay reboot, say) would leave teammates seeing
+        // no armor for us until our next equipment change.
         sendTrust(sharingSet.get(), alertSet.get());
+        onReauthenticated.run();
     }
 
     private void onSnapshot(JsonObject obj) {
@@ -386,11 +418,37 @@ public final class RelayClient {
                         e.get("x").getAsDouble(),
                         e.get("y").getAsDouble(),
                         e.get("z").getAsDouble(),
-                        dim != null ? dim : Identifier.parse("minecraft:overworld")));
+                        dim != null ? dim : Identifier.parse("minecraft:overworld"),
+                        parseArmor(e)));
             } catch (RuntimeException ex) {
                 TeamLocatorConstants.LOGGER.debug("Bad snapshot entry: {}", ex.toString());
             }
         }
+    }
+
+    /**
+     * A snapshot entry's armor, or an empty list when the teammate shares none (opted out, or the
+     * field is simply absent). A malformed piece is skipped rather than dropping the whole entry —
+     * losing a teammate's position over one bad armor field would be a poor trade.
+     */
+    private static List<dev.spog.teamlocator.client.ArmorPiece> parseArmor(JsonObject entry) {
+        if (!entry.has("armor") || !entry.get("armor").isJsonArray()) {
+            return List.of();
+        }
+        List<dev.spog.teamlocator.client.ArmorPiece> pieces = new ArrayList<>();
+        for (var el : entry.getAsJsonArray("armor")) {
+            try {
+                JsonObject p = el.getAsJsonObject();
+                pieces.add(new dev.spog.teamlocator.client.ArmorPiece(
+                        p.get("slot").getAsString(),
+                        p.get("item").getAsString(),
+                        p.has("damage") ? p.get("damage").getAsInt() : 0,
+                        p.has("maxDamage") ? p.get("maxDamage").getAsInt() : 0));
+            } catch (RuntimeException ex) {
+                TeamLocatorConstants.LOGGER.debug("Bad armor piece: {}", ex.toString());
+            }
+        }
+        return List.copyOf(pieces);
     }
 
     private void onPingBroadcast(JsonObject obj) {

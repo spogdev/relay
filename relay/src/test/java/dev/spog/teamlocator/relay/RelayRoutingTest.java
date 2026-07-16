@@ -3,6 +3,7 @@ package dev.spog.teamlocator.relay;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import dev.spog.teamlocator.relay.auth.Verifier;
+import dev.spog.teamlocator.relay.protocol.Messages;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.junit.jupiter.api.AfterEach;
@@ -100,7 +101,9 @@ class RelayRoutingTest {
         public void onOpen(ServerHandshake handshake) {
             JsonObject hello = new JsonObject();
             hello.addProperty("type", "hello");
-            hello.addProperty("protocolVersion", 1);
+            // Track the real constant: a version bump should not silently fail every test with an
+            // auth rejection, which is what a hardcoded number here produces.
+            hello.addProperty("protocolVersion", Messages.PROTOCOL_VERSION);
             hello.addProperty("mcServer", mcServer);
             hello.addProperty("profileName", name);
             send(GSON.toJson(hello));
@@ -220,6 +223,40 @@ class RelayRoutingTest {
             send(GSON.toJson(o));
         }
 
+        /** Report armor; passing no pieces is the retraction an opted-out client sends. */
+        void sendArmor(String... slotItemPairs) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "armor-update");
+            var arr = new com.google.gson.JsonArray();
+            for (int i = 0; i < slotItemPairs.length; i += 2) {
+                JsonObject p = new JsonObject();
+                p.addProperty("slot", slotItemPairs[i]);
+                p.addProperty("item", slotItemPairs[i + 1]);
+                p.addProperty("damage", 10);
+                p.addProperty("maxDamage", 100);
+                arr.add(p);
+            }
+            o.add("armor", arr);
+            send(GSON.toJson(o));
+        }
+
+        /** The armor last seen for {@code other} in any snapshot, or null if none carried it. */
+        com.google.gson.JsonArray armorSeenFor(TestClient other) {
+            synchronized (snapshots) {
+                com.google.gson.JsonArray last = null;
+                for (JsonObject s : snapshots) {
+                    for (var e : s.getAsJsonArray("entries")) {
+                        JsonObject entry = e.getAsJsonObject();
+                        if (entry.get("id").getAsString().equals(other.uuid.toString())
+                                && entry.has("armor") && !entry.get("armor").isJsonNull()) {
+                            last = entry.getAsJsonArray("armor");
+                        }
+                    }
+                }
+                return last;
+            }
+        }
+
         boolean sawPositionOf(TestClient other) {
             synchronized (snapshots) {
                 return snapshots.stream().anyMatch(s ->
@@ -265,6 +302,118 @@ class RelayRoutingTest {
 
         assertTrue(bob.sawPositionOf(alice), "Bob is trusted and must see Alice");
         assertFalse(mallory.sawPositionOf(alice), "Mallory is NOT trusted and must never see Alice");
+    }
+
+    @Test
+    void armorReachesOnlyPlayersTheOwnerSharesWith() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        TestClient mallory = connect("mallory", "play.example.net");
+
+        alice.sendTrust("bob");
+        settle();
+        alice.sendPosition(1, 2, 3, "minecraft:overworld");
+        settle();
+
+        CountDownLatch bobGetsIt = bob.expect("snapshot");
+        alice.sendArmor("head", "minecraft:diamond_helmet", "chest", "minecraft:diamond_chestplate");
+        assertTrue(bobGetsIt.await(5, TimeUnit.SECONDS), "Bob should receive Alice's armor");
+
+        var armor = bob.armorSeenFor(alice);
+        assertEquals(2, armor.size(), "Bob must see both of Alice's pieces");
+        assertEquals("minecraft:diamond_helmet",
+                armor.get(0).getAsJsonObject().get("item").getAsString());
+        assertEquals(10, armor.get(0).getAsJsonObject().get("damage").getAsInt());
+        assertEquals(100, armor.get(0).getAsJsonObject().get("maxDamage").getAsInt());
+
+        // Armor rides the position-sharing gate: an untrusted viewer must never receive it.
+        assertFalse(mallory.sawPositionOf(alice), "Mallory is not trusted and must not see Alice");
+        assertEquals(null, mallory.armorSeenFor(alice), "armor must never leak to an untrusted viewer");
+    }
+
+    @Test
+    void emptyArmorUpdateRetractsWhatTheRelayHolds() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+
+        alice.sendTrust("bob");
+        settle();
+        alice.sendPosition(1, 2, 3, "minecraft:overworld");
+        alice.sendArmor("head", "minecraft:diamond_helmet");
+        settle();
+        assertEquals(1, bob.armorSeenFor(alice).size(), "precondition: Bob saw the armor");
+
+        // Opting out sends an empty list; later snapshots must carry no armor at all, so a viewer
+        // stops seeing gear the moment the owner turns sharing off.
+        CountDownLatch retracted = bob.expect("snapshot");
+        alice.sendArmor();
+        assertTrue(retracted.await(5, TimeUnit.SECONDS), "the retraction should reach Bob");
+        alice.sendPosition(4, 5, 6, "minecraft:overworld");
+        settle();
+
+        synchronized (bob.snapshots) {
+            JsonObject last = bob.snapshots.get(bob.snapshots.size() - 1);
+            JsonObject entry = last.getAsJsonArray("entries").get(0).getAsJsonObject();
+            assertFalse(entry.has("armor") && !entry.get("armor").isJsonNull(),
+                    "after retraction no snapshot may carry armor");
+        }
+    }
+
+    @Test
+    void aLateViewerStillSeesArmorReportedBeforeItConnected() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        alice.sendTrust("bob");
+        settle();
+        alice.sendPosition(1, 2, 3, "minecraft:overworld");
+        alice.sendArmor("feet", "minecraft:netherite_boots");
+        settle();
+
+        // Armor is only sent on change, so the initial snapshot must replay it — otherwise Bob
+        // would see no gear until Alice next changed a piece.
+        TestClient bob = connect("bob", "play.example.net");
+        settle();
+
+        var armor = bob.armorSeenFor(alice);
+        assertTrue(armor != null && armor.size() == 1,
+                "the initial snapshot must carry armor reported before the viewer connected");
+        assertEquals("minecraft:netherite_boots",
+                armor.get(0).getAsJsonObject().get("item").getAsString());
+    }
+
+    @Test
+    void malformedArmorIsDroppedWithoutBreakingTheEntry() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        alice.sendTrust("bob");
+        settle();
+        alice.sendPosition(1, 2, 3, "minecraft:overworld");
+        settle();
+
+        // A hostile/buggy client: an unknown slot and a junk entry alongside one good piece.
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "armor-update");
+        var arr = new com.google.gson.JsonArray();
+        JsonObject bad = new JsonObject();
+        bad.addProperty("slot", "elytra_wing"); // not one of the four real slots
+        bad.addProperty("item", "minecraft:elytra");
+        arr.add(bad);
+        arr.add("not-an-object");
+        JsonObject good = new JsonObject();
+        good.addProperty("slot", "legs");
+        good.addProperty("item", "minecraft:iron_leggings");
+        good.addProperty("damage", 5);
+        good.addProperty("maxDamage", 50);
+        arr.add(good);
+        o.add("armor", arr);
+
+        CountDownLatch got = bob.expect("snapshot");
+        alice.send(GSON.toJson(o));
+        assertTrue(got.await(5, TimeUnit.SECONDS), "the good piece should still be routed");
+
+        var armor = bob.armorSeenFor(alice);
+        assertEquals(1, armor.size(), "only the valid piece survives");
+        assertEquals("minecraft:iron_leggings",
+                armor.get(0).getAsJsonObject().get("item").getAsString());
     }
 
     @Test

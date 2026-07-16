@@ -13,7 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +31,12 @@ import java.util.concurrent.Executors;
  */
 public final class RelayServer extends WebSocketServer {
     private static final Logger LOG = LoggerFactory.getLogger(RelayServer.class);
+
+    /** The four armor slots a client may report; anything else is dropped. */
+    private static final Set<String> ARMOR_SLOTS = Set.of("head", "chest", "legs", "feet");
+    private static final int MAX_ARMOR_PIECES = 4;
+    /** Generous bound for a namespaced item id; keeps a hostile client from sending a huge string. */
+    private static final int MAX_ITEM_ID_LENGTH = 256;
 
     private final Gson gson = new Gson();
     private final SessionRegistry registry = new SessionRegistry();
@@ -117,6 +125,7 @@ public final class RelayServer extends WebSocketServer {
                 case "trust-update" -> handleTrustUpdate(session, obj);
                 case "block-update" -> router.setBlocked(session.uuid(), parseUuids(obj, "blocked"));
                 case "position-update" -> handlePosition(session, obj);
+                case "armor-update" -> handleArmor(session, obj);
                 case "ping" -> router.handlePing(session);
                 default -> LOG.debug("unknown message type {}", type);
             }
@@ -207,6 +216,57 @@ public final class RelayServer extends WebSocketServer {
                 ? obj.get("dimension").getAsString() : "minecraft:overworld";
         session.hasPosition = true;
         router.broadcastPosition(session);
+    }
+
+    /**
+     * Store the client's reported armor and push it to its viewers. An empty or absent list clears
+     * it — that is how a client that turns armor sharing off retracts what it already sent, so the
+     * data stops flowing the moment the user opts out rather than lingering until reconnect.
+     *
+     * <p>Everything here is untrusted client input: the piece count is capped, slots are checked
+     * against the four real ones, and item ids are length-bounded, so a hostile client cannot use
+     * this to blow up viewers' memory or wedge a frame the relay would then fan out.
+     */
+    private void handleArmor(Session session, JsonObject obj) {
+        List<Messages.ArmorPiece> pieces = null;
+        if (obj.has("armor") && obj.get("armor").isJsonArray()) {
+            var arr = obj.getAsJsonArray("armor");
+            List<Messages.ArmorPiece> parsed = new ArrayList<>();
+            for (var el : arr) {
+                if (parsed.size() >= MAX_ARMOR_PIECES) {
+                    break; // four slots exist; ignore anything beyond them
+                }
+                Messages.ArmorPiece piece = parseArmorPiece(el);
+                if (piece != null) {
+                    parsed.add(piece);
+                }
+            }
+            pieces = parsed.isEmpty() ? null : List.copyOf(parsed);
+        }
+        session.armor = pieces;
+        router.broadcastArmor(session);
+    }
+
+    /** One armor piece, or null if the entry is malformed or names a slot we don't render. */
+    private static Messages.ArmorPiece parseArmorPiece(com.google.gson.JsonElement el) {
+        if (!el.isJsonObject()) {
+            return null;
+        }
+        JsonObject o = el.getAsJsonObject();
+        if (!o.has("slot") || !o.has("item")) {
+            return null;
+        }
+        String slot = o.get("slot").getAsString();
+        if (!ARMOR_SLOTS.contains(slot)) {
+            return null;
+        }
+        String item = o.get("item").getAsString();
+        if (item.isEmpty() || item.length() > MAX_ITEM_ID_LENGTH) {
+            return null;
+        }
+        int damage = o.has("damage") ? o.get("damage").getAsInt() : 0;
+        int maxDamage = o.has("maxDamage") ? o.get("maxDamage").getAsInt() : 0;
+        return new Messages.ArmorPiece(slot, item, Math.max(0, damage), Math.max(0, maxDamage));
     }
 
     private Set<UUID> parseUuids(JsonObject obj, String field) {

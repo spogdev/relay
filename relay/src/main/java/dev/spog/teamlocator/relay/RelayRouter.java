@@ -74,7 +74,7 @@ public final class RelayRouter {
     public void broadcastPosition(Session owner) {
         UUID ownerId = owner.uuid();
         Messages.PositionSnapshot.Entry entry = new Messages.PositionSnapshot.Entry(
-                ownerId.toString(), owner.x, owner.y, owner.z, owner.dimension);
+                ownerId.toString(), owner.x, owner.y, owner.z, owner.dimension, owner.armor);
 
         for (Session viewer : registry.sessionsInScope(owner.scope())) {
             if (viewer.uuid().equals(ownerId)) {
@@ -84,6 +84,24 @@ public final class RelayRouter {
                 registry.send(viewer, new Messages.PositionSnapshot(List.of(entry)));
             }
         }
+    }
+
+    /**
+     * Push a player's changed armor to everyone who may see them. Reuses the position snapshot —
+     * the entry carries both — rather than adding a second message type: armor only changes on
+     * equip/damage, so the extra position payload riding along is negligible, and the client has
+     * one code path that keeps a teammate's position and armor consistent.
+     *
+     * <p>Gated by the same {@link #shares} check as positions: sharing armor with someone you do
+     * not share your position with is not a thing the mod offers, so armor can never leak wider
+     * than coordinates already do.
+     */
+    public void broadcastArmor(Session owner) {
+        if (!owner.hasPosition) {
+            // Nothing to attach the armor to yet; the next position update carries it.
+            return;
+        }
+        broadcastPosition(owner);
     }
 
     /**
@@ -100,7 +118,8 @@ public final class RelayRouter {
             }
             if (shares(other.uuid(), viewerId)) {
                 entries.add(new Messages.PositionSnapshot.Entry(
-                        other.uuid().toString(), other.x, other.y, other.z, other.dimension));
+                        other.uuid().toString(), other.x, other.y, other.z, other.dimension,
+                        other.armor));
             }
         }
         if (!entries.isEmpty()) {

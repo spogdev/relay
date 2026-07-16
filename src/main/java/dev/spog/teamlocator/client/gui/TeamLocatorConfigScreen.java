@@ -77,9 +77,9 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Breathing room inside each bar: the same above and below its contents, top bar and bottom. */
     private static final int BAR_PAD = 8;
     /**
-     * Content Y of each page's first row, and the gap the title leaves under the top border. The
-     * settings page's Sharing header sits above it at content Y 0; the trust page's mode/add row
-     * starts here directly.
+     * Gap between a page's first pixel of content and the bar above it, and the gap the title
+     * leaves under the top border. Applied by {@link #sy(int)} to every page, so content Y 0 is the
+     * top of a page's content rather than a coordinate flush against the tab bar.
      */
     private static final int TOP_ROW_Y = 12;
 
@@ -109,11 +109,11 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Gap from one section's last row to the next section's header, on the settings page. */
     private static final int SECTION_GAP = 44;
     /**
-     * First row of the trust table: a section's gap below the mode/add row, matching the settings
-     * page's rhythm. That gap is what gives the column header room to sit {@link #COL_HEADER_OFFSET}
-     * above the first row without clipping into the buttons overhead.
+     * First row of the trust table: a section's gap below the mode/add row at content Y 0, matching
+     * the settings page's rhythm. That gap is what gives the column header room to sit
+     * {@link #COL_HEADER_OFFSET} above the first row without clipping into the buttons overhead.
      */
-    private static final int LIST_TOP = TOP_ROW_Y + SECTION_GAP;
+    private static final int LIST_TOP = SECTION_GAP;
     /**
      * Column x-offsets from the screen centre, shared by the header labels and the row widgets.
      * The toggles only carry ON/OFF now that the header names them, so they need far less width
@@ -141,9 +141,15 @@ public class TeamLocatorConfigScreen extends Screen {
         this.initialRelayUrl = config.relayUrl;
     }
 
-    /** Content Y -> screen Y. Everything that scrolls goes through this. */
+    /**
+     * Content Y -> screen Y. Everything that scrolls goes through this.
+     *
+     * <p>Content Y 0 is a page's first pixel, and lands TOP_ROW_Y below the tab bar — the margin
+     * belongs here rather than in each page's coordinates, so both pages clear the bar by the same
+     * gap and neither can sit flush against it.
+     */
     private int sy(int contentY) {
-        return TAB_BAR_H + contentY - scroll;
+        return TAB_BAR_H + TOP_ROW_Y + contentY - scroll;
     }
 
     /** Bottom edge of the scrolling area: the pinned bottom bar starts here. */
@@ -178,9 +184,21 @@ public class TeamLocatorConfigScreen extends Screen {
         return screenY >= TAB_BAR_H && screenY + 20 <= viewportBottom();
     }
 
-    /** The furthest the page can scroll: 0 when everything already fits. */
+    /**
+     * The page's full length: its content plus the top margin {@link #sy(int)} adds, which occupies
+     * viewport space just as the content does.
+     */
+    private int scrollableHeight() {
+        return contentHeight + TOP_ROW_Y;
+    }
+
+    /**
+     * The furthest the page can scroll: 0 when everything already fits. Measured against
+     * {@link #scrollableHeight()} — leaving the margin out strands the last row just below the
+     * bottom bar, culled and unreachable.
+     */
     private int maxScroll() {
-        return Math.max(0, contentHeight - viewportHeight());
+        return Math.max(0, scrollableHeight() - viewportHeight());
     }
 
     @Override
@@ -383,7 +401,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, sy(TOP_ROW_Y), 200, BUTTON_H,
+                .create(cx - 205, sy(0), 200, BUTTON_H,
                         Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
@@ -394,16 +412,16 @@ public class TeamLocatorConfigScreen extends Screen {
                             rebuild();
                         });
         modeButton.active = serverAvailable;
-        addScrolled(sy(TOP_ROW_Y), modeButton);
+        addScrolled(sy(0), modeButton);
 
         // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx + 5, sy(TOP_ROW_Y), 130, BUTTON_H,
+        nameInput = new EditBox(this.font, cx + 5, sy(0), 130, BUTTON_H,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
-        addScrolled(sy(TOP_ROW_Y), nameInput);
-        addScrolled(sy(TOP_ROW_Y), Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, sy(TOP_ROW_Y), 65, BUTTON_H).build());
+        addScrolled(sy(0), nameInput);
+        addScrolled(sy(0), Button.builder(Component.translatable("relay.config.add"),
+                b -> addTypedPlayer()).bounds(cx + 140, sy(0), 65, BUTTON_H).build());
 
         // --- Table rows ---
         // Every entry gets a widget at its natural Y; the page scroll decides what's on screen, so
@@ -582,7 +600,7 @@ public class TeamLocatorConfigScreen extends Screen {
         }
         int viewport = viewportHeight();
         int x = this.width / 2 + 209;
-        int thumbH = Math.max(16, viewport * viewport / contentHeight);
+        int thumbH = Math.max(16, viewport * viewport / scrollableHeight());
         int thumbY = TAB_BAR_H + (viewport - thumbH) * scroll / max;
         graphics.fill(x, TAB_BAR_H, x + 4, viewportBottom(), 0xFF101010);
         graphics.fill(x, thumbY, x + 4, thumbY + thumbH, 0xFF808080);

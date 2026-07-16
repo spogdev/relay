@@ -4,7 +4,6 @@
   "package": "dev.spog.teamlocator.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "client.GuiGraphicsExtractorAccessor",
     "client.MinimapElementWorldRendererHandlerMixin",
     "client.PlayerTrackerMinimapElementRendererMixin",
     "client.PlayerTrackerMapElementRendererMixin"

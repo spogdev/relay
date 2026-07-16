@@ -53,6 +53,37 @@ public class TeamHud implements HudElement {
         this.config = config;
     }
 
+    /**
+     * The pieces to draw for one teammate, per the armor-display setting.
+     *
+     * <p>LOWEST ranks by remaining fraction rather than absolute damage: 50 durability left is
+     * nearly-dead leather but barely-scratched netherite, and the point of the setting is to
+     * surface the piece actually about to break. Pieces with no durability bar (a carved pumpkin)
+     * can never be "lowest" — they never break — so they are only candidates when nothing else is
+     * worn, in which case there is no wear to report and the row shows nothing.
+     */
+    private List<ArmorPiece> displayedArmor(List<ArmorPiece> shared) {
+        if (shared.isEmpty()) {
+            return List.of();
+        }
+        return switch (config.hudArmorDisplay) {
+            case OFF -> List.of();
+            case ALL -> shared;
+            case LOWEST -> {
+                ArmorPiece worst = null;
+                for (ArmorPiece piece : shared) {
+                    if (!piece.hasDurability()) {
+                        continue;
+                    }
+                    if (worst == null || piece.durabilityFraction() < worst.durabilityFraction()) {
+                        worst = piece;
+                    }
+                }
+                yield worst == null ? List.of() : List.of(worst);
+            }
+        };
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
@@ -106,7 +137,7 @@ public class TeamHud implements HudElement {
                 textWidth += font.width(seg.text());
             }
             // Only what the teammate actually shares; an empty list costs no width.
-            List<ArmorPiece> armor = config.hudShowArmor ? e.armor() : List.of();
+            List<ArmorPiece> armor = displayedArmor(e.armor());
             int armorWidth = armor.isEmpty()
                     ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
             int rowWidth = FACE_SIZE + 3 + textWidth + armorWidth;

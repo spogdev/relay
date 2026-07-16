@@ -31,6 +31,12 @@ public class TeamConfig {
     /** Horizontal alignment of each HUD row (head + text as a unit) within the widest row. */
     public enum HudAlign { LEFT, CENTER, RIGHT }
 
+    /**
+     * How much of a teammate's armor the HUD shows. {@code LOWEST} keeps only the piece closest to
+     * breaking — the one worth knowing about mid-fight — for a HUD that stays narrow.
+     */
+    public enum ArmorDisplay { OFF, ALL, LOWEST }
+
     /** A named trust list (a set of entries). */
     public static class TrustList {
         public List<TrustEntry> trusted = new ArrayList<>();
@@ -93,10 +99,21 @@ public class TeamConfig {
     /** Show each teammate's coordinates (and dimension) on the HUD row. */
     public boolean hudShowCoords = true;
     /**
-     * Show each teammate's armor and durability on the HUD row. Only ever displays what a teammate
-     * chooses to share ({@link #shareArmor}) — this toggle is our own view of it.
+     * How much of each teammate's armor the HUD row shows. Only ever displays what a teammate
+     * chooses to share ({@link #shareArmor}) — this is our own view of it.
+     *
+     * <p>Named apart from the old boolean {@code hudShowArmor} on purpose: Gson cannot read
+     * {@code true} into an enum, and a type clash on one field aborts the whole parse and resets
+     * every other setting. {@link #sanitize()} migrates the old value instead.
      */
-    public boolean hudShowArmor = true;
+    public ArmorDisplay hudArmorDisplay = ArmorDisplay.ALL;
+    /**
+     * The pre-enum boolean, read only to migrate a config written before {@link #hudArmorDisplay}
+     * existed. Boxed so a missing field stays null rather than defaulting to false and reading as
+     * a deliberate "off". Never written back: {@link #sanitize()} clears it once carried over.
+     */
+    @Deprecated
+    private Boolean hudShowArmor;
     /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
     public String hudPrimaryColor = "#FFFFFF";
     public String hudSecondaryColor = "#AAAAAA";
@@ -152,6 +169,12 @@ public class TeamConfig {
         if (alertSound == null) alertSound = AlertSound.ALARM;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
         if (hudAlign == null) hudAlign = HudAlign.LEFT;
+        // Carry the pre-enum boolean over once, then drop it so it never overrides the enum again.
+        if (hudShowArmor != null) {
+            hudArmorDisplay = hudShowArmor ? ArmorDisplay.ALL : ArmorDisplay.OFF;
+            hudShowArmor = null;
+        }
+        if (hudArmorDisplay == null) hudArmorDisplay = ArmorDisplay.ALL;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
         if (pingCooldownSeconds < 0 || pingCooldownSeconds > 60) pingCooldownSeconds = 15;

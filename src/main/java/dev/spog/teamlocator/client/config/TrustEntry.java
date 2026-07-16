@@ -5,9 +5,9 @@ import java.util.UUID;
 /**
  * One entry in a trust list. Identity is the {@link #uuid} (stable and authoritative on
  * online-mode servers); {@link #name} is a display cache refreshed from the tab list and never
- * used for routing. {@link #hidden} lets the user hide their coordinates from this specific player
- * while keeping them on the list; {@link #mutePings} keeps sharing coordinates with them but
- * silences their attack pings locally.
+ * used for routing. {@link #hidden} hides us from this specific player while keeping them on the
+ * list — it drops them from the sharing set, so they lose coordinates and armor alike;
+ * {@link #mutePings} keeps sharing with them but silences their attack pings locally.
  */
 public class TrustEntry {
     public String uuid;

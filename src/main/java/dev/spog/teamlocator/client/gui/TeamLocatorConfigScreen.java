@@ -157,10 +157,13 @@ public class TeamLocatorConfigScreen extends Screen {
                             config.hudShowCoords = value;
                             config.save();
                         }));
-        addRenderableWidget(CycleButton.onOffBuilder(config.hudShowArmor)
+        addRenderableWidget(CycleButton
+                .<TeamConfig.ArmorDisplay>builder(this::armorDisplayLabel, config.hudArmorDisplay)
+                .withValues(TeamConfig.ArmorDisplay.OFF, TeamConfig.ArmorDisplay.ALL,
+                        TeamConfig.ArmorDisplay.LOWEST)
                 .create(cx + 5, 152, 200, 20, Component.translatable("relay.config.hud_show_armor"),
                         (btn, value) -> {
-                            config.hudShowArmor = value;
+                            config.hudArmorDisplay = value;
                             config.save();
                         }));
 
@@ -273,9 +276,11 @@ public class TeamLocatorConfigScreen extends Screen {
                     config.save();
                     rebuild();
                 }).bounds(cx - 50, y, 100, 20).build());
-        // Toggle whether this player receives our coordinates.
+        // Toggle whether this player sees us at all: hiding withholds the whole shared feed —
+        // coordinates and armor both — since armor rides the same sharing set relay-side.
         addRenderableWidget(Button.builder(
-                Component.translatable(entry.hidden ? "relay.config.coords_off" : "relay.config.coords_on"),
+                Component.translatable(entry.hidden
+                        ? "relay.config.visibility_off" : "relay.config.visibility_on"),
                 b -> {
                     entry.hidden = !entry.hidden;
                     config.save();
@@ -440,6 +445,15 @@ public class TeamLocatorConfigScreen extends Screen {
             case CENTER -> "relay.config.hud_align.center";
             case RIGHT -> "relay.config.hud_align.right";
             default -> "relay.config.hud_align.left";
+        };
+        return Component.translatable(key);
+    }
+
+    private Component armorDisplayLabel(TeamConfig.ArmorDisplay display) {
+        String key = switch (display) {
+            case OFF -> "relay.config.hud_show_armor.off";
+            case LOWEST -> "relay.config.hud_show_armor.lowest";
+            default -> "relay.config.hud_show_armor.all";
         };
         return Component.translatable(key);
     }

@@ -41,7 +41,7 @@ public class PlayerTrackerMapElementRendererMixin {
             method = "renderElement(Lxaero/map/radar/tracker/PlayerTrackerMapElement;ZDFDD"
                     + "Lxaero/map/element/render/ElementRenderInfo;"
                     + "Lxaero/map/element/MapElementGraphics;"
-                    + "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;"
+                    + "Lnet/minecraft/class_4597$class_4598;"
                     + "Lxaero/map/graphics/renderer/multitexture/MultiTextureRenderTypeRendererProvider;)Z",
             at = @At("HEAD"),
             cancellable = true)

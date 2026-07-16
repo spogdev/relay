@@ -47,7 +47,7 @@ public class PlayerTrackerMinimapElementRendererMixin {
             method = "renderElement(Lxaero/hud/minimap/player/tracker/PlayerTrackerMinimapElement;ZZDFDD"
                     + "Lxaero/hud/minimap/element/render/MinimapElementRenderInfo;"
                     + "Lxaero/hud/minimap/element/render/MinimapElementGraphics;"
-                    + "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;)Z",
+                    + "Lnet/minecraft/class_4597$class_4598;)Z",
             at = @At("HEAD"),
             cancellable = true)
     private void relay$filterRelayElement(PlayerTrackerMinimapElement<?> element, boolean highlighted,

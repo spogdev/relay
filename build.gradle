@@ -1,8 +1,8 @@
 plugins {
-    // Minecraft 26.1+ uses the new Loom plugin id. Nothing is remapped (the game is
-    // unobfuscated and ships official mappings), so there is no 'mappings' dependency
-    // and no remapJar task — 'jar' produces the final artifact.
-    id 'net.fabricmc.fabric-loom' version '1.17.11'
+    // Minecraft 1.21.x is obfuscated, so this build maps against yarn and remaps its output:
+    // 'remapJar' produces the publishable artifact, not 'jar'. (The 26.1 branch is the other
+    // way round — unobfuscated, official mappings, no remap step.)
+    id 'fabric-loom' version '1.11-SNAPSHOT'
 }
 
 version = "${project.mod_version}+${project.minecraft_version}"
@@ -14,10 +14,10 @@ base {
 
 repositories {
     mavenCentral()
-    maven {
-        name = 'TerraformersMC'
-        url = 'https://maven.terraformersmc.com/releases'
-    }
+    // Mod Menu and Xaero's both come from Modrinth. Mod Menu's own maven
+    // (maven.terraformersmc.com) is not used: it currently truncates the jar mid-transfer —
+    // it advertises the full Content-Length, then closes the connection early, so every
+    // download fails the same way. Modrinth serves the identical artifact intact.
     maven {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
@@ -29,17 +29,20 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    // The obfuscated game needs a mapping set to compile against; the 26.1 branch has no
+    // equivalent line because it ships Mojang's names already.
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    // Depend on the full Fabric API; per-module fabricApi.module(...) pulls are brittle in 26.1.
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // Depend on the full Fabric API; per-module fabricApi.module(...) pulls are brittle.
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    api("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
+    modApi("maven.modrinth:modmenu:${project.modmenu_version}") { transitive = false }
 
-    // Optional integration: teammates on Xaero's minimap/world map. compileOnly so the mod
+    // Optional integration: teammates on Xaero's minimap/world map. modCompileOnly so the mod
     // runs fine without them; all xaero.* references live behind a mod-loaded guard.
-    compileOnly "maven.modrinth:xaeros-minimap:fabric-26.1.2-26.4.0"
-    compileOnly "maven.modrinth:xaeros-world-map:fabric-26.1.2-1.44.0"
+    modCompileOnly "maven.modrinth:xaeros-minimap:${project.xaero_minimap_version}"
+    modCompileOnly "maven.modrinth:xaeros-world-map:${project.xaero_worldmap_version}"
 }
 
 processResources {
@@ -50,7 +53,8 @@ processResources {
     }
 }
 
-def targetJavaVersion = 25
+// 1.21.11 targets Java 21, not the 25 the 26.1 branch uses.
+def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = 'UTF-8'
     it.options.release = targetJavaVersion

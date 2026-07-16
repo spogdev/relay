@@ -28,6 +28,9 @@ public class TeamConfig {
 
     public enum AlertSound { ALARM, NOTEBLOCKS }
 
+    /** Horizontal alignment of each HUD row (head + text as a unit) within the widest row. */
+    public enum HudAlign { LEFT, CENTER, RIGHT }
+
     /** A named trust list (a set of entries). */
     public static class TrustList {
         public List<TrustEntry> trusted = new ArrayList<>();
@@ -64,6 +67,14 @@ public class TeamConfig {
     public double hudY = 0.30;
     /** HUD size multiplier (0.5–2.0). */
     public double hudScale = 1.0;
+    /**
+     * When true the list grows bottom-to-top: the anchor becomes the block's bottom edge and rows
+     * stack upward from it (row 1 closest to the anchor), so adding teammates expands the list
+     * upward instead of downward.
+     */
+    public boolean hudGrowUp = false;
+    /** How each HUD row is aligned within the widest row. */
+    public HudAlign hudAlign = HudAlign.LEFT;
     /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
     public String hudPrimaryColor = "#FFFFFF";
     public String hudSecondaryColor = "#AAAAAA";
@@ -116,6 +127,7 @@ public class TeamConfig {
         if (activeMode == null) activeMode = Mode.GLOBAL;
         if (alertSound == null) alertSound = AlertSound.ALARM;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
+        if (hudAlign == null) hudAlign = HudAlign.LEFT;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
         if (pingCooldownSeconds < 0 || pingCooldownSeconds > 60) pingCooldownSeconds = 15;

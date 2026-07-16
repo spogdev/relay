@@ -40,7 +40,7 @@ public class TeamHud implements HudElement {
     private record Segment(String text, int color) {
     }
 
-    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments) {
+    private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width) {
     }
 
     public TeamHud(TeamConfig config) {
@@ -89,12 +89,13 @@ public class TeamHud implements HudElement {
                 segments.add(new Segment(prettyDimension(e.dimension()), sec));
                 segments.add(new Segment(")", pri));
             }
-            rows.add(new Row(e, info.getSkin(), segments));
             int textWidth = 0;
             for (Segment seg : segments) {
                 textWidth += font.width(seg.text());
             }
-            maxWidth = Math.max(maxWidth, FACE_SIZE + 3 + textWidth);
+            int rowWidth = FACE_SIZE + 3 + textWidth;
+            rows.add(new Row(e, info.getSkin(), segments, rowWidth));
+            maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
             return;
@@ -108,6 +109,10 @@ public class TeamHud implements HudElement {
         int scaledHeight = Math.round(totalHeight * scale);
         int baseX = (int) Math.round(config.hudX * graphics.guiWidth());
         int baseY = (int) Math.round(config.hudY * graphics.guiHeight());
+        if (config.hudGrowUp) {
+            // The anchor is the block's bottom edge: the list expands upward as teammates join.
+            baseY -= scaledHeight;
+        }
         baseX = Math.max(EDGE_MARGIN, Math.min(baseX, graphics.guiWidth() - scaledWidth - EDGE_MARGIN));
         baseY = Math.max(EDGE_MARGIN, Math.min(baseY, graphics.guiHeight() - scaledHeight - EDGE_MARGIN));
 
@@ -117,14 +122,23 @@ public class TeamHud implements HudElement {
         pose.scale(scale, scale);
         for (int i = 0; i < rows.size(); i++) {
             Row row = rows.get(i);
-            int y = i * (ROW_HEIGHT + GAP);
+            // When growing upward, row 0 sits at the bottom of the block (closest to the anchor).
+            int slot = config.hudGrowUp ? rows.size() - 1 - i : i;
+            int y = slot * (ROW_HEIGHT + GAP);
+            // Align the whole row unit (head + text) within the widest row's width.
+            int rowX = switch (config.hudAlign) {
+                case CENTER -> (maxWidth - row.width()) / 2;
+                case RIGHT -> maxWidth - row.width();
+                default -> 0;
+            };
             // Center the face and the text against the same vertical band so the head sits inline
-            // with the name instead of riding high above it.
+            // with the name instead of riding high above it. The head is nudged 1px up from true
+            // center, which reads better against the font baseline.
             int contentHeight = Math.max(FACE_SIZE, mc.font.lineHeight);
-            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0,
-                    y + (contentHeight - FACE_SIZE) / 2, FACE_SIZE);
+            PlayerFaceExtractor.extractRenderState(graphics, row.skin(), rowX,
+                    y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
             int textY = y + (contentHeight - mc.font.lineHeight) / 2;
-            int x = FACE_SIZE + 3;
+            int x = rowX + FACE_SIZE + 3;
             for (Segment seg : row.segments()) {
                 graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
                 x += mc.font.width(seg.text());

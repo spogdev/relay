@@ -55,7 +55,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     private static final int ROW_H = 24;
-    private static final int LIST_TOP = 284;
+    private static final int LIST_TOP = 308;
     private static final int LIST_BOTTOM_MARGIN = 40;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
@@ -127,14 +127,29 @@ public class TeamLocatorConfigScreen extends Screen {
         });
         addRenderableWidget(secondaryColorInput);
 
+        // HUD row 3: row text alignment | list growth direction (down vs. up from the anchor).
+        addRenderableWidget(CycleButton.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
+                .withValues(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER, TeamConfig.HudAlign.RIGHT)
+                .create(cx - 205, 128, 200, 20, Component.translatable("relay.config.hud_align"),
+                        (btn, value) -> {
+                            config.hudAlign = value;
+                            config.save();
+                        }));
+        addRenderableWidget(CycleButton.onOffBuilder(config.hudGrowUp)
+                .create(cx + 5, 128, 200, 20, Component.translatable("relay.config.hud_grow_up"),
+                        (btn, value) -> {
+                            config.hudGrowUp = value;
+                            config.save();
+                        }));
+
         // --- Pings section: cross-server pings toggle | ping display cooldown ---
         addRenderableWidget(CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx - 205, 148, 200, 20, Component.translatable("relay.config.cross_server_pings"),
+                .create(cx - 205, 172, 200, 20, Component.translatable("relay.config.cross_server_pings"),
                         (btn, value) -> {
                             config.crossServerPings = value;
                             config.save();
                         }));
-        addRenderableWidget(new SecondsSlider(cx + 5, 148, 200, 20, "Alert Cooldown", 0, 60,
+        addRenderableWidget(new SecondsSlider(cx + 5, 172, 200, 20, "Alert Cooldown", 0, 60,
                 config.pingCooldownSeconds, v -> {
             config.pingCooldownSeconds = v;
             config.save();
@@ -142,7 +157,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // Alerts row 2: choose the alert sound (new alarm vs. the old 3-noteblock chord).
         addRenderableWidget(CycleButton.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
                 .withValues(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
-                .create(cx - 205, 170, 200, 20, Component.translatable("relay.config.alert_sound"),
+                .create(cx - 205, 194, 200, 20, Component.translatable("relay.config.alert_sound"),
                         (btn, value) -> {
                             config.alertSound = value;
                             config.save();
@@ -150,13 +165,13 @@ public class TeamLocatorConfigScreen extends Screen {
 
         // --- Xaero's section: map icons | in-world icons (read live by the Xaero trackers) ---
         addRenderableWidget(CycleButton.onOffBuilder(config.xaeroMapIcons)
-                .create(cx - 205, 204, 200, 20, Component.translatable("relay.config.xaero_map_icons"),
+                .create(cx - 205, 240, 200, 20, Component.translatable("relay.config.xaero_map_icons"),
                         (btn, value) -> {
                             config.xaeroMapIcons = value;
                             config.save();
                         }));
         addRenderableWidget(CycleButton.onOffBuilder(config.xaeroInWorldIcons)
-                .create(cx + 5, 216, 200, 20, Component.translatable("relay.config.xaero_world_icons"),
+                .create(cx + 5, 240, 200, 20, Component.translatable("relay.config.xaero_world_icons"),
                         (btn, value) -> {
                             config.xaeroInWorldIcons = value;
                             config.save();
@@ -173,7 +188,7 @@ public class TeamLocatorConfigScreen extends Screen {
         CycleButton<TeamConfig.Mode> modeButton = CycleButton
                 .<TeamConfig.Mode>builder(this::modeLabel, config.activeMode)
                 .withValues(TeamConfig.Mode.GLOBAL, TeamConfig.Mode.SERVER)
-                .create(cx - 205, 260, 200, 20, Component.translatable("relay.config.active_list"),
+                .create(cx - 205, 284, 200, 20, Component.translatable("relay.config.active_list"),
                         (btn, value) -> {
                             config.activeMode = value;
                             config.save();
@@ -184,13 +199,13 @@ public class TeamLocatorConfigScreen extends Screen {
         addRenderableWidget(modeButton);
 
         // --- Add-player controls beside the mode button: name box | 5 gap | Add ---
-        nameInput = new EditBox(this.font, cx + 5, 260, 130, 20,
+        nameInput = new EditBox(this.font, cx + 5, 284, 130, 20,
                 Component.translatable("relay.config.add_player"));
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
         addRenderableWidget(Button.builder(Component.translatable("relay.config.add"),
-                b -> addTypedPlayer()).bounds(cx + 140, 260, 65, 20).build());
+                b -> addTypedPlayer()).bounds(cx + 140, 284, 65, 20).build());
 
         // --- List rows ---
         List<TrustEntry> entries = currentList();
@@ -275,17 +290,17 @@ public class TeamLocatorConfigScreen extends Screen {
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
                 cx - 205, 68, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
-                cx - 205, 136, 0xFFFFFFFF, false);
+                cx - 205, 160, 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.xaero"),
-                cx - 205, 204, 0xFFFFFFFF, false);
+                cx - 205, 228, 0xFFFFFFFF, false);
 
         // Section header for the list, plus lookup feedback on the right.
         Component header = Component.translatable(config.activeMode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.global_list" : "relay.config.server_list");
-        graphics.text(this.font, header, cx - 205, 248, 0xFFFFFFFF, false);
+        graphics.text(this.font, header, cx - 205, 272, 0xFFFFFFFF, false);
         if (addStatus != null) {
             graphics.text(this.font, addStatus, cx + 205 - this.font.width(addStatus),
-                    248, addStatusColor, false);
+                    272, addStatusColor, false);
         }
 
         if (config.activeMode == TeamConfig.Mode.SERVER && TeamConfig.currentServerKey() == null) {
@@ -392,6 +407,16 @@ public class TeamLocatorConfigScreen extends Screen {
         // CycleButton already renders "<name>: <value>", so return only the value here.
         String key = mode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.active_list.global" : "relay.config.active_list.server";
+        return Component.translatable(key);
+    }
+
+    private Component hudAlignLabel(TeamConfig.HudAlign align) {
+        // CycleButton already renders "<name>: <value>", so return only the value here.
+        String key = switch (align) {
+            case CENTER -> "relay.config.hud_align.center";
+            case RIGHT -> "relay.config.hud_align.right";
+            default -> "relay.config.hud_align.left";
+        };
         return Component.translatable(key);
     }
 

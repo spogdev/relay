@@ -76,9 +76,19 @@ public class TeamLocatorConfigScreen extends Screen {
     private static final int BUTTON_H = 20;
     /** Breathing room inside each bar: the same above and below its contents, top bar and bottom. */
     private static final int BAR_PAD = 8;
+    /**
+     * Content Y of each page's first row, and the gap the title leaves under the top border. The
+     * settings page's Sharing header sits above it at content Y 0; the trust page's mode/add row
+     * starts here directly.
+     */
+    private static final int TOP_ROW_Y = 12;
 
-    /** Title baseline, one pad down from the screen's top edge. */
-    private static final int TITLE_Y = BAR_PAD;
+    /**
+     * Title's top edge. Clears the screen's top border by {@link #TOP_ROW_Y} — the same gap the
+     * first row of either page leaves under the tab bar — so the title sits off the border by the
+     * same distance as the content below it, rather than crowding the edge.
+     */
+    private static final int TITLE_Y = TOP_ROW_Y;
     /** Tab buttons sit a pad below the title text (9px tall at default scale). */
     private static final int TAB_BUTTON_Y = TITLE_Y + 9 + BAR_PAD;
     /**
@@ -92,11 +102,6 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Wheel notch distance, in content pixels. */
     private static final int SCROLL_STEP = 20;
 
-    /**
-     * Content Y of each page's first row. The settings page's Sharing header sits above it at
-     * content Y 0; the trust page's mode/add row starts here directly.
-     */
-    private static final int TOP_ROW_Y = 12;
     /** Content Y of the settings page's last row (Xaero's); drives that page's scroll extent. */
     private static final int SETTINGS_LAST_ROW_Y = 240;
     /** How far the column header's text floats above the first table row. */
@@ -112,15 +117,22 @@ public class TeamLocatorConfigScreen extends Screen {
     /**
      * Column x-offsets from the screen centre, shared by the header labels and the row widgets.
      * The toggles only carry ON/OFF now that the header names them, so they need far less width
-     * than the old inline labels did; the name column absorbs what they gave up. Visibility stays
-     * wider than Alerts because its heading is the longest word in the table.
+     * than the old inline labels did; the name column absorbs what they gave up.
+     *
+     * <p>Alerts and Visibility are one width: they hold the same ON/OFF, so any difference between
+     * them reads as meaning something it doesn't. 45 clears the wider heading — "Visibility" is
+     * 39px, narrower than it looks, since four of its ten letters are a 2px {@code i}.
      */
-    private static final int COL_ALERTS_X = 20;
-    private static final int COL_ALERTS_W = 55;
-    private static final int COL_VISIBILITY_X = 80;
-    private static final int COL_VISIBILITY_W = 70;
-    private static final int COL_REMOVE_X = 155;
+    private static final int TOGGLE_W = 45;
+    /** Gap between adjacent columns, even across the row. */
+    private static final int COL_GAP = 10;
     private static final int COL_REMOVE_W = 50;
+    /** Right-aligned to the panel edge; the two toggles then step back from it by even gaps. */
+    private static final int COL_REMOVE_X = 205 - COL_REMOVE_W;
+    private static final int COL_VISIBILITY_W = TOGGLE_W;
+    private static final int COL_VISIBILITY_X = COL_REMOVE_X - COL_GAP - COL_VISIBILITY_W;
+    private static final int COL_ALERTS_W = TOGGLE_W;
+    private static final int COL_ALERTS_X = COL_VISIBILITY_X - COL_GAP - COL_ALERTS_W;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
         super(Component.translatable("relay.config.title"));

@@ -24,7 +24,11 @@ import xaero.hud.minimap.player.tracker.PlayerTrackerMinimapElement;
  * entity is loaded locally — Xaero's native radar already draws them there. This replaces Xaero's
  * own {@code wasRenderedOnRadar} dedup, whose confirm/reset flag races our 5 Hz relay updates and
  * makes the icon flicker, with a deterministic per-frame check. Trade-off (same one Xaero's dedup
- * intends): a user who disabled Xaero's entity radar won't see nearby teammates on the maps.</li>
+ * intends): a user who disabled Xaero's entity radar won't see nearby teammates on the maps.
+ * Hovered ({@code highlighted}) elements are never deduped — mirroring Xaero's own
+ * {@code !highlighted} guard on its radar-dedup early-out — so a hovered icon always falls through
+ * to Xaero's full zoomed-and-labelled render instead of oscillating between highlighted and
+ * cancelled frames.</li>
  * <li>IN_WORLD pass: implement the "In-World Icons" toggle. The floating in-world icon is drawn
  * only from tracker elements and is otherwise gated solely by Xaero's global
  * TRACKED_PLAYERS_IN_WORLD setting — there is no per-tracker hook — so nearby teammates keep
@@ -61,8 +65,11 @@ public class PlayerTrackerMinimapElementRendererMixin {
             }
             return;
         }
+        // Never dedup a hovered element: Xaero skips its own radar-dedup early-out when
+        // highlighted is true (a hovered element must always render zoomed + labelled), so we must
+        // fall through here too, otherwise our cancel fights Xaero's re-highlight every frame.
         ClientLevel level = Minecraft.getInstance().level;
-        if (level != null && level.getPlayerByUUID(element.getPlayerId()) != null) {
+        if (!highlighted && level != null && level.getPlayerByUUID(element.getPlayerId()) != null) {
             cir.setReturnValue(false);
         }
     }

@@ -284,16 +284,24 @@ public final class RelayServer extends WebSocketServer {
         return out;
     }
 
-    /** Mirror the mod's address normalization so scopes line up with its per-server trust lists. */
+    /**
+     * Mirror the mod's address normalization so scopes line up with its per-server trust lists.
+     *
+     * <p>Case and whitespace only. The client now sends the resolved {@code ip:port} of its live
+     * connection, which is already canonical, so there is nothing here to reconcile — and stripping
+     * {@code :25565} the way this used to would actively break it: a server really running on
+     * {@code 1.2.3.4:25565} would keep its port client-side and lose it here, putting the two
+     * halves of one scope in different buckets.
+     *
+     * <p>Older clients still send a typed address, which lands in its own scope. That is a
+     * cosmetic split during a version transition — those clients cannot see the new ones anyway,
+     * since the scope key is what changed — and it resolves as soon as they update.
+     */
     static String normalizeScope(String raw) {
         if (raw == null || raw.isBlank()) {
             return "unknown";
         }
-        String s = raw.trim().toLowerCase(Locale.ROOT);
-        if (s.endsWith(":25565")) {
-            s = s.substring(0, s.length() - ":25565".length());
-        }
-        return s;
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     @Override

@@ -192,14 +192,32 @@ public class TeamConfig {
 
     /**
      * Normalized key for the currently connected server, or {@code null} if not connected.
-     * Lowercased, trimmed, with a redundant default port stripped so {@code host} and
-     * {@code host:25565} map to the same list. Singleplayer/LAN maps to {@code "singleplayer"}.
+     * Singleplayer/LAN maps to {@code "singleplayer"}.
+     *
+     * <p>Keyed on the live connection's <em>resolved</em> peer — the IP and port the client is
+     * actually talking to — as {@code ip:port}, rather than on the address the user typed. Two
+     * players on one server must produce the same key or the relay files them under different
+     * scopes and they never see each other, and the typed address does not guarantee that: one can
+     * use the hostname while the other uses the IP, and both are correct. The socket is the same
+     * for everyone on the server whatever route they took to it, so it is the only honest identity
+     * available client-side.
+     *
+     * <p>The port stays in the key: shared hosts (Folium and friends) put unrelated servers on one
+     * box, distinguished only by port, and dropping it would merge strangers into one scope.
+     * {@code :25565} is no longer special-cased — the resolved port is always present and explicit,
+     * so there is no {@code host} vs {@code host:25565} ambiguity left to paper over.
      */
     public static String currentServerKey() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.isInSingleplayer()) {
             return "singleplayer";
         }
+        String resolved = resolvedServerKey(mc);
+        if (resolved != null) {
+            return resolved;
+        }
+        // No live connection yet (called between joining and the channel coming up): fall back to
+        // the typed address so a key exists at all, normalized the old way.
         ServerInfo data = mc.getCurrentServerEntry();
         if (data == null || data.address == null || data.address.isBlank()) {
             return null;
@@ -209,6 +227,23 @@ public class TeamConfig {
             ip = ip.substring(0, ip.length() - ":25565".length());
         }
         return ip;
+    }
+
+    /**
+     * {@code ip:port} of the live connection's peer, or null if there is no resolved TCP peer to
+     * read (no connection, or a non-IP transport such as a LAN/test channel).
+     */
+    private static String resolvedServerKey(MinecraftClient mc) {
+        if (mc.getNetworkHandler() == null) {
+            return null;
+        }
+        java.net.SocketAddress remote = mc.getNetworkHandler().getConnection().getAddress();
+        if (!(remote instanceof java.net.InetSocketAddress inet) || inet.getAddress() == null) {
+            return null;
+        }
+        // getHostAddress(), never getHostString()/toString(): those hand back the hostname the
+        // client happened to dial, which is the very thing that differs between two players.
+        return inet.getAddress().getHostAddress().toLowerCase(Locale.ROOT) + ":" + inet.getPort();
     }
 
     /**

@@ -14,10 +14,12 @@ base {
 
 repositories {
     mavenCentral()
-    maven {
-        name = 'TerraformersMC'
-        url = 'https://maven.terraformersmc.com/releases'
-    }
+    // Mod Menu and Xaero's both come from Modrinth, which is already the source of truth for the
+    // Xaero builds. Mod Menu's own maven (maven.terraformersmc.com) is not used: it has been seen
+    // truncating jars mid-transfer — advertising the full Content-Length, then closing the
+    // connection early, so every download fails identically and the build cannot proceed. It
+    // serves the byte-identical artifact when healthy, so there is nothing to lose by not
+    // depending on it.
     maven {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
@@ -34,12 +36,12 @@ dependencies {
     // Depend on the full Fabric API; per-module fabricApi.module(...) pulls are brittle in 26.1.
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    api("com.terraformersmc:modmenu:${project.modmenu_version}") { transitive = false }
+    api("maven.modrinth:modmenu:${project.modmenu_version}") { transitive = false }
 
     // Optional integration: teammates on Xaero's minimap/world map. compileOnly so the mod
     // runs fine without them; all xaero.* references live behind a mod-loaded guard.
-    compileOnly "maven.modrinth:xaeros-minimap:fabric-26.1.2-26.4.0"
-    compileOnly "maven.modrinth:xaeros-world-map:fabric-26.1.2-1.44.0"
+    compileOnly "maven.modrinth:xaeros-minimap:${project.xaero_minimap_version}"
+    compileOnly "maven.modrinth:xaeros-world-map:${project.xaero_worldmap_version}"
 }
 
 processResources {

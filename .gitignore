@@ -8,3 +8,7 @@ dist/
 .idea/
 *.iml
 .DS_Store
+# Local AI-assistant config. The architecture notes CLAUDE.md used to carry live in
+# docs/ARCHITECTURE.md instead, so they are readable without the tooling.
+.claude/
+CLAUDE.md

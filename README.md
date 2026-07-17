@@ -37,3 +37,9 @@ share with them.
 ```
 
 The jar is produced in `build/libs/`.
+
+## Docs
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the mod, the relay, identity, and trust gating
+  fit together, and what differs between the `main` (26.1.2) and `1.21.11` branches
+- [docs/SETUP.md](docs/SETUP.md) — hosting your own relay

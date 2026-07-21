@@ -1,5 +1,7 @@
 package dev.spog.teamlocator.relay;
 
+import dev.spog.teamlocator.relay.protocol.Messages;
+
 import java.util.UUID;
 
 /**
@@ -14,9 +16,20 @@ public final class Session {
     private volatile String scope;
     private volatile boolean authenticated;
 
+    /**
+     * The protocol version this client negotiated at hello time, clamped to what the relay speaks
+     * (see {@link dev.spog.teamlocator.relay.protocol.Messages#PROTOCOL_VERSION}). Every relay→client
+     * message today is safe for any supported version, so nothing reads this yet; it is recorded so
+     * that if a future, non-additive change ever needs to shape a down-message per client, the
+     * information is already on the session rather than requiring a protocol rework at that point.
+     */
+    private volatile int protocolVersion = Messages.PROTOCOL_VERSION;
+
     /** The nonce this connection must satisfy via Mojang joinServer before it is authenticated. */
     private volatile String pendingServerId;
     private volatile String pendingProfileName;
+    /** The verified account name, kept after the handshake for display/admin lookups. */
+    private volatile String profileName;
 
     // Last reported position, so a late-joining viewer can be sent an immediate snapshot.
     public volatile double x, y, z;
@@ -52,9 +65,15 @@ public final class Session {
         return authenticated;
     }
 
-    public void beginChallenge(String serverId, String profileName) {
+    /** The protocol version negotiated with this client (clamped to the relay's own). */
+    public int protocolVersion() {
+        return protocolVersion;
+    }
+
+    public void beginChallenge(String serverId, String profileName, int protocolVersion) {
         this.pendingServerId = serverId;
         this.pendingProfileName = profileName;
+        this.protocolVersion = protocolVersion;
     }
 
     public String pendingServerId() {
@@ -65,9 +84,19 @@ public final class Session {
         return pendingProfileName;
     }
 
+    /**
+     * The account name Mojang verified for this session. Retained past the handshake purely for
+     * display and for name-based admin lookups ({@code /relay test <player>}); routing and
+     * authorization always use {@link #uuid()}, never this.
+     */
+    public String profileName() {
+        return profileName;
+    }
+
     public void authenticate(UUID verifiedUuid, String scope) {
         this.uuid = verifiedUuid;
         this.scope = scope;
+        this.profileName = pendingProfileName;
         this.authenticated = true;
         this.pendingServerId = null;
         this.pendingProfileName = null;

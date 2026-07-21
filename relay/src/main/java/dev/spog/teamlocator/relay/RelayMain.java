@@ -22,16 +22,21 @@ public final class RelayMain {
     public static void main(String[] args) throws Exception {
         int port = DEFAULT_PORT;
         String host = "0.0.0.0";
+        // admins.json / blacklist.json live here; defaults to the working directory so the systemd
+        // unit's WorkingDirectory decides, with --data-dir to override.
+        java.nio.file.Path dataDir = java.nio.file.Path.of(".");
 
         for (int i = 0; i < args.length - 1; i++) {
             switch (args[i]) {
                 case "--port" -> port = Integer.parseInt(args[++i]);
                 case "--host" -> host = args[++i];
+                case "--data-dir" -> dataDir = java.nio.file.Path.of(args[++i]);
                 default -> { }
             }
         }
 
-        RelayServer server = new RelayServer(new InetSocketAddress(host, port));
+        AdminService admins = AdminService.load(dataDir);
+        RelayServer server = new RelayServer(new InetSocketAddress(host, port), admins);
         // Drop idle/half-open sockets; clients send position updates continuously while in-game.
         server.setConnectionLostTimeout(60);
 

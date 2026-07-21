@@ -17,11 +17,39 @@ public final class Messages {
     }
 
     /**
-     * Bumped to 2 for armor sharing. {@code RelayServer} rejects a mismatch outright, so relay and
-     * clients must be updated together. Within v2, armor itself is optional on the wire: a client
-     * that shares no armor simply omits the field, exactly as {@code alertsWith} was introduced.
+     * The protocol version this build speaks. History, all additive on the wire:
+     * <ul>
+     *   <li>v1 — positions, pings, and a single trust set ({@code sharingWith} doubled as the
+     *       alert set).</li>
+     *   <li>v2 — split alerts from sharing ({@code alertsWith}) and added armor
+     *       ({@code armor-update} and the {@code armor} field on snapshot entries).</li>
+     *   <li>v3 — availability probes ({@code availability-query} / {@code -probe} / {@code -response}
+     *       / {@code -result}), backing the client's {@code /available} command. The relay only
+     *       probes v3+ sessions, so older clients never see an unknown frame.</li>
+     * </ul>
+     *
+     * <p>Every field added since v1 is <em>optional</em> on the wire, and every message a client
+     * receives that it does not understand is ignored (unknown JSON fields are dropped by the
+     * parser; unknown message types hit a no-op default). That is what makes cross-version support
+     * possible: an old client omits the newer fields and the relay fills in the pre-split default,
+     * while a new client's extra fields are harmless to an old relay. Keep it that way — a
+     * <em>non</em>-additive change (renaming or removing a field, or changing its meaning) would
+     * break this and would need a real negotiation, not just a version bump.
      */
-    public static final int PROTOCOL_VERSION = 2;
+    public static final int PROTOCOL_VERSION = 3;
+
+    /** The lowest protocol version whose clients understand availability probes. */
+    public static final int AVAILABILITY_MIN_VERSION = 3;
+
+    /**
+     * The oldest client protocol the relay still accepts. The relay serves anything in
+     * {@code [MIN_SUPPORTED_VERSION, PROTOCOL_VERSION]}, and treats a <em>higher</em>-versioned
+     * client as if it spoke {@code PROTOCOL_VERSION} (its unknown newer fields are ignored, so it
+     * degrades to what this relay understands rather than being turned away). Raise this floor only
+     * if a version ever becomes genuinely unroutable — see the additive-design note above; so far
+     * none has.
+     */
+    public static final int MIN_SUPPORTED_VERSION = 1;
 
     // ---- client -> relay ----
 
@@ -115,7 +143,63 @@ public final class Messages {
         }
     }
 
+    /**
+     * "Which of my mutually-trusting peers would actually see my alert right now?" — backs the
+     * client's {@code /available} command. The relay cannot answer alone: whether an alert is
+     * <em>displayed</em> is decided receiver-side (mutes, the cross-server toggle, and the
+     * known-server gate), so the relay fans out an {@link AvailabilityProbe} to each candidate and
+     * aggregates their answers into an {@link AvailabilityResult}.
+     */
+    public static final class AvailabilityQuery {
+        public String type = "availability-query";
+    }
+
+    /**
+     * A client's answer to an {@link AvailabilityProbe}: whether an alert from that attacker would
+     * be shown on this client's screen right now. Evaluated silently — no toast, no sound.
+     */
+    public static final class AvailabilityResponse {
+        public String type = "availability-response";
+        public String probeId;
+        public boolean available;
+    }
+
     // ---- relay -> client ----
+
+    /**
+     * Asks a client to evaluate — without displaying anything — whether an alert from
+     * {@code attacker} (whose scope is {@code mcServer}) would be shown on its screen, exactly as
+     * {@code PingHandler} would decide for a real ping. Only ever sent to sessions that negotiated
+     * {@link #AVAILABILITY_MIN_VERSION} or newer; older clients would silently drop it and stall
+     * the aggregate, so the relay excludes them up front.
+     */
+    public static final class AvailabilityProbe {
+        public String type = "availability-probe";
+        public String probeId;
+        public String attacker;
+        public String mcServer;
+
+        public AvailabilityProbe(String probeId, String attacker, String mcServer) {
+            this.probeId = probeId;
+            this.attacker = attacker;
+            this.mcServer = mcServer;
+        }
+    }
+
+    /**
+     * The aggregate answer to an {@link AvailabilityQuery}: the UUIDs of every probed peer that
+     * said it would display the alert. Sent when all probes answered or the probe window timed
+     * out — a peer that never answers (lagging, or mid-disconnect) is simply not listed, keeping
+     * the promise that every listed player will actually see the alert.
+     */
+    public static final class AvailabilityResult {
+        public String type = "availability-result";
+        public List<String> receivers;
+
+        public AvailabilityResult(List<String> receivers) {
+            this.receivers = receivers;
+        }
+    }
 
     /** Relay's reply to {@link Hello}: the single-use nonce to pass to Mojang's joinServer. */
     public static final class AuthChallenge {
@@ -131,9 +215,17 @@ public final class Messages {
     public static final class AuthOk {
         public String type = "auth-ok";
         public String uuid;
+        /**
+         * Whether this player administers the relay. Purely a UI hint, so the client can hide the
+         * {@code /relay} command from players who cannot use it — authorization is always rechecked
+         * relay-side against the verified UUID, so a patched client that forces this true still has
+         * every command refused. Absent from an older relay, which the client reads as false.
+         */
+        public boolean admin;
 
-        public AuthOk(String uuid) {
+        public AuthOk(String uuid, boolean admin) {
             this.uuid = uuid;
+            this.admin = admin;
         }
     }
 
@@ -144,6 +236,95 @@ public final class Messages {
 
         public AuthFail(String reason) {
             this.reason = reason;
+        }
+    }
+
+    /**
+     * The {@link AuthFail#reason} sent to a blacklisted player. Deliberately carried on the existing
+     * auth-fail rather than a new message type: an older client already knows how to handle
+     * auth-fail and will show its generic disconnect, while a current client recognises this exact
+     * code and says the player is banned. A new type would be silently ignored by old clients,
+     * leaving them retrying forever with no explanation.
+     *
+     * <p>Match on this constant, never on the human-readable text after it.
+     */
+    public static final String REASON_BANNED = "banned";
+
+    /**
+     * "I am marking this spot." A location ping, placed where the sender was looking. Unlike
+     * {@link Ping} (the attack alert) this is tied to a position, so it is routed within the
+     * sender's scope only — coordinates from another Minecraft server would point somewhere
+     * meaningless in the viewer's world.
+     *
+     * <p>{@code color} is the sender's choice from their own UUID-derived palette. The relay does
+     * not take it on trust: see {@link PingColors} and the validation in {@code RelayRouter}.
+     */
+    public static final class MapPing {
+        public String type = "map-ping";
+        public double x;
+        public double y;
+        public double z;
+        public String dimension;
+        public String color;
+    }
+
+    /**
+     * A teammate's location ping, fanned out to everyone who mutually alert-trusts them in the same
+     * scope. {@code color} is the value the relay settled on — the sender's validated choice, or an
+     * administrator's override — never the raw value the client sent.
+     */
+    public static final class MapPingBroadcast {
+        public String type = "map-ping-broadcast";
+        public String player;
+        public double x;
+        public double y;
+        public double z;
+        public String dimension;
+        public String color;
+
+        public MapPingBroadcast(String player, double x, double y, double z, String dimension,
+                                String color) {
+            this.player = player;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.dimension = dimension;
+            this.color = color;
+        }
+    }
+
+    // ---- admin (client -> relay -> client) ----
+
+    /**
+     * An admin invoking {@code /relay <command> [args]}. Authorization is by the relay-verified
+     * UUID of the sending session against the relay's admin list — never anything in this frame, so
+     * a patched client cannot promote itself by asserting admin here.
+     */
+    public static final class AdminCommand {
+        public String type = "admin-command";
+        public String command;
+        public List<String> args;
+
+        public AdminCommand(String command, List<String> args) {
+            this.command = command;
+            this.args = args;
+        }
+    }
+
+    /**
+     * The relay's reply to an {@link AdminCommand}: lines to print in the admin's chat. A list
+     * rather than one string so multi-line output (a status report) stays one frame and one
+     * coherent block in chat.
+     */
+    public static final class AdminResult {
+        public String type = "admin-result";
+        public List<String> lines;
+        /** True when the command failed, so the client can colour the output as an error. */
+        public boolean error;
+
+        public AdminResult(List<String> lines, boolean error) {
+            this.lines = lines;
+            this.error = error;
         }
     }
 

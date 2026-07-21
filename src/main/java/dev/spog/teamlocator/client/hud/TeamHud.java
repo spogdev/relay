@@ -39,14 +39,33 @@ public class TeamHud implements HudElement {
     private static final float ARMOR_ICON_SCALE = 0.75f; // 16 * 0.75 = 12px, slightly over FACE_SIZE
     /** Space between the row text and the first armor icon. */
     private static final int ARMOR_GAP = 3;
+    /** Space between the name column and the coordinate block in TABLE alignment. */
+    private static final int TABLE_COL_GAP = 6;
 
     private final TeamConfig config;
 
     private record Segment(String text, int color) {
     }
 
+    /**
+     * The coordinate fields of one row, kept separate from the flat {@link Segment} list so TABLE
+     * alignment can lay them out as right-aligned columns. Null when coords are hidden. {@code dim}
+     * is the parenthesised cross-dimension suffix, or null when the teammate shares our dimension.
+     */
+    private record Coords(String x, String y, String z, String dim) {
+    }
+
     private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width,
-                       List<ArmorPiece> armor, int textWidth) {
+                       List<ArmorPiece> armor, int textWidth, String name, Coords coords,
+                       int pri, int sec) {
+    }
+
+    /**
+     * Column widths for TABLE alignment, in unscaled pixels. {@code nameColW} reserves the widest
+     * name so every coordinate block starts at the same x; {@code x/y/zColW} are each column's
+     * widest value, so the numbers right-align and every row's Z ends together.
+     */
+    private record TableLayout(int nameColW, int xColW, int yColW, int zColW, int totalWidth) {
     }
 
     public TeamHud(TeamConfig config) {
@@ -118,17 +137,23 @@ public class TeamHud implements HudElement {
             // Trailing spaces only pad toward what follows; without coords the name would
             // otherwise carry a dangling gap before the armor icons.
             boolean showCoords = config.hudShowCoords;
-            segments.add(new Segment(showCoords ? info.getProfile().name() + "  "
-                    : info.getProfile().name(), pri));
+            String name = info.getProfile().name();
+            Coords coords = null;
+            segments.add(new Segment(showCoords ? name + "  " : name, pri));
             if (showCoords) {
-                segments.add(new Segment(Integer.toString((int) Math.floor(e.x())), sec));
+                String xs = Integer.toString((int) Math.floor(e.x()));
+                String ys = Integer.toString((int) Math.floor(e.y()));
+                String zs = Integer.toString((int) Math.floor(e.z()));
+                String dim = e.dimension().equals(viewerDim) ? null : prettyDimension(e.dimension());
+                coords = new Coords(xs, ys, zs, dim);
+                segments.add(new Segment(xs, sec));
                 segments.add(new Segment(", ", pri));
-                segments.add(new Segment(Integer.toString((int) Math.floor(e.y())), sec));
+                segments.add(new Segment(ys, sec));
                 segments.add(new Segment(", ", pri));
-                segments.add(new Segment(Integer.toString((int) Math.floor(e.z())), sec));
-                if (!e.dimension().equals(viewerDim)) {
+                segments.add(new Segment(zs, sec));
+                if (dim != null) {
                     segments.add(new Segment(" (", pri));
-                    segments.add(new Segment(prettyDimension(e.dimension()), sec));
+                    segments.add(new Segment(dim, sec));
                     segments.add(new Segment(")", pri));
                 }
             }
@@ -141,11 +166,20 @@ public class TeamHud implements HudElement {
             int armorWidth = armor.isEmpty()
                     ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
             int rowWidth = FACE_SIZE + 3 + textWidth + armorWidth;
-            rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth));
+            rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth, name, coords,
+                    pri, sec));
             maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
             return;
+        }
+
+        // TABLE alignment lays coords out in right-aligned columns; that changes each row's width,
+        // so compute the layout (and the block width it implies) before anchoring/clamping.
+        TableLayout table = config.hudAlign == TeamConfig.HudAlign.TABLE
+                ? buildTableLayout(font, rows) : null;
+        if (table != null) {
+            maxWidth = table.totalWidth();
         }
 
         // Clamp the anchor so every row stays fully on screen even at extreme slider values,
@@ -169,22 +203,30 @@ public class TeamHud implements HudElement {
         pose.scale(scale, scale);
         for (int i = 0; i < rows.size(); i++) {
             Row row = rows.get(i);
-            // When growing upward, row 0 sits at the bottom of the block (closest to the anchor).
-            int slot = config.hudGrowUp ? rows.size() - 1 - i : i;
-            int y = slot * (ROW_HEIGHT + GAP);
+            // Rows always stack in list order. "Grow Upward" moves the whole block's anchor to its
+            // bottom edge (see baseY above), which is the entire effect — reversing the rows here as
+            // well double-applied it, leaving the block correctly placed but its contents upside
+            // down, so a teammate changed position on screen just from toggling the option.
+            int y = i * (ROW_HEIGHT + GAP);
+            // Center the face and the text against the same vertical band so the head sits inline
+            // with the name instead of riding high above it. The head is nudged 1px up from true
+            // center, which reads better against the font baseline.
+            int contentHeight = Math.max(FACE_SIZE, mc.font.lineHeight);
+            int textY = y + (contentHeight - mc.font.lineHeight) / 2;
+
+            if (table != null) {
+                renderTableRow(graphics, mc.font, row, table, y, textY, contentHeight);
+                continue;
+            }
+
             // Align the whole row unit (head + text) within the widest row's width.
             int rowX = switch (config.hudAlign) {
                 case CENTER -> (maxWidth - row.width()) / 2;
                 case RIGHT -> maxWidth - row.width();
                 default -> 0;
             };
-            // Center the face and the text against the same vertical band so the head sits inline
-            // with the name instead of riding high above it. The head is nudged 1px up from true
-            // center, which reads better against the font baseline.
-            int contentHeight = Math.max(FACE_SIZE, mc.font.lineHeight);
             PlayerFaceExtractor.extractRenderState(graphics, row.skin(), rowX,
                     y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
-            int textY = y + (contentHeight - mc.font.lineHeight) / 2;
             int x = rowX + FACE_SIZE + 3;
             for (Segment seg : row.segments()) {
                 graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
@@ -198,6 +240,88 @@ public class TeamHud implements HudElement {
             }
         }
         pose.popMatrix();
+    }
+
+    /**
+     * Measure the TABLE columns across every row. Rows with coords hidden ({@code coords == null})
+     * contribute only their name to the name column. The total width is the face, the name column,
+     * the gap, the three right-aligned coordinate columns with their separators, and the widest
+     * armor — enough that anchoring/clamping reserves space for the whole grid.
+     */
+    private TableLayout buildTableLayout(Font font, List<Row> rows) {
+        int sepW = font.width(", ");
+        int nameColW = 0;
+        int xColW = 0;
+        int yColW = 0;
+        int zColW = 0;
+        int maxArmorW = 0;
+        boolean anyCoords = false;
+        for (Row row : rows) {
+            nameColW = Math.max(nameColW, font.width(row.name()));
+            Coords c = row.coords();
+            if (c != null) {
+                anyCoords = true;
+                xColW = Math.max(xColW, font.width(c.x()));
+                yColW = Math.max(yColW, font.width(c.y()));
+                zColW = Math.max(zColW, font.width(c.z()));
+            }
+            if (!row.armor().isEmpty()) {
+                maxArmorW = Math.max(maxArmorW,
+                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE));
+            }
+        }
+        int total = FACE_SIZE + 3 + nameColW;
+        if (anyCoords) {
+            total += TABLE_COL_GAP + xColW + sepW + yColW + sepW + zColW;
+        }
+        total += maxArmorW;
+        return new TableLayout(nameColW, xColW, yColW, zColW, total);
+    }
+
+    /**
+     * Render one row in TABLE alignment: face, then the left-aligned name, then X/Y/Z each
+     * right-aligned within its column so the numbers line up and the row ends at a shared x. A
+     * cross-dimension suffix (rare, and per-row) trails after Z; armor follows that.
+     */
+    private void renderTableRow(GuiGraphicsExtractor graphics, Font font, Row row, TableLayout t,
+                                int y, int textY, int contentHeight) {
+        int sepW = font.width(", ");
+        PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0,
+                y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
+        int nameX = FACE_SIZE + 3;
+        graphics.text(font, row.name(), nameX, textY, row.pri(), true);
+
+        Coords c = row.coords();
+        if (c == null) {
+            return; // coords hidden: name-only row, nothing more to lay out
+        }
+        int blockX = nameX + t.nameColW() + TABLE_COL_GAP;
+        // Each value right-aligned within its column, separators drawn at the column edges in the
+        // primary colour, matching the packed layout's "x, y, z".
+        int xRight = blockX + t.xColW();
+        graphics.text(font, c.x(), xRight - font.width(c.x()), textY, row.sec(), true);
+        graphics.text(font, ", ", xRight, textY, row.pri(), true);
+        int yLeft = xRight + sepW;
+        int yRight = yLeft + t.yColW();
+        graphics.text(font, c.y(), yRight - font.width(c.y()), textY, row.sec(), true);
+        graphics.text(font, ", ", yRight, textY, row.pri(), true);
+        int zLeft = yRight + sepW;
+        int zRight = zLeft + t.zColW();
+        graphics.text(font, c.z(), zRight - font.width(c.z()), textY, row.sec(), true);
+
+        int end = zRight;
+        if (c.dim() != null) {
+            graphics.text(font, " (", end, textY, row.pri(), true);
+            end += font.width(" (");
+            graphics.text(font, c.dim(), end, textY, row.sec(), true);
+            end += font.width(c.dim());
+            graphics.text(font, ")", end, textY, row.pri(), true);
+            end += font.width(")");
+        }
+        if (!row.armor().isEmpty()) {
+            ArmorRenderer.render(graphics, row.armor(), end + ARMOR_GAP,
+                    y + contentHeight / 2 - 1, ARMOR_ICON_SCALE);
+        }
     }
 
     /** {@code minecraft:the_nether} -> "Nether"; unknown ids get their path title-cased. */

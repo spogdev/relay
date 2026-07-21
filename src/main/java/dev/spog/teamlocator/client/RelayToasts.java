@@ -38,6 +38,16 @@ public final class RelayToasts {
     }
 
     /**
+     * This account is blacklisted on the relay. Shown once per run of rejections rather than on
+     * every retry — a ban is a standing state, and repeating the generic "reconnecting..." toast
+     * would wrongly suggest the relay is merely down.
+     */
+    public static void banned() {
+        show(Component.translatable("relay.banned.title"),
+                Component.translatable("relay.banned.detail"));
+    }
+
+    /**
      * Toasts must be added on the game thread; relay state changes happen on the WebSocket receive
      * thread or the relay executor.
      */

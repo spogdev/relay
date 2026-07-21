@@ -4,6 +4,11 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
+import dev.spog.teamlocator.client.config.TrustEntry;
+import dev.spog.teamlocator.client.render.PingRenderer;
+
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import dev.spog.teamlocator.client.gui.TeamLocatorConfigScreen;
 import dev.spog.teamlocator.client.hud.TeamHud;
 import dev.spog.teamlocator.client.net.RelayClient;
@@ -22,7 +27,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.UUID;
 
@@ -45,11 +49,12 @@ public class TeamLocatorClient implements ClientModInitializer {
     /** Send our own position every 4 client ticks (5 Hz), matching the old broadcast interval. */
     private static final int POSITION_INTERVAL_TICKS = 4;
 
-    /** How far the remove-target keybind searches along the crosshair ray, in blocks. */
+    /** How far the toggle-target keybind searches along the crosshair ray, in blocks. */
     private static final double TARGET_RANGE = 64.0;
 
     private static KeyMapping pingKey;
-    private static KeyMapping removeTargetKey;
+    private static KeyMapping toggleTargetKey;
+    private static KeyMapping mapPingKey;
     private static KeyMapping configKey;
     private static KeyMapping hudToggleKey;
     private static KeyMapping inWorldIconsToggleKey;
@@ -67,22 +72,31 @@ public class TeamLocatorClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "main"));
-        pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.ping", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R, category));
         int unbound = InputConstants.UNKNOWN.getValue();
-        removeTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.remove_target", InputConstants.Type.KEYSYM, unbound, category));
+        // Unbound by default, like the rest: an accidental alert pings every mutually-trusted
+        // teammate, so sending one should be a deliberate binding choice, not a default key.
+        pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.ping", InputConstants.Type.KEYSYM, unbound, category));
+        toggleTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.toggle_target", InputConstants.Type.KEYSYM, unbound, category));
         configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.open_config", InputConstants.Type.KEYSYM, unbound, category));
         hudToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
         inWorldIconsToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.toggle_in_world_icons", InputConstants.Type.KEYSYM, unbound, category));
+        mapPingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relay.map_ping", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
         // Register our custom alert sound event (client-only mod, safe at client init).
         RelaySounds.register();
+
+        // /available — who would actually see an alert sent right now.
+        AvailableCommand.register();
+        RelayAdminCommand.register();
+        PingRenderer.register();
 
         // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.
         XaeroCompat.init();
@@ -92,6 +106,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> connectRelay());
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             ClientState.reset();
+            PingState.reset();
             // A new connection means the relay holds no armor for us; re-send on the next tick.
             ARMOR_REPORTER.reset();
             // Restore this server's remembered active list before connecting, so the very first
@@ -101,6 +116,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             ClientState.reset();
+            PingState.reset();
             // Leaving a server: the server list is unreachable at the menu, so fall back to GLOBAL
             // without touching serverModes — the next join restores that server's own choice. Done
             // explicitly rather than via onScopeChanged() because getCurrentServer() may still be
@@ -114,8 +130,11 @@ public class TeamLocatorClient implements ClientModInitializer {
             while (pingKey.consumeClick()) {
                 RELAY.sendAttackPing();
             }
-            while (removeTargetKey.consumeClick()) {
-                removeTargetedPlayer(client);
+            while (toggleTargetKey.consumeClick()) {
+                toggleTargetedPlayer(client);
+            }
+            while (mapPingKey.consumeClick()) {
+                placeMapPing(client);
             }
             while (configKey.consumeClick()) {
                 client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
@@ -130,8 +149,12 @@ public class TeamLocatorClient implements ClientModInitializer {
         });
     }
 
-    /** Remove the player under the crosshair from the active trust list (keybind action). */
-    private static void removeTargetedPlayer(Minecraft client) {
+    /**
+     * Toggle trust for the player under the crosshair in the active list (keybind action): if they
+     * are already trusted, remove them; if not, add them. One key for both directions, so a player
+     * can trust someone they're looking at and untrust them the same way.
+     */
+    private static void toggleTargetedPlayer(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null || client.level == null) {
             return;
@@ -142,6 +165,7 @@ public class TeamLocatorClient implements ClientModInitializer {
             return;
         }
         UUID id = target.getUUID();
+        String name = target.getName().getString();
         boolean removed = list.trusted.removeIf(e -> {
             try {
                 return e.uuid().equals(id);
@@ -152,12 +176,46 @@ public class TeamLocatorClient implements ClientModInitializer {
         if (removed) {
             CONFIG.save();
             syncToServer();
-            RelayChat.send(Component.translatable("relay.remove_target.removed",
-                    RelayChat.value(target.getName().getString())));
+            RelayChat.send(Component.translatable("relay.toggle_target.removed", RelayChat.value(name)));
         } else {
-            RelayChat.send(Component.translatable("relay.remove_target.not_listed",
-                    RelayChat.value(target.getName().getString())));
+            list.trusted.add(new TrustEntry(id, name));
+            CONFIG.save();
+            syncToServer();
+            RelayChat.send(Component.translatable("relay.toggle_target.added", RelayChat.value(name)));
         }
+    }
+
+    /**
+     * Place a location ping where the player is looking (keybind action).
+     *
+     * <p>Ranged by the client's render distance rather than a fixed number: a ping beyond the
+     * loaded world would mark a place the viewer cannot see anyway, and the blocks to hit are not
+     * even loaded to be hit. Looking at open sky simply does nothing — deliberately silent, since a
+     * failure message on every mis-aimed press would be noise in a fight.
+     */
+    private static void placeMapPing(Minecraft client) {
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null || !RELAY.isReady()) {
+            return;
+        }
+        double range = client.options.getEffectiveRenderDistance() * 16.0;
+        Vec3 eye = player.getEyePosition();
+        Vec3 end = eye.add(player.getViewVector(1.0f).scale(range));
+        var hit = client.level.clip(new ClipContext(
+                eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+        if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+            return; // nothing within the loaded world; no ping, no message
+        }
+        Vec3 at = hit.getLocation();
+        String color = PingPalette.forPlayer(client.getUser().getProfileId(), CONFIG.pingColorIndex);
+        String dimension = player.level().dimension().identifier().toString();
+        RELAY.sendMapPing(at.x, at.y, at.z, dimension, color);
+        // Show our own ping immediately: the relay never echoes it back to us, and a marker that
+        // only teammates could see would make the keybind feel broken.
+        PingState.put(new PingState.Ping(client.getUser().getProfileId(), at.x, at.y, at.z,
+                player.level().dimension().identifier(),
+                0xFF000000 | Integer.parseInt(color.substring(1), 16),
+                System.currentTimeMillis()));
     }
 
     /**

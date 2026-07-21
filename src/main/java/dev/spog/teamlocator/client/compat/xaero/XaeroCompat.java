@@ -30,6 +30,20 @@ public final class XaeroCompat {
     private XaeroCompat() {
     }
 
+    /**
+     * Whether Xaero's Minimap is installed. Asks the loader directly rather than reading the pending
+     * flags, which are cleared once the tracker registers and so would report "absent" for a mod
+     * that is very much present.
+     */
+    public static boolean isMinimapInstalled() {
+        return FabricLoader.getInstance().isModLoaded("xaerominimap");
+    }
+
+    /** Whether Xaero's World Map is installed. See {@link #isMinimapInstalled()}. */
+    public static boolean isWorldMapInstalled() {
+        return FabricLoader.getInstance().isModLoaded("xaeroworldmap");
+    }
+
     /** Call once from the client entrypoint. No-op when neither Xaero mod is installed. */
     public static void init() {
         FabricLoader loader = FabricLoader.getInstance();

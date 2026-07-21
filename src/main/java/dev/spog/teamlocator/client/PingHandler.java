@@ -41,6 +41,9 @@ public final class PingHandler {
      */
     public static void onPing(UUID attacker, String fromServer, String ourScope) {
         TeamConfig config = TeamLocatorClient.CONFIG;
+        if (config.hideAllAlerts) {
+            return; // master mute: nothing shown, from anyone, anywhere
+        }
         if (config.mutedPingSet().contains(attacker)) {
             return;
         }
@@ -48,6 +51,23 @@ public final class PingHandler {
         if (!sameServer && !config.crossServerPings) {
             return;
         }
+
+        // Work out the server line to show. It must never be a raw ip:port — the wire scope is
+        // exactly that. For a same-server ping we already know it's here, so show a fixed label. For
+        // a cross-server ping, resolve the scope against the servers THIS player knows: an unknown
+        // server drops the alert entirely (you are not told the location of a server you have never
+        // connected to), and a known one yields the name/address to show in its place.
+        final Component serverLine;
+        if (sameServer) {
+            serverLine = Component.translatable("relay.toast.same_server");
+        } else {
+            CrossServerResolver.Result resolved = CrossServerResolver.resolve(fromServer);
+            if (!resolved.known()) {
+                return;
+            }
+            serverLine = Component.translatable("relay.toast.server", resolved.displayName());
+        }
+
         // Anti-spam: the ping is still received, just not shown while this attacker pinged
         // within the last pingCooldownSeconds.
         long now = System.currentTimeMillis();
@@ -63,7 +83,7 @@ public final class PingHandler {
         }
         mc.execute(() -> SystemToast.add(mc.getToastManager(), PING_TOAST,
                 Component.translatable("relay.toast.attacked", displayName(mc, attacker)),
-                Component.translatable("relay.toast.server", fromServer)));
+                serverLine));
         playPingSound(mc);
     }
 
@@ -82,8 +102,36 @@ public final class PingHandler {
                         .collect(Collectors.joining(", "))))));
     }
 
+    /**
+     * Whether an alert from {@code attacker} (scope {@code fromServer}) would be shown on this
+     * screen right now — the same gate {@link #onPing} applies, evaluated silently for the relay's
+     * availability probes ({@code /available}). Deliberately skips the per-attacker display
+     * cooldown: that is a transient anti-spam hold, not availability, and including it would make
+     * {@code /available} report "nobody" for several seconds after every real alert.
+     *
+     * <p>Must stay in lockstep with {@link #onPing}'s early-outs — if a new display gate is added
+     * there, add it here, or {@code /available} will overpromise. May do DNS (the known-server
+     * resolver); call it off the render thread.
+     */
+    public static boolean wouldDisplay(UUID attacker, String fromServer, String ourScope) {
+        TeamConfig config = TeamLocatorClient.CONFIG;
+        if (config.hideAllAlerts) {
+            return false; // master mute: /available must not list us as a receiver
+        }
+        if (config.mutedPingSet().contains(attacker)) {
+            return false;
+        }
+        if (fromServer.equals(ourScope)) {
+            return true; // same server: always shown (flash + toast)
+        }
+        if (!config.crossServerPings) {
+            return false;
+        }
+        return CrossServerResolver.resolve(fromServer).known();
+    }
+
     /** Cached trust-list name first (works cross-server), then tab list, then a UUID stub. */
-    private static String displayName(Minecraft mc, UUID player) {
+    public static String displayName(Minecraft mc, UUID player) {
         String name = TeamLocatorClient.CONFIG.nameFor(player);
         if (name != null) {
             return name;

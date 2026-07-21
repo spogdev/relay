@@ -42,6 +42,7 @@ public final class RelayServer extends WebSocketServer {
     private final SessionRegistry registry = new SessionRegistry();
     private final RelayRouter router = new RelayRouter(registry);
     private final Verifier verifier;
+    private final AdminService admins;
 
     /** MC-server scope claimed at hello time; applied only once auth succeeds. */
     private final Map<Session, String> pendingScopes = new ConcurrentHashMap<>();
@@ -54,13 +55,22 @@ public final class RelayServer extends WebSocketServer {
     });
 
     public RelayServer(InetSocketAddress address) {
-        this(address, new MojangVerifier());
+        this(address, new MojangVerifier(), AdminService.disabled());
+    }
+
+    public RelayServer(InetSocketAddress address, AdminService admins) {
+        this(address, new MojangVerifier(), admins);
     }
 
     /** Test seam: lets the routing be exercised without live Mojang accounts. */
     RelayServer(InetSocketAddress address, Verifier verifier) {
+        this(address, verifier, AdminService.disabled());
+    }
+
+    RelayServer(InetSocketAddress address, Verifier verifier, AdminService admins) {
         super(address);
         this.verifier = verifier;
+        this.admins = admins;
         setReuseAddr(true);
     }
 
@@ -127,6 +137,10 @@ public final class RelayServer extends WebSocketServer {
                 case "position-update" -> handlePosition(session, obj);
                 case "armor-update" -> handleArmor(session, obj);
                 case "ping" -> router.handlePing(session);
+                case "availability-query" -> router.handleAvailabilityQuery(session);
+                case "availability-response" -> handleAvailabilityResponse(session, obj);
+                case "map-ping" -> handleMapPing(session, obj);
+                case "admin-command" -> handleAdminCommand(session, obj);
                 default -> LOG.debug("unknown message type {}", type);
             }
         } catch (JsonParseException | IllegalStateException | NullPointerException
@@ -140,15 +154,21 @@ public final class RelayServer extends WebSocketServer {
             fail(session, "missing fields");
             return;
         }
-        int version = obj.has("protocolVersion") ? obj.get("protocolVersion").getAsInt() : 0;
-        if (version != Messages.PROTOCOL_VERSION) {
-            fail(session, "protocol version mismatch");
+        int claimed = obj.has("protocolVersion") ? obj.get("protocolVersion").getAsInt() : 0;
+        // Accept any client at or above the supported floor. A client older than the floor is
+        // genuinely unroutable and is turned away; a client newer than us is served as if it spoke
+        // our version — its extra fields are simply ignored downstream — so a not-yet-updated relay
+        // never rejects an updated mod. See Messages.MIN_SUPPORTED_VERSION.
+        if (claimed < Messages.MIN_SUPPORTED_VERSION) {
+            fail(session, "protocol too old (relay supports v" + Messages.MIN_SUPPORTED_VERSION
+                    + "+, client is v" + claimed + ")");
             return;
         }
+        int negotiated = Math.min(claimed, Messages.PROTOCOL_VERSION);
 
         String profileName = obj.get("profileName").getAsString();
         String scope = normalizeScope(obj.get("mcServer").getAsString());
-        session.beginChallenge(verifier.newChallenge(), profileName);
+        session.beginChallenge(verifier.newChallenge(), profileName, negotiated);
         pendingScopes.put(session, scope);
 
         registry.send(session, new Messages.AuthChallenge(session.pendingServerId()));
@@ -174,13 +194,27 @@ public final class RelayServer extends WebSocketServer {
                     fail(session, "mojang did not verify this session");
                     return;
                 }
+                // Enforced only now: the blacklist is keyed by UUID, and the UUID is not known
+                // (and must not be believed) until Mojang has vouched for it.
+                if (admins.isBanned(verified)) {
+                    LOG.info("refused blacklisted player {} ({})", profileName, verified);
+                    pendingScopes.remove(session);
+                    fail(session, Messages.REASON_BANNED);
+                    return;
+                }
                 String scope = pendingScopes.remove(session);
                 session.authenticate(verified, scope != null ? scope : "unknown");
                 registry.register(session);
-                registry.send(session, new Messages.AuthOk(verified.toString()));
+                admins.recordLogin(verified);
+                // The admin flag is a UI hint only — it lets the client hide /relay from players who
+                // cannot use it. Every command is still authorized relay-side against the verified
+                // UUID, so a client that lies about this to itself gains nothing.
+                registry.send(session, new Messages.AuthOk(verified.toString(),
+                        admins.isAdmin(verified)));
                 // Populate the newcomer's HUD immediately with anyone already sharing with them.
                 router.sendInitialSnapshot(session);
-                LOG.info("{} ({}) authenticated in scope '{}'", verified, profileName, session.scope());
+                LOG.info("{} ({}) authenticated in scope '{}' (protocol v{})",
+                        verified, profileName, session.scope(), session.protocolVersion());
             } catch (Verifier.Unavailable e) {
                 LOG.warn("Mojang session server unavailable: {}", e.getCause().toString());
                 fail(session, "mojang session server unavailable");
@@ -194,6 +228,119 @@ public final class RelayServer extends WebSocketServer {
     private void fail(Session session, String reason) {
         registry.send(session, new Messages.AuthFail(reason));
         session.conn().close();
+    }
+
+    /**
+     * A location ping. The colour the client asks for is only a request — {@link RelayRouter}
+     * validates it against the sender's own palette and applies any administrator override, so what
+     * goes out is never simply what came in.
+     */
+    private void handleMapPing(Session session, JsonObject obj) {
+        double x = obj.get("x").getAsDouble();
+        double y = obj.get("y").getAsDouble();
+        double z = obj.get("z").getAsDouble();
+        String dimension = obj.has("dimension")
+                ? obj.get("dimension").getAsString() : "minecraft:overworld";
+        String requested = obj.has("color") ? obj.get("color").getAsString() : null;
+        router.broadcastMapPing(session, x, y, z, dimension, requested,
+                admins.pingColorOverride(session.uuid()));
+    }
+
+    /**
+     * Run an admin subcommand for an authenticated session. The name lookup can hit Mojang, so it
+     * goes on the auth pool rather than blocking a WebSocket I/O thread; the permission check runs
+     * inside {@link AdminService#execute} against this session's verified UUID.
+     */
+    private void handleAdminCommand(Session session, JsonObject obj) {
+        String command = obj.has("command") ? obj.get("command").getAsString() : "";
+        List<String> args = new ArrayList<>();
+        if (obj.has("args") && obj.get("args").isJsonArray()) {
+            for (var el : obj.getAsJsonArray("args")) {
+                args.add(el.getAsString());
+            }
+        }
+        String callerName = session.profileName();
+        authPool.submit(() -> {
+            try {
+                AdminService.Result result = admins.execute(
+                        session.uuid(), callerName, command, args, connectedLookup());
+                registry.send(session, new Messages.AdminResult(result.lines(), result.error()));
+                // A ban only takes full effect once the banned player is actually gone; do it here
+                // rather than inside AdminService so the service stays free of session plumbing.
+                if (!result.error() && "blacklist".equalsIgnoreCase(command) && !args.isEmpty()) {
+                    kickBanned();
+                }
+            } catch (RuntimeException e) {
+                LOG.warn("admin command '{}' failed", command, e);
+                registry.send(session, new Messages.AdminResult(
+                        List.of("The command failed. Check the relay log."), true));
+            }
+        });
+    }
+
+    /** Close every live session whose player is now blacklisted. */
+    private void kickBanned() {
+        for (Session s : registry.allSessions()) {
+            if (admins.isBanned(s.uuid())) {
+                LOG.info("disconnecting newly-blacklisted {}", s.uuid());
+                registry.send(s, new Messages.AuthFail(Messages.REASON_BANNED));
+                s.conn().close();
+            }
+        }
+    }
+
+    /** Exposes live-session facts to {@link AdminService} without handing it the registry. */
+    private AdminService.ConnectedLookup connectedLookup() {
+        return new AdminService.ConnectedLookup() {
+            @Override
+            public java.util.Optional<UUID> byName(String name) {
+                for (Session s : registry.allSessions()) {
+                    if (name.equalsIgnoreCase(s.profileName())) {
+                        return java.util.Optional.of(s.uuid());
+                    }
+                }
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public java.util.Optional<Integer> versionOf(UUID player) {
+                return session(player).map(Session::protocolVersion);
+            }
+
+            @Override
+            public java.util.Optional<String> scopeOf(UUID player) {
+                return session(player).map(Session::scope);
+            }
+
+            @Override
+            public int connectedCount() {
+                int n = 0;
+                for (Session ignored : registry.allSessions()) {
+                    n++;
+                }
+                return n;
+            }
+
+            @Override
+            public int scopeCount() {
+                Set<String> scopes = new java.util.HashSet<>();
+                for (Session s : registry.allSessions()) {
+                    if (s.scope() != null) {
+                        scopes.add(s.scope());
+                    }
+                }
+                return scopes.size();
+            }
+
+            private java.util.Optional<Session> session(UUID player) {
+                for (Session s : registry.allSessions()) {
+                    if (player.equals(s.uuid())) {
+                        return java.util.Optional.of(s);
+                    }
+                }
+                return java.util.Optional.empty();
+            }
+        };
     }
 
     /**
@@ -269,6 +416,15 @@ public final class RelayServer extends WebSocketServer {
         return new Messages.ArmorPiece(slot, item, Math.max(0, damage), Math.max(0, maxDamage));
     }
 
+    /** A probed client's answer for {@code /available}; a frame without a probeId is dropped. */
+    private void handleAvailabilityResponse(Session session, JsonObject obj) {
+        if (!obj.has("probeId")) {
+            return;
+        }
+        boolean available = obj.has("available") && obj.get("available").getAsBoolean();
+        router.handleAvailabilityResponse(session, obj.get("probeId").getAsString(), available);
+    }
+
     private Set<UUID> parseUuids(JsonObject obj, String field) {
         Set<UUID> out = new LinkedHashSet<>();
         if (!obj.has(field) || !obj.get(field).isJsonArray()) {
@@ -307,6 +463,7 @@ public final class RelayServer extends WebSocketServer {
     @Override
     public void stop(int timeout) throws InterruptedException {
         authPool.shutdownNow();
+        router.shutdown();
         super.stop(timeout);
     }
 }

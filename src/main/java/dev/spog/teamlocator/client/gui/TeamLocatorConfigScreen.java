@@ -110,13 +110,6 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Wheel notch distance, in content pixels. */
     private static final int SCROLL_STEP = 20;
 
-    /** Content Y of the settings page's last row (Xaero's); drives that page's scroll extent. */
-    /**
-     * First row of the Pings section. Alerts' last row is at 196 (ending ~216); its header sits
-     * 12px above its first row, so matching that gap puts the Pings header at 228 and its first row
-     * at 240. That makes Pings read as its own heading-and-rows block, the same spacing every other
-     * section uses, rather than a fourth row of Alerts.
-     */
     /**
      * The General page's vertical layout, as named constants rather than literals scattered through
      * the builder and the header draw.
@@ -126,9 +119,13 @@ public class TeamLocatorConfigScreen extends Screen {
      * previous one's last row. Deriving each section from the one above means inserting a row shifts
      * everything below it automatically — adding the health row as a bare literal is exactly how the
      * Alerts header ended up overlapped.
+     *
+     * <p>{@link #SECTION_GAP} is kept comfortably larger than {@link #HEADER_GAP} so a header still
+     * reads as belonging to the section below it rather than drifting toward the rows above. That
+     * relationship, not the absolute value, is what keeps the page legible when spacing is
+     * tightened.
      */
-    /** Gap from one section's last row to the next section's header, on the settings page. */
-    private static final int SECTION_GAP = 44;
+    private static final int SECTION_GAP = 26;
     private static final int ROW_STRIDE = 24;
     private static final int HEADER_GAP = 12;
 

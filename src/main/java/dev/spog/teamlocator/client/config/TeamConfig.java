@@ -3,6 +3,7 @@ package dev.spog.teamlocator.client.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dev.spog.teamlocator.TeamLocatorConstants;
+import dev.spog.teamlocator.client.gui.SecondsSlider;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
@@ -28,14 +29,28 @@ public class TeamConfig {
 
     public enum AlertSound { ALARM, NOTEBLOCKS }
 
-    /** Horizontal alignment of each HUD row (head + text as a unit) within the widest row. */
-    public enum HudAlign { LEFT, CENTER, RIGHT }
+    /**
+     * Horizontal alignment of each HUD row (head + text as a unit) within the widest row.
+     * {@link #TABLE} is different in kind: instead of shifting whole rows, it lays the coordinate
+     * fields out in right-aligned columns from a shared origin, so the X/Y/Z of every row line up
+     * and all rows end at the same x — a spreadsheet-style layout.
+     */
+    public enum HudAlign { LEFT, CENTER, RIGHT, TABLE }
 
     /**
      * How much of a teammate's armor the HUD shows. {@code LOWEST} keeps only the piece closest to
      * breaking — the one worth knowing about mid-fight — for a HUD that stays narrow.
      */
     public enum ArmorDisplay { OFF, ALL, LOWEST }
+
+    /**
+     * How a piece's remaining durability is shown.
+     *
+     * <p>{@link #BAR} is vanilla's inventory bar under the icon. The other two trade that for a
+     * figure, which is precise where the bar is only approximate — at a glance a bar cannot tell
+     * you whether a chestplate has 40 hits left or 4.
+     */
+    public enum DurabilityDisplay { BAR, NUMBER_ONLY, NEXT_TO }
 
     /** A named trust list (a set of entries). */
     public static class TrustList {
@@ -54,20 +69,103 @@ public class TeamConfig {
     public java.util.Map<String, Mode> serverModes = new java.util.HashMap<>();
     public boolean globalShareEnabled = true;
     /**
-     * Share our equipped armor and its durability with trusted players. Off by default: gear state
-     * is a bigger disclosure than coordinates, so it is opted into rather than out of. Independent
-     * of {@link #globalShareEnabled}, but the relay gates armor behind the position-sharing set, so
-     * armor never reaches anyone who cannot already see us.
+     * Share our equipped armor and its durability with trusted players. On by default — it only
+     * ever reaches players already trusted with our position (the relay gates armor behind the
+     * position-sharing set), so the default matches what a team installing the mod expects to just
+     * work. Independent of {@link #globalShareEnabled}.
      */
-    public boolean shareArmor = false;
+    public boolean shareArmor = true;
+    /**
+     * Share our current health with trusted players. On by default, matching armor: it only reaches
+     * players already trusted with our position (the relay gates it behind the position-sharing
+     * set), so a team installing the mod gets it working without hunting for a switch. Turning it
+     * off stops it being sent at all, rather than merely hiding it locally.
+     */
+    public boolean shareHealth = true;
     /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
     public boolean crossServerPings = true;
-    /** Per-player client-side ping display cooldown, in seconds (0 = no cooldown). */
+    /**
+     * Master mute: when true, no incoming alert is shown at all — no toast, no sound, no HUD flash,
+     * from any teammate on any server. A blanket "do not disturb" that overrides everything below
+     * ({@link #crossServerPings}, per-player mutes, the cooldown), for when a player wants the
+     * sharing HUD without ever being interrupted by alerts. Does not affect whether OUR alerts reach
+     * others — only our own inbox.
+     */
+    public boolean hideAllAlerts = false;
+    /**
+     * Per-player client-side ping display cooldown, in seconds: a repeat alert from the same player
+     * is received but not shown again until it elapses. The slider offers 1s–10m
+     * ({@link dev.spog.teamlocator.client.gui.SecondsSlider#COOLDOWN_STEPS}); 0 (show every alert)
+     * remains valid if set in the config file directly.
+     */
     public int pingCooldownSeconds = 15;
     /** Which sound plays when an attack alert is received. Defaults to the new alarm. */
     public AlertSound alertSound = AlertSound.ALARM;
+    /**
+     * Which of the five UUID-derived ping colours this player uses, 0-4. The palette itself is not
+     * stored: it is derived from the account's UUID on demand, so it cannot drift out of sync with
+     * what the relay independently computes when validating a ping.
+     */
+    public int pingColorIndex = 0;
+    /**
+     * How long a location ping stays on screen, in seconds. A viewer-side setting: it governs how
+     * long <em>this</em> player sees pings, both teammates' and their own, so two people can watch
+     * the same ping for different lengths of time. Runs 5s..600s in 5s steps, or
+     * {@link SecondsSlider#INFINITE} for pings that stay until replaced or the player disconnects.
+     */
+    public int pingDisplaySeconds = 30;
+    /** Show teammates' location pings at all. */
+    public boolean showPings = true;
+    /**
+     * Draw pings through terrain. On by default because a callout you cannot see is not a callout —
+     * the whole point is pointing at something behind a hill. Turning it off makes pings occlude
+     * like ordinary geometry, for players who find them visually noisy.
+     */
+    public boolean pingsThroughWalls = true;
+    /**
+     * Whether an arriving ping plays a sound.
+     *
+     * <p>Separate from {@link #alertSound}, which governs help alerts: the two are different events
+     * and sharing a sound would mean having to look at the screen to tell them apart. On by default
+     * because a ping placed behind you is invisible until something draws your attention to it.
+     */
+    public boolean mapPingSound = true;
+
+    /**
+     * Whether relay chat works at all. Gates both directions: with this off nothing is sent when you
+     * type the prefix (the message goes to the Minecraft server as ordinary chat instead) and
+     * incoming relay messages are not shown.
+     */
+    public boolean chatEnabled = true;
+    /**
+     * Typing this character at the start of a message routes it to trusted players over the relay
+     * instead of the Minecraft server. A single character, so it is quick to type and unlikely to
+     * collide with normal speech at the start of a line.
+     */
+    public String chatPrefix = "#";
+    /**
+     * Minimum gap between pings accepted from any <em>one</em> player, in seconds; 0 is no limit.
+     * Per-sender rather than global, so one teammate spamming pings cannot stop everyone else's from
+     * showing. Purely a local viewing preference — it filters what this client draws and never
+     * affects what other players see.
+     */
+    public int mapPingCooldownSeconds = 0;
+
     /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
     public String relayUrl = DEFAULT_RELAY_ADDRESS;
+    /**
+     * Whether the relay reported this account as an administrator on the last successful connect.
+     *
+     * <p>Remembered across sessions purely so {@code /relay} can be offered in chat: Minecraft
+     * builds its command tree (and evaluates each command's visibility) the moment you join a
+     * world, which is <em>before</em> the relay has finished authenticating, so a flag set at auth
+     * time would always arrive too late and hide the command for admins too. Persisting last
+     * session's answer means the tree is built with the right value from the start.
+     *
+     * <p>Never a permission: the relay re-checks every command against the Mojang-verified UUID,
+     * so editing this to true only makes a command visible that the relay will still refuse.
+     */
+    public boolean wasRelayAdmin = false;
 
     public static final String DEFAULT_RELAY_ADDRESS = "relay.spog.dev";
 
@@ -117,6 +215,13 @@ public class TeamConfig {
     /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
     public String hudPrimaryColor = "#FFFFFF";
     public String hudSecondaryColor = "#AAAAAA";
+    /**
+     * Show each teammate's health on their HUD row. Their client must be new enough to report it;
+     * an older one shows nothing rather than a wrong number.
+     */
+    public boolean hudShowHealth = true;
+    /** How durability is drawn for each armor piece the HUD shows. */
+    public DurabilityDisplay hudDurabilityDisplay = DurabilityDisplay.BAR;
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */
@@ -175,9 +280,31 @@ public class TeamConfig {
             hudShowArmor = null;
         }
         if (hudArmorDisplay == null) hudArmorDisplay = ArmorDisplay.ALL;
+        // Also catches a config written when OVER_ICON still existed: Gson leaves an unknown enum
+        // constant null rather than failing, so without this the HUD would NPE on the first frame
+        // for anyone who had selected it.
+        if (hudDurabilityDisplay == null) hudDurabilityDisplay = DurabilityDisplay.BAR;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
-        if (pingCooldownSeconds < 0 || pingCooldownSeconds > 60) pingCooldownSeconds = 15;
+        // Upper bound matches the cooldown slider's longest step (10 minutes). It was 60 when the
+        // slider only went that high; leaving it there would silently reset any longer cooldown
+        // back to 15s on the next load.
+        if (pingCooldownSeconds < 0 || pingCooldownSeconds > 600) pingCooldownSeconds = 15;
+        if (pingColorIndex < 0 || pingColorIndex >= 5) pingColorIndex = 0;
+        // -1 (Infinite) is a valid setting, so only reject values outside the range that are not it.
+        if (pingDisplaySeconds != SecondsSlider.INFINITE
+                && (pingDisplaySeconds < 1 || pingDisplaySeconds > 600)) {
+            pingDisplaySeconds = 30;
+        }
+        // 0 means "no cooldown" and is the default, so the floor here is 0 rather than 1.
+        if (mapPingCooldownSeconds < 0 || mapPingCooldownSeconds > 600) mapPingCooldownSeconds = 0;
+        // A blank or multi-character prefix would either swallow every message or never match, so
+        // fall back rather than leave the user unable to chat normally. Whitespace is rejected for
+        // the same reason: a space prefix would capture ordinary sentences.
+        if (chatPrefix == null || chatPrefix.length() != 1
+                || Character.isWhitespace(chatPrefix.charAt(0))) {
+            chatPrefix = "#";
+        }
         if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
         relayUrl = normalizeRelayAddress(relayUrl);
         if (global == null) global = new TrustList();

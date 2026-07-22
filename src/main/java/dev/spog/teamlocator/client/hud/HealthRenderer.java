@@ -3,10 +3,10 @@ package dev.spog.teamlocator.client.hud;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.resources.Identifier;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.util.Identifier;
 
 /**
  * Draws a teammate's health on their HUD row: vanilla's heart icon followed by the number.
@@ -18,7 +18,7 @@ import net.minecraft.resources.Identifier;
 @Environment(EnvType.CLIENT)
 public final class HealthRenderer {
     /** Vanilla's own full-heart sprite, so it matches the player's own HUD exactly. */
-    private static final Identifier HEART_SPRITE = Identifier.parse("hud/heart/full");
+    private static final Identifier HEART_SPRITE = Identifier.of("hud/heart/full");
     /**
      * Drawn a touch larger than the row's text so the heart reads as an icon rather than a glyph,
      * while still not setting the row height (the face and font decide that).
@@ -63,11 +63,11 @@ public final class HealthRenderer {
     }
 
     /** Total width this occupies, including the icon, its gap, and the number. */
-    public static int width(Font font, TrackedPos entry) {
+    public static int width(TextRenderer font, TrackedPos entry) {
         if (!has(entry)) {
             return 0;
         }
-        return LEADING_GAP + ICON_SIZE + ICON_GAP + font.width(text(entry.health()))
+        return LEADING_GAP + ICON_SIZE + ICON_GAP + font.getWidth(text(entry.health()))
                 + TRAILING_GAP;
     }
 
@@ -76,22 +76,22 @@ public final class HealthRenderer {
      *
      * @return the width drawn, so the caller can advance past it
      */
-    public static int render(GuiGraphicsExtractor graphics, Font font, TrackedPos entry,
+    public static int render(DrawContext graphics, TextRenderer font, TrackedPos entry,
                              int x, int y, int contentHeight, int textColor) {
         if (!has(entry)) {
             return 0;
         }
         int iconX = x + LEADING_GAP;
         int iconY = y + (contentHeight - ICON_SIZE) / 2 - ICON_RAISE;
-        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_SPRITE,
+        graphics.drawGuiTexture(RenderPipelines.GUI_TEXTURED, HEART_SPRITE,
                 iconX, iconY, ICON_SIZE, ICON_SIZE);
 
         String label = text(entry.health());
-        int textY = y + (contentHeight - font.lineHeight) / 2;
+        int textY = y + (contentHeight - font.fontHeight) / 2;
         // Shadowed, unlike the rest of the row: the number sits right beside a bright red sprite
         // and against whatever the world happens to be behind the HUD, so it needs the outline to
         // stay legible where flat text would not.
-        graphics.text(font, label, iconX + ICON_SIZE + ICON_GAP, textY, textColor, true);
-        return LEADING_GAP + ICON_SIZE + ICON_GAP + font.width(label) + TRAILING_GAP;
+        graphics.drawText(font, label, iconX + ICON_SIZE + ICON_GAP, textY, textColor, true);
+        return LEADING_GAP + ICON_SIZE + ICON_GAP + font.getWidth(label) + TRAILING_GAP;
     }
 }

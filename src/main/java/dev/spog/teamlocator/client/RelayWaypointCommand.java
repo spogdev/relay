@@ -8,8 +8,8 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
-import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.Component;
+import net.minecraft.util.Formatting;
+import net.minecraft.text.Text;
 
 /**
  * {@code /relaywaypoint <name> <x> <y> <z> [dimension]} — adds a waypoint a teammate shared.
@@ -57,16 +57,16 @@ public final class RelayWaypointCommand {
     private static void add(net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source,
                             String name, int x, int y, int z) {
         if (!XaeroCompat.isMinimapInstalled()) {
-            source.sendError(Component.literal(
+            source.sendError(Text.literal(
                     "Xaero's Minimap isn't installed, so there's nowhere to add the waypoint."));
             return;
         }
         if (XaeroWaypoints.add(name, x, y, z)) {
-            RelayChat.send(Component.literal("Added waypoint: ")
-                    .withStyle(ChatFormatting.GREEN)
-                    .append(Component.literal(name).withStyle(ChatFormatting.WHITE)));
+            RelayChat.send(Text.literal("Added waypoint: ")
+                    .formatted(Formatting.GREEN)
+                    .append(Text.literal(name).formatted(Formatting.WHITE)));
         } else {
-            source.sendError(Component.literal(
+            source.sendError(Text.literal(
                     "Couldn't add the waypoint — the minimap has no active world yet."));
         }
     }

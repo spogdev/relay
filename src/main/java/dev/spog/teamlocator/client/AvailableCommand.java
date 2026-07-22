@@ -5,8 +5,8 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
 
 import java.util.List;
 import java.util.UUID;
@@ -38,26 +38,26 @@ public final class AvailableCommand {
 
     private static void run(FabricClientCommandSource source) {
         if (!TeamLocatorClient.RELAY.isReady()) {
-            source.sendError(Component.translatable("relay.available.not_connected"));
+            source.sendError(Text.translatable("relay.available.not_connected"));
             return;
         }
-        source.sendFeedback(RelayChat.primary(Component.translatable("relay.available.checking")));
-        Minecraft mc = source.getClient();
+        source.sendFeedback(RelayChat.primary(Text.translatable("relay.available.checking")));
+        MinecraftClient mc = source.getClient();
         TeamLocatorClient.RELAY.queryAvailability(receivers ->
                 mc.execute(() -> report(mc, receivers)));
     }
 
     /** Runs on the game thread. {@code receivers} null means the relay never answered. */
-    private static void report(Minecraft mc, List<UUID> receivers) {
+    private static void report(MinecraftClient mc, List<UUID> receivers) {
         if (receivers == null) {
-            RelayChat.send(Component.translatable("relay.available.timeout"));
+            RelayChat.send(Text.translatable("relay.available.timeout"));
         } else if (receivers.isEmpty()) {
-            RelayChat.send(Component.translatable("relay.available.none"));
+            RelayChat.send(Text.translatable("relay.available.none"));
         } else {
             String names = receivers.stream()
                     .map(id -> PingHandler.displayName(mc, id))
                     .collect(Collectors.joining(", "));
-            RelayChat.send(Component.translatable("relay.available.list",
+            RelayChat.send(Text.translatable("relay.available.list",
                     RelayChat.value(names)));
         }
     }

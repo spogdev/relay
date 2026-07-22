@@ -6,9 +6,9 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
+import net.minecraft.util.Formatting;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
 
 import java.util.List;
 
@@ -65,7 +65,7 @@ public final class RelayAdminCommand {
                                                 }))))
                         .executes(ctx -> {
                             ctx.getSource().sendError(
-                                    Component.translatable("relay.command.usage"));
+                                    Text.translatable("relay.command.usage"));
                             return 0;
                         })));
     }
@@ -83,10 +83,10 @@ public final class RelayAdminCommand {
 
     private static void run(FabricClientCommandSource source, String command, List<String> args) {
         if (!TeamLocatorClient.RELAY.isReady()) {
-            source.sendError(Component.translatable("relay.command.not_connected"));
+            source.sendError(Text.translatable("relay.command.not_connected"));
             return;
         }
-        Minecraft mc = source.getClient();
+        MinecraftClient mc = source.getClient();
         TeamLocatorClient.RELAY.sendAdminCommand(command, args, (lines, error) ->
                 mc.execute(() -> report(lines, error)));
     }
@@ -96,14 +96,14 @@ public final class RelayAdminCommand {
         if (lines == null) {
             // An older relay has no admin support and ignores the frame outright, so a timeout is
             // indistinguishable from one that is merely slow; say so rather than guessing.
-            RelayChat.send(Component.literal("No response from the relay (it may not support admin "
-                    + "commands).").withStyle(ChatFormatting.RED));
+            RelayChat.send(Text.literal("No response from the relay (it may not support admin "
+                    + "commands).").formatted(Formatting.RED));
             return;
         }
         for (String line : lines) {
             RelayChat.send(error
-                    ? Component.literal(line).withStyle(ChatFormatting.RED)
-                    : Component.literal(line));
+                    ? Text.literal(line).formatted(Formatting.RED)
+                    : Text.literal(line));
         }
     }
 }

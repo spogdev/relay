@@ -2,13 +2,13 @@ package dev.spog.teamlocator.client;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.ClickEvent;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.Style;
+import net.minecraft.util.Formatting;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.Text;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,10 +27,10 @@ public final class RelayChatMessages {
      * The prefix's colour. Aqua reads clearly on both the light and dark chat backgrounds and is not
      * used by vanilla system messages, so it does not collide with anything the server sends.
      */
-    private static final ChatFormatting PREFIX_COLOR = ChatFormatting.AQUA;
+    private static final Formatting PREFIX_COLOR = Formatting.AQUA;
     /** The message body: white, so the text itself stays as readable as ordinary chat. */
-    private static final ChatFormatting BODY_COLOR = ChatFormatting.WHITE;
-    private static final ChatFormatting WAYPOINT_COLOR = ChatFormatting.GREEN;
+    private static final Formatting BODY_COLOR = Formatting.WHITE;
+    private static final Formatting WAYPOINT_COLOR = Formatting.GREEN;
 
     private RelayChatMessages() {
     }
@@ -41,16 +41,16 @@ public final class RelayChatMessages {
      * <p>The prefix carries a hover listing everyone the relay delivered to, so you can check who
      * could read a message before or after saying something sensitive.
      */
-    public static void show(Minecraft mc, UUID sender, String text, List<UUID> recipients) {
-        MutableComponent prefix = Component.literal("[Relay Chat]")
-                .withStyle(PREFIX_COLOR)
-                .withStyle(style -> style.withHoverEvent(
+    public static void show(MinecraftClient mc, UUID sender, String text, List<UUID> recipients) {
+        MutableText prefix = Text.literal("[Relay Chat]")
+                .formatted(PREFIX_COLOR)
+                .styled(style -> style.withHoverEvent(
                         new HoverEvent.ShowText(recipientTooltip(mc, recipients))));
 
         RelayChat.send(prefix
-                .append(Component.literal(" <" + PingHandler.displayName(mc, sender) + "> ")
-                        .withStyle(PREFIX_COLOR))
-                .append(Component.literal(text).withStyle(BODY_COLOR)));
+                .append(Text.literal(" <" + PingHandler.displayName(mc, sender) + "> ")
+                        .formatted(PREFIX_COLOR))
+                .append(Text.literal(text).formatted(BODY_COLOR)));
     }
 
     /**
@@ -60,23 +60,23 @@ public final class RelayChatMessages {
      * sharing is one-way, so anyone who has added you could otherwise drop entries into your map
      * without consent.
      */
-    public static void showWaypoint(Minecraft mc, UUID sender, String name,
+    public static void showWaypoint(MinecraftClient mc, UUID sender, String name,
                                     int x, int y, int z, String dimension) {
         String who = PingHandler.displayName(mc, sender);
         // Quote the name so one containing spaces still parses as a single argument.
         String command = "/relaywaypoint \"" + name.replace("\"", "") + "\" "
                 + x + " " + y + " " + z + " " + dimension;
 
-        MutableComponent line = Component.literal("[Relay Chat]").withStyle(PREFIX_COLOR)
-                .append(Component.literal(" " + who + " shared a waypoint: ")
-                        .withStyle(WAYPOINT_COLOR))
-                .append(Component.literal(name).withStyle(ChatFormatting.WHITE))
-                .append(Component.literal(" (" + x + ", " + y + ", " + z + ") ")
-                        .withStyle(ChatFormatting.GRAY))
-                .append(Component.literal("[Add]")
-                        .withStyle(Style.EMPTY
-                                .withColor(ChatFormatting.GREEN)
-                                .withUnderlined(true)
+        MutableText line = Text.literal("[Relay Chat]").formatted(PREFIX_COLOR)
+                .append(Text.literal(" " + who + " shared a waypoint: ")
+                        .formatted(WAYPOINT_COLOR))
+                .append(Text.literal(name).formatted(Formatting.WHITE))
+                .append(Text.literal(" (" + x + ", " + y + ", " + z + ") ")
+                        .formatted(Formatting.GRAY))
+                .append(Text.literal("[Add]")
+                        .fillStyle(Style.EMPTY
+                                .withColor(Formatting.GREEN)
+                                .withUnderline(true)
                                 // SuggestCommand, not RunCommand: RunCommand routes through
                                 // sendUnattendedCommand straight to the Minecraft server, which
                                 // would both fail (this is a client-only command the server has
@@ -85,25 +85,25 @@ public final class RelayChatMessages {
                                 // and the user presses enter to run it client-side.
                                 .withClickEvent(new ClickEvent.SuggestCommand(command))
                                 .withHoverEvent(new HoverEvent.ShowText(
-                                        Component.literal(
+                                        Text.literal(
                                                 "Click to fill in the add command, then press "
                                                         + "enter")))));
         RelayChat.send(line);
     }
 
     /** The hover text listing who a message reached. */
-    private static Component recipientTooltip(Minecraft mc, List<UUID> recipients) {
+    private static Text recipientTooltip(MinecraftClient mc, List<UUID> recipients) {
         if (recipients == null || recipients.isEmpty()) {
-            return Component.literal("Nobody else received this message")
-                    .withStyle(ChatFormatting.GRAY);
+            return Text.literal("Nobody else received this message")
+                    .formatted(Formatting.GRAY);
         }
-        MutableComponent tooltip = Component.literal("Received by:\n")
-                .withStyle(ChatFormatting.GRAY);
+        MutableText tooltip = Text.literal("Received by:\n")
+                .formatted(Formatting.GRAY);
         for (int i = 0; i < recipients.size(); i++) {
-            tooltip.append(Component.literal(PingHandler.displayName(mc, recipients.get(i)))
-                    .withStyle(ChatFormatting.WHITE));
+            tooltip.append(Text.literal(PingHandler.displayName(mc, recipients.get(i)))
+                    .formatted(Formatting.WHITE));
             if (i < recipients.size() - 1) {
-                tooltip.append(Component.literal("\n").withStyle(ChatFormatting.GRAY));
+                tooltip.append(Text.literal("\n").formatted(Formatting.GRAY));
             }
         }
         return tooltip;

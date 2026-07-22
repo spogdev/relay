@@ -4,10 +4,10 @@ import dev.spog.teamlocator.client.RelayChat;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
+import net.minecraft.util.Formatting;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.Text;
 import xaero.map.gui.IRightClickableElement;
 import xaero.map.gui.dropdown.rightclick.RightClickOption;
 import xaero.map.mods.gui.Waypoint;
@@ -35,20 +35,20 @@ public final class WaypointShareOption extends RightClickOption {
     @Override
     public void onAction(Screen screen) {
         if (!TeamLocatorClient.RELAY.isReady()) {
-            RelayChat.send(Component.literal("Not connected to the relay — waypoint not shared.")
-                    .withStyle(ChatFormatting.RED));
+            RelayChat.send(Text.literal("Not connected to the relay — waypoint not shared.")
+                    .formatted(Formatting.RED));
             return;
         }
-        Minecraft mc = Minecraft.getInstance();
-        String dimension = mc.level != null
-                ? mc.level.dimension().identifier().toString()
+        MinecraftClient mc = MinecraftClient.getInstance();
+        String dimension = mc.world != null
+                ? mc.world.getRegistryKey().getValue().toString()
                 : "minecraft:overworld";
         String name = waypoint.getName() == null ? "Waypoint" : waypoint.getName();
 
         TeamLocatorClient.RELAY.shareWaypoint(
                 name, waypoint.getX(), waypoint.getY(), waypoint.getZ(), dimension);
-        RelayChat.send(Component.literal("Shared waypoint: ")
-                .withStyle(ChatFormatting.GREEN)
-                .append(Component.literal(name).withStyle(ChatFormatting.WHITE)));
+        RelayChat.send(Text.literal("Shared waypoint: ")
+                .formatted(Formatting.GREEN)
+                .append(Text.literal(name).formatted(Formatting.WHITE)));
     }
 }

@@ -3,11 +3,11 @@ package dev.spog.teamlocator.client;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ServerData;
-import net.minecraft.client.multiplayer.ServerList;
-import net.minecraft.client.multiplayer.resolver.ServerAddress;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ServerInfo;
+import net.minecraft.client.option.ServerList;
+import net.minecraft.client.network.ServerAddress;
+import net.minecraft.text.Text;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -74,13 +74,13 @@ public final class CrossServerResolver {
      * <p>Does DNS and reads {@code servers.dat}; call it off the render thread.
      */
     public static Result resolve(String scope) {
-        Minecraft mc = Minecraft.getInstance();
+        MinecraftClient mc = MinecraftClient.getInstance();
         List<Candidate> known = new ArrayList<>(serverListCandidates(mc));
         String lastDirect = lastDirectConnect(mc);
         if (lastDirect != null) {
             known.add(new Candidate(Candidate.Kind.DIRECT_CONNECT, null, lastDirect));
         }
-        String placeholder = Component.translatable("selectServer.defaultName").getString();
+        String placeholder = Text.translatable("selectServer.defaultName").getString();
         return decide(scope, known, placeholder, CrossServerResolver::resolveIps);
     }
 
@@ -180,8 +180,8 @@ public final class CrossServerResolver {
             }
             try {
                 // yarn: net.minecraft.client.network.ServerAddress.parse(String)
-                ServerAddress addr = ServerAddress.parseString(raw.trim());
-                String host = addr.getHost();
+                ServerAddress addr = ServerAddress.parse(raw.trim());
+                String host = addr.getAddress();
                 if (host == null || host.isBlank()) {
                     return null;
                 }
@@ -195,24 +195,25 @@ public final class CrossServerResolver {
     // ---- Minecraft-facing data gathering (the only part that differs on 1.21.11) ----
 
     /** Every non-LAN, non-Realm entry in the player's saved server list, in list order. */
-    private static List<Candidate> serverListCandidates(Minecraft mc) {
+    private static List<Candidate> serverListCandidates(MinecraftClient mc) {
         List<Candidate> out = new ArrayList<>();
         try {
             // The list is not held live on Minecraft; load it from servers.dat the way the
             // multiplayer screen does. yarn: new net.minecraft.client.option.ServerList(client),
             // then .loadFile().
             ServerList list = new ServerList(mc);
-            list.load();
+            list.loadFile();
             for (int i = 0; i < list.size(); i++) {
-                ServerData data = list.get(i);
-                if (data == null || data.ip == null || data.ip.isBlank()) {
+                ServerInfo data = list.get(i);
+                if (data == null || data.address == null || data.address.isBlank()) {
                     continue;
                 }
                 // yarn: data.getServerType() != ServerInfo.ServerType.LAN/REALM
-                if (data.type() == ServerData.Type.LAN || data.type() == ServerData.Type.REALM) {
+                if (data.getServerType() == ServerInfo.ServerType.LAN
+                        || data.getServerType() == ServerInfo.ServerType.REALM) {
                     continue;
                 }
-                out.add(new Candidate(Candidate.Kind.SERVER_LIST, data.name, data.ip.trim()));
+                out.add(new Candidate(Candidate.Kind.SERVER_LIST, data.name, data.address.trim()));
             }
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Could not read server list for cross-server match: {}",
@@ -222,9 +223,9 @@ public final class CrossServerResolver {
     }
 
     /** The address last entered in the direct-connect box, or null. */
-    private static String lastDirectConnect(Minecraft mc) {
+    private static String lastDirectConnect(MinecraftClient mc) {
         // yarn: client.options.lastServer (a String field on GameOptions).
-        String last = mc.options.lastMpIp;
+        String last = mc.options.lastServer;
         return (last == null || last.isBlank()) ? null : last.trim();
     }
 

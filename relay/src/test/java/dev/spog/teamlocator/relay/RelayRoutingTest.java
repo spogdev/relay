@@ -86,6 +86,9 @@ class RelayRoutingTest {
         final List<String> pingServers = new ArrayList<>();
         /** Each element is one ping-ack's receiver-UUID list. */
         final List<List<String>> pingAcks = new ArrayList<>();
+        final List<JsonObject> chatFrames = new ArrayList<>();
+        final List<JsonObject> removalFrames = new ArrayList<>();
+        final List<JsonObject> waypointFrames = new ArrayList<>();
         private final Map<String, CountDownLatch> waiters = new ConcurrentHashMap<>();
 
         TestClient(String name, String mcServer) throws Exception {
@@ -120,6 +123,24 @@ class RelayRoutingTest {
                     send(GSON.toJson(resp));
                 }
                 case "auth-ok" -> authed.countDown();
+                case "map-ping-removed" -> {
+                    synchronized (removalFrames) {
+                        removalFrames.add(obj);
+                    }
+                    release("removal");
+                }
+                case "chat-broadcast" -> {
+                    synchronized (chatFrames) {
+                        chatFrames.add(obj);
+                    }
+                    release("chat");
+                }
+                case "waypoint-broadcast" -> {
+                    synchronized (waypointFrames) {
+                        waypointFrames.add(obj);
+                    }
+                    release("waypoint");
+                }
                 case "position-snapshot" -> {
                     synchronized (snapshots) {
                         snapshots.add(obj);
@@ -270,6 +291,70 @@ class RelayRoutingTest {
             synchronized (pings) {
                 return pings.contains(other.uuid.toString());
             }
+        }
+
+        void sendMapPing(double x, double y, double z, String dim, String color) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "map-ping");
+            o.addProperty("x", x);
+            o.addProperty("y", y);
+            o.addProperty("z", z);
+            o.addProperty("dimension", dim);
+            o.addProperty("color", color);
+            send(GSON.toJson(o));
+        }
+
+        void sendRemoveMapPing() {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "remove-map-ping");
+            send(GSON.toJson(o));
+        }
+
+        boolean sawPingRemovalFor(TestClient other) {
+            synchronized (removalFrames) {
+                return removalFrames.stream().anyMatch(f ->
+                        f.get("player").getAsString().equals(other.uuid.toString()));
+            }
+        }
+
+        void sendChat(String text) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "chat");
+            o.addProperty("text", text);
+            send(GSON.toJson(o));
+        }
+
+        void sendWaypoint(String name, int x, int y, int z, String dim) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "share-waypoint");
+            o.addProperty("name", name);
+            o.addProperty("x", x);
+            o.addProperty("y", y);
+            o.addProperty("z", z);
+            o.addProperty("dimension", dim);
+            send(GSON.toJson(o));
+        }
+
+        List<JsonObject> chats() {
+            synchronized (chatFrames) {
+                return List.copyOf(chatFrames);
+            }
+        }
+
+        List<JsonObject> waypoints() {
+            synchronized (waypointFrames) {
+                return List.copyOf(waypointFrames);
+            }
+        }
+
+        boolean sawChatFrom(TestClient other) {
+            return chats().stream()
+                    .anyMatch(c -> c.get("player").getAsString().equals(other.uuid.toString()));
+        }
+
+        boolean sawWaypointFrom(TestClient other) {
+            return waypoints().stream()
+                    .anyMatch(w -> w.get("player").getAsString().equals(other.uuid.toString()));
         }
     }
 
@@ -642,5 +727,157 @@ class RelayRoutingTest {
             assertEquals("minecraft:the_nether", entry.get("dimension").getAsString());
             assertEquals(1.0, entry.get("x").getAsDouble());
         }
+    }
+
+    @Test
+    void removingAMapPingReachesEveryoneWhoCouldSeeIt() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        TestClient carol = connect("carol", "play.example.net");
+
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        carol.sendTrust(); // one-way: never saw the ping, must not get the removal either
+        settle();
+
+        alice.sendMapPing(1, 2, 3, "minecraft:overworld", "#404c65");
+        settle();
+
+        CountDownLatch bobRemoval = bob.expect("removal");
+        alice.sendRemoveMapPing();
+        assertTrue(bobRemoval.await(5, TimeUnit.SECONDS),
+                "a viewer who saw the ping must be told it is gone");
+        settle();
+
+        assertTrue(bob.sawPingRemovalFor(alice));
+        assertTrue(alice.sawPingRemovalFor(alice),
+                "the sender is echoed too, so their own client agrees with the relay");
+        assertFalse(carol.sawPingRemovalFor(alice),
+                "carol never saw the ping, so she is not told to drop one");
+    }
+
+    @Test
+    void chatRequiresMutualTrustAndEchoesToTheSender() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        TestClient carol = connect("carol", "play.example.net");
+
+        // Alice <-> Bob mutual; Alice -> Carol one-way.
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        carol.sendTrust();
+        settle();
+
+        CountDownLatch bobChat = bob.expect("chat");
+        alice.sendChat("hello team");
+        assertTrue(bobChat.await(5, TimeUnit.SECONDS), "Bob mutually trusts Alice, so must receive");
+        settle();
+
+        assertTrue(bob.sawChatFrom(alice));
+        assertFalse(carol.sawChatFrom(alice), "one-way trust must NOT deliver chat");
+        assertTrue(alice.sawChatFrom(alice),
+                "the sender must get their own message back, or an empty room looks broken");
+
+        JsonObject frame = bob.chats().get(0);
+        assertEquals("hello team", frame.get("text").getAsString());
+        assertEquals(List.of(bob.uuid.toString()),
+                frame.getAsJsonArray("recipients").asList().stream()
+                        .map(e -> e.getAsString()).toList(),
+                "the recipient list must name exactly who the relay delivered to");
+    }
+
+    @Test
+    void mutingSuppressesChat() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+
+        alice.sendTrust("bob");
+        bob.sendTrust("alice");
+        bob.sendBlocked("alice");
+        settle();
+
+        alice.sendChat("can you hear me");
+        settle();
+
+        assertFalse(bob.sawChatFrom(alice), "a muted sender's chat must be dropped");
+    }
+
+    @Test
+    void chatDoesNotCrossMinecraftServers() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient far = connect("far", "other.example.net");
+
+        alice.sendTrust("far");
+        far.sendTrust("alice");
+        settle();
+
+        alice.sendChat("anyone there");
+        settle();
+
+        assertFalse(far.sawChatFrom(alice),
+                "chat is scoped to the sender's Minecraft server, unlike attack alerts");
+    }
+
+    @Test
+    void chatStripsFormattingCodesAndControlCharacters() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        alice.sendTrust("bob");
+        bob.sendTrust("alice");
+        settle();
+
+        CountDownLatch bobChat = bob.expect("chat");
+        alice.sendChat("red §ctext\nand a newline");
+        assertTrue(bobChat.await(5, TimeUnit.SECONDS));
+
+        String text = bob.chats().get(0).get("text").getAsString();
+        assertFalse(text.contains("§"),
+                "the section sign would let a message recolour itself or forge a prefix");
+        assertFalse(text.contains("\n"),
+                "a newline would let one message masquerade as several");
+    }
+
+    @Test
+    void waypointSharingIsOneWayAndDoesNotNeedTrustBack() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        TestClient stranger = connect("stranger", "play.example.net");
+
+        // Alice shares with Bob; Bob does NOT trust Alice back. Stranger is unrelated.
+        alice.sendTrust("bob");
+        bob.sendTrust();
+        stranger.sendTrust();
+        settle();
+
+        CountDownLatch bobWp = bob.expect("waypoint");
+        alice.sendWaypoint("Base", 100, 64, -200, "minecraft:overworld");
+        assertTrue(bobWp.await(5, TimeUnit.SECONDS),
+                "sharing a waypoint must not require the receiver to trust back");
+        settle();
+
+        assertTrue(bob.sawWaypointFrom(alice));
+        assertFalse(stranger.sawWaypointFrom(alice), "only shared-with players get the waypoint");
+
+        JsonObject wp = bob.waypoints().get(0);
+        assertEquals("Base", wp.get("name").getAsString());
+        assertEquals(100, wp.get("x").getAsInt());
+        assertEquals(64, wp.get("y").getAsInt());
+        assertEquals(-200, wp.get("z").getAsInt());
+    }
+
+    @Test
+    void mutingSuppressesSharedWaypoints() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+
+        alice.sendTrust("bob");
+        bob.sendBlocked("alice");
+        settle();
+
+        alice.sendWaypoint("Base", 1, 2, 3, "minecraft:overworld");
+        settle();
+
+        assertFalse(bob.sawWaypointFrom(alice),
+                "a mute refuses everything from that player, waypoints included");
     }
 }

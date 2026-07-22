@@ -106,6 +106,19 @@ public class TeamConfig {
      * like ordinary geometry, for players who find them visually noisy.
      */
     public boolean pingsThroughWalls = true;
+
+    /**
+     * Whether relay chat works at all. Gates both directions: with this off nothing is sent when you
+     * type the prefix (the message goes to the Minecraft server as ordinary chat instead) and
+     * incoming relay messages are not shown.
+     */
+    public boolean chatEnabled = true;
+    /**
+     * Typing this character at the start of a message routes it to trusted players over the relay
+     * instead of the Minecraft server. A single character, so it is quick to type and unlikely to
+     * collide with normal speech at the start of a line.
+     */
+    public String chatPrefix = "#";
     /**
      * Minimum gap between pings accepted from any <em>one</em> player, in seconds; 0 is no limit.
      * Per-sender rather than global, so one teammate spamming pings cannot stop everyone else's from
@@ -250,6 +263,13 @@ public class TeamConfig {
         }
         // 0 means "no cooldown" and is the default, so the floor here is 0 rather than 1.
         if (mapPingCooldownSeconds < 0 || mapPingCooldownSeconds > 600) mapPingCooldownSeconds = 0;
+        // A blank or multi-character prefix would either swallow every message or never match, so
+        // fall back rather than leave the user unable to chat normally. Whitespace is rejected for
+        // the same reason: a space prefix would capture ordinary sentences.
+        if (chatPrefix == null || chatPrefix.length() != 1
+                || Character.isWhitespace(chatPrefix.charAt(0))) {
+            chatPrefix = "#";
+        }
         if (relayUrl == null || relayUrl.isBlank()) relayUrl = DEFAULT_RELAY_ADDRESS;
         relayUrl = normalizeRelayAddress(relayUrl);
         if (global == null) global = new TrustList();

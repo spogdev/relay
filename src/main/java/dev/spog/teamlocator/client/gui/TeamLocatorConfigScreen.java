@@ -70,6 +70,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int contentHeight;
     private EditBox nameInput;
     private EditBox relayUrlInput;
+    private EditBox chatPrefixInput;
     private EditBox primaryColorInput;
     private EditBox secondaryColorInput;
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
@@ -123,7 +124,9 @@ public class TeamLocatorConfigScreen extends Screen {
      * bottom bar on every tab — it is a set-once setting, so it belongs behind an "Advanced" heading
      * rather than permanently on screen.
      */
-    private static final int ADVANCED_ROW_Y = 332;
+    /** First row of the Chat section, a section gap below the Pings section's last row (288). */
+    private static final int CHAT_ROW_Y = 332;
+    private static final int ADVANCED_ROW_Y = 380;
     private static final int SETTINGS_LAST_ROW_Y = ADVANCED_ROW_Y;
     /**
      * The Integrations page's only section so far: Xaero's two toggles. Offset by the header gap so
@@ -235,6 +238,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // Page widgets are rebuilt from scratch on every init; clear the references to the ones that
         // only some pages create, so a stale widget from the previous tab can't be drawn or focused.
         relayUrlInput = null;
+        chatPrefixInput = null;
 
         // --- Tab bar: pinned above the scrolling area, so switching pages is always reachable.
         // The tabs abut and together span the page's full width, so the strip reads as one unit
@@ -471,6 +475,31 @@ public class TeamLocatorConfigScreen extends Screen {
             config.save();
         }), "relay.config.ping_cooldown.desc"));
 
+        // --- Chat section: master switch | the prefix character that triggers relay chat ---
+        addScrolled(sy(CHAT_ROW_Y), described(CycleButton.onOffBuilder(config.chatEnabled)
+                .create(cx - 205, sy(CHAT_ROW_Y), 200, 20,
+                        Component.translatable("relay.config.chat_enabled"),
+                        (btn, value) -> {
+                            config.chatEnabled = value;
+                            config.save();
+                        }), "relay.config.chat_enabled.desc"));
+        chatPrefixInput = new EditBox(this.font, cx + 5, sy(CHAT_ROW_Y), 200, 20,
+                Component.translatable("relay.config.chat_prefix"));
+        chatPrefixInput.setMaxLength(1);
+        chatPrefixInput.setValue(config.chatPrefix);
+        chatPrefixInput.setHint(Component.translatable("relay.config.chat_prefix"));
+        chatPrefixInput.setResponder(value -> {
+            // Ignore an empty box mid-edit rather than resetting to the default under the user's
+            // cursor; the config's own validation catches anything still invalid on load.
+            if (value != null && value.length() == 1 && !Character.isWhitespace(value.charAt(0))) {
+                config.chatPrefix = value;
+                config.save();
+            }
+        });
+        chatPrefixInput.setTooltip(Tooltip.create(
+                Component.translatable("relay.config.chat_prefix.desc")));
+        addScrolled(sy(CHAT_ROW_Y), chatPrefixInput);
+
         // --- Advanced section: the relay address, centred ---
         // Previously pinned in the bottom bar on every tab. It is a set-once setting, so it lives
         // behind an Advanced heading instead of occupying permanent screen space. The frame and the
@@ -703,6 +732,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 cx - 205, sy(160), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.map_pings"),
                 cx - 205, sy(PINGS_ROW_Y - 12), 0xFFFFFFFF, false);
+        graphics.text(this.font, Component.translatable("relay.config.section.chat"),
+                cx - 205, sy(CHAT_ROW_Y - 12), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.advanced"),
                 cx - 205, sy(ADVANCED_ROW_Y - 12), 0xFFFFFFFF, false);
         // The address frame belongs to this page now, so it is drawn here — before super, so the

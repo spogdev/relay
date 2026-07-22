@@ -13,6 +13,7 @@ import dev.spog.teamlocator.client.RelayToasts;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import dev.spog.teamlocator.client.RelayChatMessages;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 
@@ -355,6 +356,26 @@ public final class RelayClient {
         sendIfReady(o);
     }
 
+    /** Send a relay chat message. The prefix is a client-side trigger and is never transmitted. */
+    public void sendChat(String text) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "chat");
+        o.addProperty("text", text);
+        sendIfReady(o);
+    }
+
+    /** Offer a waypoint to everyone we share with. One-way: they need not trust us back. */
+    public void shareWaypoint(String name, int x, int y, int z, String dimension) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "share-waypoint");
+        o.addProperty("name", name);
+        o.addProperty("x", x);
+        o.addProperty("y", y);
+        o.addProperty("z", z);
+        o.addProperty("dimension", dimension);
+        sendIfReady(o);
+    }
+
     public void sendAttackPing() {
         JsonObject o = new JsonObject();
         o.addProperty("type", "ping");
@@ -475,6 +496,53 @@ public final class RelayClient {
         }
         lastMapPingAt.put(owner, now);
         return true;
+    }
+
+    /**
+     * A relay chat message. Rendered on the game thread, since it touches the chat GUI.
+     *
+     * <p>Honours {@code chatEnabled} as a receive gate too, so turning the feature off silences
+     * incoming messages rather than only stopping outgoing ones.
+     */
+    private void onChat(JsonObject obj) {
+        if (!TeamLocatorClient.CONFIG.chatEnabled) {
+            return;
+        }
+        try {
+            UUID sender = UUID.fromString(obj.get("player").getAsString());
+            String text = obj.get("text").getAsString();
+            List<UUID> recipients = new ArrayList<>();
+            if (obj.has("recipients")) {
+                for (var e : obj.getAsJsonArray("recipients")) {
+                    try {
+                        recipients.add(UUID.fromString(e.getAsString()));
+                    } catch (IllegalArgumentException ignored) {
+                        // A malformed entry costs us one name in the tooltip, not the message.
+                    }
+                }
+            }
+            Minecraft mc = Minecraft.getInstance();
+            mc.execute(() -> RelayChatMessages.show(mc, sender, text, recipients));
+        } catch (RuntimeException e) {
+            TeamLocatorConstants.LOGGER.debug("Bad chat frame: {}", e.toString());
+        }
+    }
+
+    /** A waypoint another player is offering. Presented as an offer; never auto-added. */
+    private void onWaypoint(JsonObject obj) {
+        try {
+            UUID sender = UUID.fromString(obj.get("player").getAsString());
+            String name = obj.get("name").getAsString();
+            int x = obj.get("x").getAsInt();
+            int y = obj.get("y").getAsInt();
+            int z = obj.get("z").getAsInt();
+            String dimension = obj.has("dimension")
+                    ? obj.get("dimension").getAsString() : "minecraft:overworld";
+            Minecraft mc = Minecraft.getInstance();
+            mc.execute(() -> RelayChatMessages.showWaypoint(mc, sender, name, x, y, z, dimension));
+        } catch (RuntimeException e) {
+            TeamLocatorConstants.LOGGER.debug("Bad waypoint frame: {}", e.toString());
+        }
     }
 
     /** {@code #rrggbb} to opaque ARGB, falling back to white if the relay ever sends junk. */
@@ -599,6 +667,8 @@ public final class RelayClient {
             case "ping-ack" -> onPingAck(obj);
             case "availability-probe" -> onAvailabilityProbe(obj, gen);
             case "map-ping-broadcast" -> onMapPing(obj);
+            case "chat-broadcast" -> onChat(obj);
+            case "waypoint-broadcast" -> onWaypoint(obj);
             case "admin-result" -> onAdminResult(obj);
             case "availability-result" -> onAvailabilityResult(obj);
             default -> { }

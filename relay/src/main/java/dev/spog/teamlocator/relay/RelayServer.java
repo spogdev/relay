@@ -140,6 +140,8 @@ public final class RelayServer extends WebSocketServer {
                 case "availability-query" -> router.handleAvailabilityQuery(session);
                 case "availability-response" -> handleAvailabilityResponse(session, obj);
                 case "map-ping" -> handleMapPing(session, obj);
+                case "chat" -> handleChat(session, obj);
+                case "share-waypoint" -> handleShareWaypoint(session, obj);
                 case "admin-command" -> handleAdminCommand(session, obj);
                 default -> LOG.debug("unknown message type {}", type);
             }
@@ -244,6 +246,69 @@ public final class RelayServer extends WebSocketServer {
         String requested = obj.has("color") ? obj.get("color").getAsString() : null;
         router.broadcastMapPing(session, x, y, z, dimension, requested,
                 admins.pingColorOverride(session.uuid()));
+    }
+
+    /** Longest chat message the relay will relay; longer ones are truncated rather than rejected. */
+    private static final int MAX_CHAT_LENGTH = 256;
+    /** Longest waypoint name accepted, for the same reason. */
+    private static final int MAX_WAYPOINT_NAME = 48;
+
+    /**
+     * Fan a chat message out to the sender's mutually trusted peers.
+     *
+     * <p>The text is sanitised here rather than trusted: it is player-authored input that ends up
+     * rendered in other people's chat, so control characters (including the section sign Minecraft
+     * reads as a formatting escape) are stripped and the length is capped. Doing this relay-side
+     * means a patched client cannot bypass it.
+     */
+    private void handleChat(Session session, JsonObject obj) {
+        String text = obj.has("text") ? obj.get("text").getAsString() : "";
+        text = sanitize(text, MAX_CHAT_LENGTH);
+        if (text.isEmpty()) {
+            return; // nothing to say; don't spend a broadcast on it
+        }
+        router.broadcastChat(session, text);
+    }
+
+    /** Offer a waypoint to everyone the sender shares with. One-way: see the router for why. */
+    private void handleShareWaypoint(Session session, JsonObject obj) {
+        String name = sanitize(obj.has("name") ? obj.get("name").getAsString() : "",
+                MAX_WAYPOINT_NAME);
+        if (name.isEmpty()) {
+            name = "Waypoint";
+        }
+        String dimension = obj.has("dimension")
+                ? obj.get("dimension").getAsString() : "minecraft:overworld";
+        router.shareWaypoint(session,
+                name,
+                obj.get("x").getAsInt(),
+                obj.get("y").getAsInt(),
+                obj.get("z").getAsInt(),
+                dimension);
+    }
+
+    /**
+     * Strip anything that would let player text control how it renders, and bound its length.
+     *
+     * <p>Removes the section sign (Minecraft's colour/format escape) and any C0/C1 control
+     * characters, so a message cannot recolour itself, forge a fake prefix, or inject newlines that
+     * would let one message masquerade as several.
+     */
+    private static String sanitize(String raw, int maxLength) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(Math.min(raw.length(), maxLength));
+        raw.codePoints().forEach(cp -> {
+            if (out.length() >= maxLength) {
+                return;
+            }
+            if (cp == '§' || Character.isISOControl(cp)) {
+                return;
+            }
+            out.appendCodePoint(cp);
+        });
+        return out.toString().trim();
     }
 
     /**

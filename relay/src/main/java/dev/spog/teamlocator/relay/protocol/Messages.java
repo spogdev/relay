@@ -293,6 +293,85 @@ public final class Messages {
         }
     }
 
+    // ---- chat (client -> relay -> client) ----
+
+    /**
+     * A chat message typed with the client's relay-chat prefix, to be fanned out to the sender's
+     * mutually trusted peers instead of the Minecraft server.
+     *
+     * <p>Routed within the sender's scope only. The relay never sees the prefix character — that is
+     * a client-side trigger, and different users may configure different ones.
+     */
+    public static final class ChatMessage {
+        public String type = "chat";
+        public String text;
+    }
+
+    /**
+     * A relay chat message delivered to a recipient.
+     *
+     * <p>{@code recipients} lists everyone the relay actually delivered this copy to, so the client
+     * can show who could read it. It is the relay's own resolution of the trust rules, not anything
+     * the sender asserted — a client cannot inflate or fake the audience of its own message.
+     *
+     * <p>Note this deliberately discloses the audience to every recipient, not just the sender: two
+     * people who both trust the sender but not each other will see one another's names here. That is
+     * the group-chat model, and everyone listed can already read each other's replies.
+     */
+    public static final class ChatBroadcast {
+        public String type = "chat-broadcast";
+        public String player;
+        public String text;
+        public java.util.List<String> recipients;
+
+        public ChatBroadcast(String player, String text, java.util.List<String> recipients) {
+            this.player = player;
+            this.text = text;
+            this.recipients = recipients;
+        }
+    }
+
+    // ---- waypoints (client -> relay -> client) ----
+
+    /**
+     * A map waypoint the sender is offering to the players they trust.
+     *
+     * <p>Unlike chat and pings this is <b>one-way</b>: it goes to everyone the sender shares with,
+     * whether or not those players trust the sender back. Sharing a location is a gift rather than a
+     * conversation, so requiring reciprocity would make it useless in the common case of showing a
+     * base to someone who has not added you yet. Muting still suppresses it — a mute is an explicit
+     * "I want nothing from this player".
+     */
+    public static final class ShareWaypoint {
+        public String type = "share-waypoint";
+        public String name;
+        public int x;
+        public int y;
+        public int z;
+        public String dimension;
+    }
+
+    /** A waypoint another player shared. The client presents it as an offer, never auto-adding it. */
+    public static final class WaypointBroadcast {
+        public String type = "waypoint-broadcast";
+        public String player;
+        public String name;
+        public int x;
+        public int y;
+        public int z;
+        public String dimension;
+
+        public WaypointBroadcast(String player, String name, int x, int y, int z,
+                                 String dimension) {
+            this.player = player;
+            this.name = name;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.dimension = dimension;
+        }
+    }
+
     // ---- admin (client -> relay -> client) ----
 
     /**

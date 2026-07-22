@@ -177,6 +177,72 @@ public final class RelayRouter {
     }
 
     /**
+     * Fan a chat message out to everyone who mutually alert-trusts the sender in the same scope.
+     *
+     * <p>Same trust rule as pings — both parties must have each other in their alert list — because
+     * chat is a conversation, and a one-way rule would let anyone who adds you talk at you.
+     * Same-scope only, so a message lands with the people you are actually playing alongside.
+     *
+     * <p>Every copy, including the sender's own echo, carries the resolved recipient list so each
+     * client can show who could read it. The list is the relay's own resolution of the trust rules;
+     * nothing the sender claims is taken on trust.
+     */
+    public void broadcastChat(Session sender, String text) {
+        UUID senderId = sender.uuid();
+        List<Session> targets = new ArrayList<>();
+        List<String> recipients = new ArrayList<>();
+        for (Session viewer : registry.sessionsInScope(sender.scope())) {
+            UUID viewerId = viewer.uuid();
+            if (viewerId.equals(senderId)) {
+                continue; // echoed separately below, exempt from the trust rules
+            }
+            if (!(alerts(senderId, viewerId) && alerts(viewerId, senderId))) {
+                continue;
+            }
+            if (blockedBy.getOrDefault(viewerId, Set.of()).contains(senderId)) {
+                continue; // muted: their chat is suppressed along with their alerts and pings
+            }
+            targets.add(viewer);
+            recipients.add(viewerId.toString());
+        }
+
+        Messages.ChatBroadcast payload =
+                new Messages.ChatBroadcast(senderId.toString(), text, List.copyOf(recipients));
+        // Echo first so the sender sees their own message even when nobody else is listening —
+        // otherwise typing into an empty room looks like the feature is broken.
+        registry.send(sender, payload);
+        for (Session viewer : targets) {
+            registry.send(viewer, payload);
+        }
+    }
+
+    /**
+     * Offer a waypoint to everyone the sender shares with, in the same scope.
+     *
+     * <p><b>One-way by design</b>, unlike chat and pings: reciprocity is not required, so you can
+     * show a location to someone who has not added you back. Muting still suppresses it, since a
+     * mute is an explicit refusal of everything from that player.
+     */
+    public void shareWaypoint(Session sender, String name, int x, int y, int z, String dimension) {
+        UUID senderId = sender.uuid();
+        Messages.WaypointBroadcast payload = new Messages.WaypointBroadcast(
+                senderId.toString(), name, x, y, z, dimension);
+        for (Session viewer : registry.sessionsInScope(sender.scope())) {
+            UUID viewerId = viewer.uuid();
+            if (viewerId.equals(senderId)) {
+                continue;
+            }
+            if (!shares(senderId, viewerId)) {
+                continue;
+            }
+            if (blockedBy.getOrDefault(viewerId, Set.of()).contains(senderId)) {
+                continue;
+            }
+            registry.send(viewer, payload);
+        }
+    }
+
+    /**
      * The colour a ping actually carries: an administrator's override if one exists, else the
      * client's choice when it is genuinely one of that player's five, else that player's first
      * colour. Never returns a value the sender simply made up.

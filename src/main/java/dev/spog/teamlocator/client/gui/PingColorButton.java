@@ -2,11 +2,11 @@ package dev.spog.teamlocator.client.gui;
 
 import dev.spog.teamlocator.client.PingPalette;
 import dev.spog.teamlocator.client.config.TeamConfig;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.input.InputWithModifiers;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.input.AbstractInput;
+import net.minecraft.text.Text;
 
 import java.util.List;
 
@@ -18,7 +18,7 @@ import java.util.List;
  * computes when validating a ping — the two cannot disagree. A player with no profile yet (not
  * signed in) gets a button that simply does nothing rather than a broken one.
  */
-public class PingColorButton extends Button {
+public class PingColorButton extends ButtonWidget {
     private static final int SWATCH_SIZE = 10;
     private static final int SWATCH_MARGIN = 6;
 
@@ -26,15 +26,15 @@ public class PingColorButton extends Button {
 
     public PingColorButton(int x, int y, int width, int height, TeamConfig config) {
         // The press is handled by the override below, so the callback here is a no-op; extending
-        // Button rather than AbstractButton gets vanilla's own texture, narration and hover states
-        // for free, which is what keeps this looking like every other control on the page.
-        super(x, y, width, height, Component.empty(), b -> { }, DEFAULT_NARRATION);
+        // ButtonWidget rather than PressableWidget gets vanilla's own texture, narration and hover
+        // states for free, which is what keeps this looking like every other control on the page.
+        super(x, y, width, height, Text.empty(), b -> { }, DEFAULT_NARRATION_SUPPLIER);
         this.config = config;
         updateMessage();
     }
 
     @Override
-    public void onPress(InputWithModifiers input) {
+    public void onPress(AbstractInput input) {
         List<String> palette = palette();
         if (palette.isEmpty()) {
             return;
@@ -49,18 +49,18 @@ public class PingColorButton extends Button {
         // "Ping Colour: 2/5" — the swatch carries the actual colour, so the number is only there to
         // make it obvious the button cycles and how far through the palette you are.
         setMessage(palette.isEmpty()
-                ? Component.translatable("relay.config.ping_color")
-                : Component.literal(Component.translatable("relay.config.ping_color").getString()
+                ? Text.translatable("relay.config.ping_color")
+                : Text.literal(Text.translatable("relay.config.ping_color").getString()
                         + ": " + (config.pingColorIndex + 1) + "/" + palette.size()));
     }
 
     /** The five colours for the signed-in account, or empty if there isn't one yet. */
     private static List<String> palette() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.getUser() == null || mc.getUser().getProfileId() == null) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.getSession() == null || mc.getSession().getUuidOrNull() == null) {
             return List.of();
         }
-        return PingPalette.forPlayer(mc.getUser().getProfileId());
+        return PingPalette.forPlayer(mc.getSession().getUuidOrNull());
     }
 
     /** The selected colour as opaque ARGB, or white when there is no palette. */
@@ -73,12 +73,10 @@ public class PingColorButton extends Button {
     }
 
     @Override
-    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
-        // extractContents is abstract on AbstractButton — there is no super to call. Draw vanilla's
-        // own sprite and label through the helpers it provides, so this button is pixel-identical
-        // to every other one on the page, then add the swatch on top.
-        extractDefaultSprite(graphics);
-        extractDefaultLabel(graphics.textRenderer());
+    protected void drawIcon(DrawContext graphics, int mouseX, int mouseY, float delta) {
+        // drawIcon is the per-frame hook layered over the button after PressableWidget has already
+        // drawn vanilla's own sprite and label, so this only has to add the swatch on top — no need
+        // to redraw the background or text as the 26.1 extractContents did.
         // Swatch at the right-hand end: white border, chosen colour inside — the same treatment the
         // HUD colour fields use, so the two read as the same kind of control.
         int x = getX() + width - SWATCH_MARGIN - SWATCH_SIZE;

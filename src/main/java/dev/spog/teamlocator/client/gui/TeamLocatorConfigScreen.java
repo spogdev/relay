@@ -169,11 +169,16 @@ public class TeamLocatorConfigScreen extends Screen {
     /** How far the column header's text floats above the first table row. */
     private static final int COL_HEADER_OFFSET = 12;
     /**
-     * First row of the trust table: a section's gap below the mode/add row at content Y 0, matching
-     * the settings page's rhythm. That gap is what gives the column header room to sit
-     * {@link #COL_HEADER_OFFSET} above the first row without clipping into the buttons overhead.
+     * First row of the trust table, measured from the mode/add row at content Y 0.
+     *
+     * <p>Deliberately its own value rather than {@link #SECTION_GAP}. The settings page's gap
+     * separates two stacks of buttons, but this one has to clear a floating column header as well:
+     * the header sits {@link #COL_HEADER_OFFSET} above the first row, so anything under about
+     * {@code COL_HEADER_OFFSET} plus the header's own line height drives that text up into the
+     * buttons overhead. Tying the two together once already did exactly that when the settings gap
+     * was tightened.
      */
-    private static final int LIST_TOP = SECTION_GAP;
+    private static final int LIST_TOP = 44;
     /**
      * Column x-offsets from the screen centre, shared by the header labels and the row widgets.
      * The toggles only carry ON/OFF now that the header names them, so they need far less width

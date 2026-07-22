@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
@@ -36,6 +37,15 @@ final class ArmorRenderer {
     static final int ICON_GAP = 1;
     /** Gap between an icon and its number in {@link DurabilityDisplay#NEXT_TO}. */
     private static final int NUMBER_GAP = 2;
+    /**
+     * Gap between one piece and the next in the modes that end in a number.
+     *
+     * <p>Wider than {@link #ICON_GAP} because that value is tuned for item icons, whose artwork
+     * carries its own transparent margin — two icons 1px apart still read as separate. Digits have
+     * no such margin, so at 1px the last digit of one piece and the first of the next look like a
+     * single number.
+     */
+    private static final int NUMBER_PIECE_GAP = 6;
 
     /**
      * Remaining durability as a figure — the hits a piece has left, which is what the number modes
@@ -44,6 +54,27 @@ final class ArmorRenderer {
      */
     private static String durabilityText(ArmorPiece piece) {
         return piece.hasDurability() ? String.valueOf(piece.durabilityLeft()) : "";
+    }
+
+    /**
+     * The colour vanilla's durability bar would be at this piece's damage: hue swept from green at
+     * full to red at empty.
+     *
+     * <p>This is {@code ItemStack.getBarColor}'s own arithmetic rather than an approximation, so a
+     * number and a bar showing the same piece are never a different shade — the number modes are
+     * meant to be a more precise readout of the bar, not a second opinion on it.
+     *
+     * <p>Pieces with no durability keep the row's text colour: there is no bar to match, and
+     * painting them green would claim a fullness they don't have.
+     */
+    private static int durabilityColor(ArmorPiece piece, int fallback) {
+        if (!piece.hasDurability() || piece.maxDamage() <= 0) {
+            return fallback;
+        }
+        float remaining = Math.clamp(
+                1.0f - piece.damage() / (float) piece.maxDamage(), 0.0f, 1.0f);
+        // hsvToRgb returns no alpha; the text call needs an opaque colour.
+        return 0xFF000000 | Mth.hsvToRgb(remaining / 3.0f, 1.0f, 1.0f);
     }
 
     private ArmorRenderer() {
@@ -74,9 +105,9 @@ final class ArmorRenderer {
         for (ArmorPiece piece : pieces) {
             String label = durabilityText(piece);
             total += switch (mode) {
-                case NUMBER_ONLY -> font.width(label) + ICON_GAP;
+                case NUMBER_ONLY -> font.width(label) + NUMBER_PIECE_GAP;
                 case NEXT_TO -> drawn + (label.isEmpty() ? 0 : NUMBER_GAP + font.width(label))
-                        + ICON_GAP;
+                        + NUMBER_PIECE_GAP;
                 default -> drawn + ICON_GAP;
             };
         }
@@ -121,8 +152,8 @@ final class ArmorRenderer {
 
             if (style == DurabilityDisplay.NUMBER_ONLY) {
                 int textY = centerY - font.lineHeight / 2;
-                graphics.text(font, label, x, textY, textColor, true);
-                x += font.width(label) + ICON_GAP;
+                graphics.text(font, label, x, textY, durabilityColor(piece, textColor), true);
+                x += font.width(label) + NUMBER_PIECE_GAP;
                 continue;
             }
 
@@ -144,13 +175,19 @@ final class ArmorRenderer {
                 // underneath it.
                 int textX = x - font.width(label);
                 int textY = y + drawn - font.lineHeight;
-                graphics.text(font, label, textX, textY, textColor, true);
-            } else if (style == DurabilityDisplay.NEXT_TO && !label.isEmpty()) {
-                int textY = centerY - font.lineHeight / 2;
-                graphics.text(font, label, x + NUMBER_GAP, textY, textColor, true);
-                x += NUMBER_GAP + font.width(label);
+                graphics.text(font, label, textX, textY, durabilityColor(piece, textColor), true);
+                x += ICON_GAP;
+            } else if (style == DurabilityDisplay.NEXT_TO) {
+                if (!label.isEmpty()) {
+                    int textY = centerY - font.lineHeight / 2;
+                    graphics.text(font, label, x + NUMBER_GAP, textY,
+                            durabilityColor(piece, textColor), true);
+                    x += NUMBER_GAP + font.width(label);
+                }
+                x += NUMBER_PIECE_GAP;
+            } else {
+                x += ICON_GAP;
             }
-            x += ICON_GAP;
         }
         return x;
     }

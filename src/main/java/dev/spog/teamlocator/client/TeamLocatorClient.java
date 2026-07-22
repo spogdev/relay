@@ -96,6 +96,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         // /available — who would actually see an alert sent right now.
         AvailableCommand.register();
         RelayAdminCommand.register();
+        RelayWaypointCommand.register();
         PingRenderer.register();
 
         // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.

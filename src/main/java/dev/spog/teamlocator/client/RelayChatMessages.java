@@ -63,7 +63,9 @@ public final class RelayChatMessages {
     public static void showWaypoint(Minecraft mc, UUID sender, String name,
                                     int x, int y, int z, String dimension) {
         String who = PingHandler.displayName(mc, sender);
-        String command = "/relaywaypoint " + name + " " + x + " " + y + " " + z + " " + dimension;
+        // Quote the name so one containing spaces still parses as a single argument.
+        String command = "/relaywaypoint \"" + name.replace("\"", "") + "\" "
+                + x + " " + y + " " + z + " " + dimension;
 
         MutableComponent line = Component.literal("[Relay Chat]").withStyle(PREFIX_COLOR)
                 .append(Component.literal(" " + who + " shared a waypoint: ")
@@ -75,9 +77,17 @@ public final class RelayChatMessages {
                         .withStyle(Style.EMPTY
                                 .withColor(ChatFormatting.GREEN)
                                 .withUnderlined(true)
-                                .withClickEvent(new ClickEvent.RunCommand(command))
+                                // SuggestCommand, not RunCommand: RunCommand routes through
+                                // sendUnattendedCommand straight to the Minecraft server, which
+                                // would both fail (this is a client-only command the server has
+                                // never heard of) and publish the coordinates to everyone. Suggest
+                                // only calls insertText locally, so the click prefills the chat box
+                                // and the user presses enter to run it client-side.
+                                .withClickEvent(new ClickEvent.SuggestCommand(command))
                                 .withHoverEvent(new HoverEvent.ShowText(
-                                        Component.literal("Add this waypoint to your map")))));
+                                        Component.literal(
+                                                "Click to fill in the add command, then press "
+                                                        + "enter")))));
         RelayChat.send(line);
     }
 

@@ -6,7 +6,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.input.AbstractInput;
-import net.minecraft.text.Text;
+// net.minecraft.text.Text is referenced fully-qualified below: extending ButtonWidget puts an
+// inherited member named Text in scope that shadows the simple type name here, so the FQ name is
+// used to disambiguate.
 
 import java.util.List;
 

@@ -476,7 +476,6 @@ public final class RelayClient {
             if (!mapPingAllowed(owner)) {
                 return;
             }
-            boolean isNew = !PingState.has(owner);
             PingState.put(new PingState.Ping(
                     owner,
                     obj.get("x").getAsDouble(),
@@ -485,24 +484,34 @@ public final class RelayClient {
                     dim,
                     argbOf(color),
                     System.currentTimeMillis()));
-            if (isNew) {
-                playMapPingSound(owner);
-            }
+            playMapPingSound(owner);
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Bad map ping: {}", e.toString());
         }
     }
 
     /**
-     * Chime for a ping that just appeared, unless it is our own or the player has muted it.
+     * Shortest gap between two chimes from the same player. Purely an anti-spam floor: a teammate
+     * placing pings faster than this is doing it deliberately, and one sound covers the burst.
+     */
+    private static final long PING_SOUND_COOLDOWN_MILLIS = 1500L;
+
+    /** When each player last made us chime, so a burst of pings does not machine-gun the sound. */
+    private final java.util.Map<UUID, Long> lastPingSoundAt =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Chime for an arriving ping, unless it is our own or we chimed for this player a moment ago.
      *
      * <p>Skipping our own matters because the relay echoes every ping back to its placer to correct
      * the colour — without this you would hear the sound each time you placed one, on top of already
      * knowing you had.
      *
-     * <p>Only fires for pings that are genuinely new. A player who re-pings while their previous
-     * marker is still up replaces it rather than adding one, and re-chiming for a marker that was
-     * already on screen would let a teammate repeat the sound indefinitely.
+     * <p>An earlier version only chimed when the player had no ping on screen at all. That was
+     * badly wrong in practice: pings are keyed per player and last for minutes, so every ping after
+     * a teammate's first was silent until their marker expired. The guard is now a short per-player
+     * cooldown, which stops a burst from machine-gunning the sound without ever swallowing a
+     * genuine new callout.
      */
     private void playMapPingSound(UUID owner) {
         if (!TeamLocatorClient.CONFIG.mapPingSound) {
@@ -512,6 +521,12 @@ public final class RelayClient {
         if (mc.getUser() != null && owner.equals(mc.getUser().getProfileId())) {
             return;
         }
+        long now = System.currentTimeMillis();
+        Long last = lastPingSoundAt.get(owner);
+        if (last != null && now - last < PING_SOUND_COOLDOWN_MILLIS) {
+            return;
+        }
+        lastPingSoundAt.put(owner, now);
         mc.execute(() -> mc.getSoundManager().playDelayed(
                 SimpleSoundInstance.forUI(RelaySounds.PING, 1.0f), 0));
     }

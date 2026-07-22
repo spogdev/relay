@@ -501,11 +501,11 @@ public final class RelayClient {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
-     * Chime for an arriving ping, unless it is our own or we chimed for this player a moment ago.
+     * Chime for an arriving ping, unless we chimed for this player a moment ago.
      *
-     * <p>Skipping our own matters because the relay echoes every ping back to its placer to correct
-     * the colour — without this you would hear the sound each time you placed one, on top of already
-     * knowing you had.
+     * <p>Fires for our own pings too. The relay echoes every ping back to its placer, so this rides
+     * that echo — which means the placer hears the same confirmation everyone else does, and a ping
+     * that silently failed to reach the relay is distinguishable from one that landed.
      *
      * <p>An earlier version only chimed when the player had no ping on screen at all. That was
      * badly wrong in practice: pings are keyed per player and last for minutes, so every ping after
@@ -518,9 +518,6 @@ public final class RelayClient {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.getUser() != null && owner.equals(mc.getUser().getProfileId())) {
-            return;
-        }
         long now = System.currentTimeMillis();
         Long last = lastPingSoundAt.get(owner);
         if (last != null && now - last < PING_SOUND_COOLDOWN_MILLIS) {

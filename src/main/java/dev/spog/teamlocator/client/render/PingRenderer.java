@@ -130,6 +130,18 @@ public final class PingRenderer {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
+     * Whether this ping's labels are currently showing, i.e. the crosshair is over it.
+     *
+     * <p>Read by the ping keybind so pressing it again while looking at your own ping removes it
+     * rather than placing another. The latch is what the renderer already uses to decide whether to
+     * draw the name and distance, so "is it labelled" and "would pressing the key remove it" can
+     * never disagree — the player's cue and the action are driven by the same state.
+     */
+    public static boolean isHovered(java.util.UUID owner) {
+        return shown.getOrDefault(owner, false);
+    }
+
+    /**
      * Whether pings ignore depth this frame. Read once at the top of the hook and used by the layer
      * helpers below, so every part of a ping — pin, ripple, label boxes and glyphs — agrees; mixing
      * depth-tested and see-through layers within one marker would let a wall hide the pin while its

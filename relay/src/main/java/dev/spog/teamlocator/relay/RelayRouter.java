@@ -244,6 +244,29 @@ public final class RelayRouter {
     }
 
     /**
+     * Withdraw a player's map ping from everyone who could see it.
+     *
+     * <p>Fanned out on the same rules the ping itself used, so anyone who was shown it is told to
+     * drop it. Deliberately not filtered by the mute list: a viewer who muted the sender never saw
+     * the ping, and a removal they ignore is harmless — whereas skipping the send would risk
+     * leaving a stale marker on someone who muted the sender only after the ping landed.
+     */
+    public void removeMapPing(Session sender) {
+        UUID senderId = sender.uuid();
+        Messages.MapPingRemoved payload = new Messages.MapPingRemoved(senderId.toString());
+        registry.send(sender, payload);
+        for (Session viewer : registry.sessionsInScope(sender.scope())) {
+            UUID viewerId = viewer.uuid();
+            if (viewerId.equals(senderId)) {
+                continue;
+            }
+            if (alerts(senderId, viewerId) && alerts(viewerId, senderId)) {
+                registry.send(viewer, payload);
+            }
+        }
+    }
+
+    /**
      * The colour a ping actually carries: an administrator's override if one exists, else the
      * client's choice when it is genuinely one of that player's five, else that player's first
      * colour. Never returns a value the sender simply made up.

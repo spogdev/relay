@@ -40,6 +40,11 @@ public final class PingState {
     }
 
     /** Drop a specific player's ping (used when they are muted after the fact). */
+    /** Whether this player currently has a ping placed, expired or not. */
+    public static boolean has(UUID owner) {
+        return pings.containsKey(owner);
+    }
+
     public static void remove(UUID owner) {
         pings.remove(owner);
     }

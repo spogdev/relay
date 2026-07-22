@@ -87,6 +87,7 @@ class RelayRoutingTest {
         /** Each element is one ping-ack's receiver-UUID list. */
         final List<List<String>> pingAcks = new ArrayList<>();
         final List<JsonObject> chatFrames = new ArrayList<>();
+        final List<JsonObject> removalFrames = new ArrayList<>();
         final List<JsonObject> waypointFrames = new ArrayList<>();
         private final Map<String, CountDownLatch> waiters = new ConcurrentHashMap<>();
 
@@ -122,6 +123,12 @@ class RelayRoutingTest {
                     send(GSON.toJson(resp));
                 }
                 case "auth-ok" -> authed.countDown();
+                case "map-ping-removed" -> {
+                    synchronized (removalFrames) {
+                        removalFrames.add(obj);
+                    }
+                    release("removal");
+                }
                 case "chat-broadcast" -> {
                     synchronized (chatFrames) {
                         chatFrames.add(obj);
@@ -283,6 +290,30 @@ class RelayRoutingTest {
         boolean sawPingFrom(TestClient other) {
             synchronized (pings) {
                 return pings.contains(other.uuid.toString());
+            }
+        }
+
+        void sendMapPing(double x, double y, double z, String dim, String color) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "map-ping");
+            o.addProperty("x", x);
+            o.addProperty("y", y);
+            o.addProperty("z", z);
+            o.addProperty("dimension", dim);
+            o.addProperty("color", color);
+            send(GSON.toJson(o));
+        }
+
+        void sendRemoveMapPing() {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "remove-map-ping");
+            send(GSON.toJson(o));
+        }
+
+        boolean sawPingRemovalFor(TestClient other) {
+            synchronized (removalFrames) {
+                return removalFrames.stream().anyMatch(f ->
+                        f.get("player").getAsString().equals(other.uuid.toString()));
             }
         }
 
@@ -696,6 +727,33 @@ class RelayRoutingTest {
             assertEquals("minecraft:the_nether", entry.get("dimension").getAsString());
             assertEquals(1.0, entry.get("x").getAsDouble());
         }
+    }
+
+    @Test
+    void removingAMapPingReachesEveryoneWhoCouldSeeIt() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        TestClient carol = connect("carol", "play.example.net");
+
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        carol.sendTrust(); // one-way: never saw the ping, must not get the removal either
+        settle();
+
+        alice.sendMapPing(1, 2, 3, "minecraft:overworld", "#404c65");
+        settle();
+
+        CountDownLatch bobRemoval = bob.expect("removal");
+        alice.sendRemoveMapPing();
+        assertTrue(bobRemoval.await(5, TimeUnit.SECONDS),
+                "a viewer who saw the ping must be told it is gone");
+        settle();
+
+        assertTrue(bob.sawPingRemovalFor(alice));
+        assertTrue(alice.sawPingRemovalFor(alice),
+                "the sender is echoed too, so their own client agrees with the relay");
+        assertFalse(carol.sawPingRemovalFor(alice),
+                "carol never saw the ping, so she is not told to drop one");
     }
 
     @Test

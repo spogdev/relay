@@ -194,9 +194,26 @@ public class TeamLocatorClient implements ClientModInitializer {
      * even loaded to be hit. Looking at open sky simply does nothing — deliberately silent, since a
      * failure message on every mis-aimed press would be noise in a fight.
      */
+    /**
+     * Place a ping where the player is looking — or withdraw their existing one, if the key is
+     * pressed while its labels are showing.
+     *
+     * <p>The remove case is gated on the crosshair actually being over your own ping, which is the
+     * same condition that draws its name and distance. So the labels appearing are the cue that the
+     * key now removes rather than places: there is no hidden mode, and the affordance is on screen
+     * exactly when it applies. Anywhere else, the key does what it always did.
+     */
     private static void placeMapPing(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null || client.level == null || !RELAY.isReady()) {
+            return;
+        }
+        UUID self = client.getUser().getProfileId();
+        if (PingState.has(self) && PingRenderer.isHovered(self)) {
+            // Clear locally at once so the key feels immediate, and tell the relay so it clears for
+            // teammates too — otherwise the marker would linger on their screens until it expired.
+            PingState.remove(self);
+            RELAY.sendRemoveMapPing();
             return;
         }
         double range = client.options.getEffectiveRenderDistance() * 16.0;

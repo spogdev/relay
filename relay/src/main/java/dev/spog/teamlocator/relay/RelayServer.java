@@ -140,6 +140,7 @@ public final class RelayServer extends WebSocketServer {
                 case "availability-query" -> router.handleAvailabilityQuery(session);
                 case "availability-response" -> handleAvailabilityResponse(session, obj);
                 case "map-ping" -> handleMapPing(session, obj);
+                case "remove-map-ping" -> router.removeMapPing(session);
                 case "chat" -> handleChat(session, obj);
                 case "share-waypoint" -> handleShareWaypoint(session, obj);
                 case "admin-command" -> handleAdminCommand(session, obj);

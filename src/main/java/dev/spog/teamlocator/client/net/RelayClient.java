@@ -357,6 +357,13 @@ public final class RelayClient {
         sendIfReady(o);
     }
 
+    /** Withdraw our own map ping, so it clears for teammates too rather than only locally. */
+    public void sendRemoveMapPing() {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "remove-map-ping");
+        sendIfReady(o);
+    }
+
     /** Send a relay chat message. The prefix is a client-side trigger and is never transmitted. */
     public void sendChat(String text) {
         JsonObject o = new JsonObject();
@@ -497,6 +504,15 @@ public final class RelayClient {
         }
         lastMapPingAt.put(owner, now);
         return true;
+    }
+
+    /** A teammate withdrew their ping (or the relay echoed our own removal back). */
+    private void onMapPingRemoved(JsonObject obj) {
+        try {
+            PingState.remove(UUID.fromString(obj.get("player").getAsString()));
+        } catch (RuntimeException e) {
+            TeamLocatorConstants.LOGGER.debug("Bad ping removal: {}", e.toString());
+        }
     }
 
     /**
@@ -668,6 +684,7 @@ public final class RelayClient {
             case "ping-ack" -> onPingAck(obj);
             case "availability-probe" -> onAvailabilityProbe(obj, gen);
             case "map-ping-broadcast" -> onMapPing(obj);
+            case "map-ping-removed" -> onMapPingRemoved(obj);
             case "chat-broadcast" -> onChat(obj);
             case "waypoint-broadcast" -> onWaypoint(obj);
             case "admin-result" -> onAdminResult(obj);

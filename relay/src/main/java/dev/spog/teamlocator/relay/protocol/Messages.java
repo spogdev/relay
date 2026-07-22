@@ -299,6 +299,27 @@ public final class Messages {
         }
     }
 
+    /**
+     * Withdraw the sender's own map ping, so it disappears for teammates as well as for them.
+     *
+     * <p>Carries no coordinates or identity: the relay already knows whose ping it is from the
+     * verified session, and a player only ever has one, so there is nothing to name. That also
+     * means a client cannot ask the relay to clear anyone else's.
+     */
+    public static final class RemoveMapPing {
+        public String type = "remove-map-ping";
+    }
+
+    /** Tells a viewer to drop the named player's ping. */
+    public static final class MapPingRemoved {
+        public String type = "map-ping-removed";
+        public String player;
+
+        public MapPingRemoved(String player) {
+            this.player = player;
+        }
+    }
+
     // ---- chat (client -> relay -> client) ----
 
     /**

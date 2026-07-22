@@ -1,9 +1,11 @@
 package dev.spog.teamlocator.client.hud;
 
 import dev.spog.teamlocator.client.ArmorPiece;
+import dev.spog.teamlocator.client.config.TeamConfig.DurabilityDisplay;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -32,6 +34,17 @@ final class ArmorRenderer {
     static final int ICON_SIZE = 16;
     /** Gap between adjacent armor icons. */
     static final int ICON_GAP = 1;
+    /** Gap between an icon and its number in {@link DurabilityDisplay#NEXT_TO}. */
+    private static final int NUMBER_GAP = 2;
+
+    /**
+     * Remaining durability as a figure — the hits a piece has left, which is what the number modes
+     * exist to show. A piece with no durability bar (a pumpkin, an unbreakable item) has nothing
+     * meaningful to report, so it gets no label rather than a misleading zero.
+     */
+    private static String durabilityText(ArmorPiece piece) {
+        return piece.hasDurability() ? String.valueOf(piece.durabilityLeft()) : "";
+    }
 
     private ArmorRenderer() {
     }
@@ -41,11 +54,33 @@ final class ArmorRenderer {
      * anything is drawn.
      */
     static int width(List<ArmorPiece> pieces, float iconScale) {
+        return width(pieces, iconScale, DurabilityDisplay.BAR, null);
+    }
+
+    /**
+     * Width in scaled pixels of the armor block, accounting for the durability display mode: the
+     * number-bearing modes are wider than the bar, and NUMBER_ONLY drops the icon entirely.
+     */
+    static int width(List<ArmorPiece> pieces, float iconScale, DurabilityDisplay mode, Font font) {
         if (pieces.isEmpty()) {
             return 0;
         }
-        int per = Math.round(ICON_SIZE * iconScale) + ICON_GAP;
-        return pieces.size() * per;
+        int drawn = Math.round(ICON_SIZE * iconScale);
+        if (font == null || mode == DurabilityDisplay.BAR || mode == DurabilityDisplay.OVER_ICON) {
+            // OVER_ICON prints inside the icon's own footprint, so it costs no extra width.
+            return pieces.size() * (drawn + ICON_GAP);
+        }
+        int total = 0;
+        for (ArmorPiece piece : pieces) {
+            String label = durabilityText(piece);
+            total += switch (mode) {
+                case NUMBER_ONLY -> font.width(label) + ICON_GAP;
+                case NEXT_TO -> drawn + (label.isEmpty() ? 0 : NUMBER_GAP + font.width(label))
+                        + ICON_GAP;
+                default -> drawn + ICON_GAP;
+            };
+        }
+        return total;
     }
 
     /**
@@ -56,23 +91,66 @@ final class ArmorRenderer {
      */
     static int render(GuiGraphicsExtractor graphics, List<ArmorPiece> pieces,
                       int x, int centerY, float iconScale) {
+        return render(graphics, pieces, x, centerY, iconScale, DurabilityDisplay.BAR, null, 0);
+    }
+
+    /**
+     * Draw the pieces left to right starting at {@code x}, vertically centered on {@code centerY},
+     * showing durability in the requested style.
+     *
+     * <p>Only {@link DurabilityDisplay#BAR} runs vanilla's decoration pass. The number modes
+     * deliberately suppress it: a bar and a figure saying the same thing in the same 16px square is
+     * noise, and the whole point of asking for a number is that the bar was not precise enough.
+     *
+     * @return the x just past the last piece
+     */
+    static int render(GuiGraphicsExtractor graphics, List<ArmorPiece> pieces,
+                      int x, int centerY, float iconScale, DurabilityDisplay mode, Font font,
+                      int textColor) {
         Minecraft mc = Minecraft.getInstance();
         int drawn = Math.round(ICON_SIZE * iconScale);
         int y = centerY - drawn / 2;
+        DurabilityDisplay style = font == null ? DurabilityDisplay.BAR : mode;
+
         for (ArmorPiece piece : pieces) {
             ItemStack stack = toStack(piece);
             if (stack.isEmpty()) {
                 continue; // unknown item (a modded piece we don't have): skip, keep the row intact
             }
+            String label = durabilityText(piece);
+
+            if (style == DurabilityDisplay.NUMBER_ONLY) {
+                int textY = centerY - font.lineHeight / 2;
+                graphics.text(font, label, x, textY, textColor, true);
+                x += font.width(label) + ICON_GAP;
+                continue;
+            }
+
             var pose = graphics.pose();
             pose.pushMatrix();
             pose.translate(x, y);
             pose.scale(iconScale, iconScale);
             graphics.item(stack, 0, 0);
-            // The inventory's decoration pass: durability bar (and cooldown etc.), vanilla's own.
-            graphics.itemDecorations(mc.font, stack, 0, 0);
+            if (style == DurabilityDisplay.BAR) {
+                // The inventory's decoration pass: durability bar (and cooldown etc.), vanilla's own.
+                graphics.itemDecorations(mc.font, stack, 0, 0);
+            }
             pose.popMatrix();
-            x += drawn + ICON_GAP;
+            x += drawn;
+
+            if (style == DurabilityDisplay.OVER_ICON && !label.isEmpty()) {
+                // Bottom-right of the icon, where vanilla puts a stack count — the position players
+                // already read as "a number about this item". Shadowed so it survives the artwork
+                // underneath it.
+                int textX = x - font.width(label);
+                int textY = y + drawn - font.lineHeight;
+                graphics.text(font, label, textX, textY, textColor, true);
+            } else if (style == DurabilityDisplay.NEXT_TO && !label.isEmpty()) {
+                int textY = centerY - font.lineHeight / 2;
+                graphics.text(font, label, x + NUMBER_GAP, textY, textColor, true);
+                x += NUMBER_GAP + font.width(label);
+            }
+            x += ICON_GAP;
         }
         return x;
     }

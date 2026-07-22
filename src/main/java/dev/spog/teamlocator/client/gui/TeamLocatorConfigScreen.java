@@ -456,6 +456,20 @@ public class TeamLocatorConfigScreen extends Screen {
                             config.save();
                         }), "relay.config.hud_show_health.desc"));
 
+        addScrolled(sy(HUD_ROW_5_Y), described(CycleButton
+                .<TeamConfig.DurabilityDisplay>builder(this::durabilityDisplayLabel,
+                        config.hudDurabilityDisplay)
+                .withValues(TeamConfig.DurabilityDisplay.BAR,
+                        TeamConfig.DurabilityDisplay.NUMBER_ONLY,
+                        TeamConfig.DurabilityDisplay.OVER_ICON,
+                        TeamConfig.DurabilityDisplay.NEXT_TO)
+                .create(cx + 5, sy(HUD_ROW_5_Y), 200, 20,
+                        Component.translatable("relay.config.hud_durability"),
+                        (btn, value) -> {
+                            config.hudDurabilityDisplay = value;
+                            config.save();
+                        }), "relay.config.hud_durability.desc"));
+
         // --- Alerts section ---
         // Row 1: the master switch first, since it gates everything below it, with the cross-server
         // toggle beside it. Stored inverted (hideAllAlerts) but shown as "Enable Alerts", so the
@@ -976,6 +990,17 @@ public class TeamLocatorConfigScreen extends Screen {
             case LOWEST -> Component.translatable("relay.config.hud_show_armor.lowest");
             default -> CommonComponents.OPTION_ON;
         };
+    }
+
+    /** Each durability style names itself; none maps onto vanilla's On/Off wording. */
+    private Component durabilityDisplayLabel(TeamConfig.DurabilityDisplay display) {
+        String key = switch (display) {
+            case BAR -> "bar";
+            case NUMBER_ONLY -> "number_only";
+            case OVER_ICON -> "over_icon";
+            case NEXT_TO -> "next_to";
+        };
+        return Component.translatable("relay.config.hud_durability." + key);
     }
 
     private Component alertSoundLabel(TeamConfig.AlertSound sound) {

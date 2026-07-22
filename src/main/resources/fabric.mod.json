@@ -9,6 +9,10 @@
   ],
   "license": "MIT",
   "icon": "assets/relay/icon.png",
+  "contact": {
+    "homepage": "https://modrinth.com/mod/pvprelay",
+    "issues": "https://github.com/spogdev/relay/issues"
+  },
   "environment": "client",
   "entrypoints": {
     "client": [

@@ -43,6 +43,15 @@ public class TeamConfig {
      */
     public enum ArmorDisplay { OFF, ALL, LOWEST }
 
+    /**
+     * How a piece's remaining durability is shown.
+     *
+     * <p>{@link #BAR} is vanilla's inventory bar under the icon. The other three trade that for a
+     * figure, which is precise where the bar is only approximate — at a glance a bar cannot tell
+     * you whether a chestplate has 40 hits left or 4.
+     */
+    public enum DurabilityDisplay { BAR, NUMBER_ONLY, OVER_ICON, NEXT_TO }
+
     /** A named trust list (a set of entries). */
     public static class TrustList {
         public List<TrustEntry> trusted = new ArrayList<>();
@@ -203,6 +212,8 @@ public class TeamConfig {
      * an older one shows nothing rather than a wrong number.
      */
     public boolean hudShowHealth = true;
+    /** How durability is drawn for each armor piece the HUD shows. */
+    public DurabilityDisplay hudDurabilityDisplay = DurabilityDisplay.BAR;
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */

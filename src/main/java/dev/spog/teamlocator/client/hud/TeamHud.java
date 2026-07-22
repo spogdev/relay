@@ -164,7 +164,8 @@ public class TeamHud implements HudElement {
             // Only what the teammate actually shares; an empty list costs no width.
             List<ArmorPiece> armor = displayedArmor(e.armor());
             int armorWidth = armor.isEmpty()
-                    ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
+                    ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE,
+                            config.hudDurabilityDisplay, font);
             // Health sits with the armor icons: same right-hand cluster, same alignment behaviour.
             int healthWidth = config.hudShowHealth ? HealthRenderer.width(font, e) : 0;
             if (healthWidth > 0) {
@@ -246,7 +247,8 @@ public class TeamHud implements HudElement {
                 // Centered on the same band as the head and text, nudged 1px up like the head —
                 // it reads better against the font baseline.
                 ArmorRenderer.render(graphics, row.armor(), x + ARMOR_GAP,
-                        y + contentHeight / 2 - 1, ARMOR_ICON_SCALE);
+                        y + contentHeight / 2 - 1, ARMOR_ICON_SCALE,
+                        config.hudDurabilityDisplay, mc.font, row.sec());
             }
         }
         pose.popMatrix();
@@ -277,7 +279,8 @@ public class TeamHud implements HudElement {
             }
             if (!row.armor().isEmpty()) {
                 maxArmorW = Math.max(maxArmorW,
-                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE)
+                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE,
+                                config.hudDurabilityDisplay, font)
                                 + (config.hudShowHealth
                                         ? ARMOR_GAP + HealthRenderer.width(font, row.entry()) : 0));
             }
@@ -338,7 +341,8 @@ public class TeamHud implements HudElement {
         }
         if (!row.armor().isEmpty()) {
             ArmorRenderer.render(graphics, row.armor(), end + ARMOR_GAP,
-                    y + contentHeight / 2 - 1, ARMOR_ICON_SCALE);
+                    y + contentHeight / 2 - 1, ARMOR_ICON_SCALE,
+                    config.hudDurabilityDisplay, font, row.sec());
         }
     }
 

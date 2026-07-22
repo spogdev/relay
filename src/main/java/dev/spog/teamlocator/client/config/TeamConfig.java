@@ -66,6 +66,13 @@ public class TeamConfig {
      * work. Independent of {@link #globalShareEnabled}.
      */
     public boolean shareArmor = true;
+    /**
+     * Share our current health with trusted players. On by default, matching armor: it only reaches
+     * players already trusted with our position (the relay gates it behind the position-sharing
+     * set), so a team installing the mod gets it working without hunting for a switch. Turning it
+     * off stops it being sent at all, rather than merely hiding it locally.
+     */
+    public boolean shareHealth = true;
     /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
     public boolean crossServerPings = true;
     /**

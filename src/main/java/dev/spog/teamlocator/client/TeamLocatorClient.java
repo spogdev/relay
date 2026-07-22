@@ -277,9 +277,12 @@ public class TeamLocatorClient implements ClientModInitializer {
         RELAY.sendPosition(
                 player.getX(), player.getY(), player.getZ(),
                 player.level().dimension().identifier().toString(),
-                // Health rides the position update; it is gated by the same sharing trust, so a
-                // player who shares no position shares no health either.
-                player.getHealth());
+                // Health rides the position update, gated by the same sharing trust — a player who
+                // shares no position shares no health either — plus its own opt-out. Sending the
+                // unknown marker rather than omitting the field means opting out actively clears
+                // what the relay already holds, instead of leaving a stale value on teammates'
+                // screens until reconnect.
+                CONFIG.shareHealth ? player.getHealth() : TrackedPos.UNKNOWN_HEALTH);
         // Same gate and cadence as the position, but the reporter only actually sends when a piece
         // changes, so a geared player standing still costs nothing.
         ARMOR_REPORTER.tick(player, CONFIG.shareArmor);

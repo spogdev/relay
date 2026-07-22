@@ -117,16 +117,51 @@ public class TeamLocatorConfigScreen extends Screen {
      * at 240. That makes Pings read as its own heading-and-rows block, the same spacing every other
      * section uses, rather than a fourth row of Alerts.
      */
-    private static final int PINGS_ROW_Y = 240;
+    /**
+     * The General page's vertical layout, as named constants rather than literals scattered through
+     * the builder and the header draw.
+     *
+     * <p>Rows are {@link #BUTTON_H} tall and stack {@link #ROW_STRIDE} apart; a section's header sits
+     * {@link #HEADER_GAP} above its first row, and a section starts {@link #SECTION_GAP} after the
+     * previous one's last row. Deriving each section from the one above means inserting a row shifts
+     * everything below it automatically — adding the health row as a bare literal is exactly how the
+     * Alerts header ended up overlapped.
+     */
+    /** Gap from one section's last row to the next section's header, on the settings page. */
+    private static final int SECTION_GAP = 44;
+    private static final int ROW_STRIDE = 24;
+    private static final int HEADER_GAP = 12;
+
+    /** Sharing: header, then two rows — location/armor, then health. */
+    private static final int SHARING_HEADER_Y = 0;
+    private static final int SHARING_ROW_Y = SHARING_HEADER_Y + HEADER_GAP;
+    private static final int SHARING_ROW_2_Y = SHARING_ROW_Y + ROW_STRIDE;
+
+    /** HUD: five rows — position, size/colour, alignment, contents, health. */
+    private static final int HUD_HEADER_Y = SHARING_ROW_2_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int HUD_ROW_1_Y = HUD_HEADER_Y + HEADER_GAP;
+    private static final int HUD_ROW_2_Y = HUD_ROW_1_Y + ROW_STRIDE;
+    private static final int HUD_ROW_3_Y = HUD_ROW_2_Y + ROW_STRIDE;
+    private static final int HUD_ROW_4_Y = HUD_ROW_3_Y + ROW_STRIDE;
+    private static final int HUD_ROW_5_Y = HUD_ROW_4_Y + ROW_STRIDE;
+
+    /** Alerts: two rows. */
+    private static final int ALERTS_HEADER_Y = HUD_ROW_5_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int ALERTS_ROW_1_Y = ALERTS_HEADER_Y + HEADER_GAP;
+    private static final int ALERTS_ROW_2_Y = ALERTS_ROW_1_Y + ROW_STRIDE;
+
+    /** Pings: three rows. */
+    private static final int PINGS_ROW_Y = ALERTS_ROW_2_Y + BUTTON_H + SECTION_GAP;
     /**
      * First (and last) row of the Advanced section, which took the slot Xaero's used to occupy when
      * those moved to Integrations. Holds the relay address, which was previously pinned in the
      * bottom bar on every tab — it is a set-once setting, so it belongs behind an "Advanced" heading
      * rather than permanently on screen.
      */
-    /** First row of the Chat section, a section gap below the Pings section's last row (288). */
-    private static final int CHAT_ROW_Y = 332;
-    private static final int ADVANCED_ROW_Y = 380;
+    /** Chat: one row, a section gap below the Pings block's last row. */
+    private static final int CHAT_ROW_Y = PINGS_ROW_Y + ROW_STRIDE * 2 + BUTTON_H + SECTION_GAP;
+    /** Advanced: one row (the relay address). */
+    private static final int ADVANCED_ROW_Y = CHAT_ROW_Y + BUTTON_H + SECTION_GAP;
     private static final int SETTINGS_LAST_ROW_Y = ADVANCED_ROW_Y;
     /**
      * The Integrations page's only section so far: Xaero's two toggles. Offset by the header gap so
@@ -136,8 +171,6 @@ public class TeamLocatorConfigScreen extends Screen {
     private static final int INTEGRATIONS_ROW_Y = 12; // == COL_HEADER_OFFSET, declared below
     /** How far the column header's text floats above the first table row. */
     private static final int COL_HEADER_OFFSET = 12;
-    /** Gap from one section's last row to the next section's header, on the settings page. */
-    private static final int SECTION_GAP = 44;
     /**
      * First row of the trust table: a section's gap below the mode/add row at content Y 0, matching
      * the settings page's rhythm. That gap is what gives the column header room to sit
@@ -312,38 +345,46 @@ public class TeamLocatorConfigScreen extends Screen {
     private void initSettingsPage(int cx) {
         // --- Sharing section: what we send to trusted players. Location is the master coordinate
         // toggle; armor is opt-in and rides the same trust gate relay-side.
-        addScrolled(sy(12), described(CycleButton.onOffBuilder(config.globalShareEnabled)
-                .create(cx - 205, sy(12), 200, 20, Component.translatable("relay.config.share_location"),
+        addScrolled(sy(SHARING_ROW_Y), described(CycleButton.onOffBuilder(config.globalShareEnabled)
+                .create(cx - 205, sy(SHARING_ROW_Y), 200, 20, Component.translatable("relay.config.share_location"),
                         (btn, value) -> {
                             config.globalShareEnabled = value;
                             config.save();
                             TeamLocatorClient.syncToServer();
                         }), "relay.config.share_location.desc"));
-        addScrolled(sy(12), described(CycleButton.onOffBuilder(config.shareArmor)
-                .create(cx + 5, sy(12), 200, 20, Component.translatable("relay.config.share_armor"),
+        addScrolled(sy(SHARING_ROW_Y), described(CycleButton.onOffBuilder(config.shareArmor)
+                .create(cx + 5, sy(SHARING_ROW_Y), 200, 20, Component.translatable("relay.config.share_armor"),
                         (btn, value) -> {
                             config.shareArmor = value;
                             config.save();
                             // The reporter retracts or re-sends on its next tick; nothing to push here.
                         }), "relay.config.share_armor.desc"));
+        addScrolled(sy(SHARING_ROW_2_Y), described(CycleButton.onOffBuilder(config.shareHealth)
+                .create(cx - 205, sy(SHARING_ROW_2_Y), 200, 20,
+                        Component.translatable("relay.config.share_health"),
+                        (btn, value) -> {
+                            config.shareHealth = value;
+                            config.save();
+                            // Takes effect on the next position update, which is every 4 ticks.
+                        }), "relay.config.share_health.desc"));
 
         // --- HUD section: position sliders side by side, size slider below ---
-        addScrolled(sy(56), new HudPositionSlider(cx - 205, sy(56), 200, 20, "HUD X", config.hudX, v -> {
+        addScrolled(sy(HUD_ROW_1_Y), new HudPositionSlider(cx - 205, sy(HUD_ROW_1_Y), 200, 20, "HUD X", config.hudX, v -> {
             config.hudX = v;
             config.save();
         }));
-        addScrolled(sy(56), new HudPositionSlider(cx + 5, sy(56), 200, 20, "HUD Y", config.hudY, v -> {
+        addScrolled(sy(HUD_ROW_1_Y), new HudPositionSlider(cx + 5, sy(HUD_ROW_1_Y), 200, 20, "HUD Y", config.hudY, v -> {
             config.hudY = v;
             config.save();
         }));
-        addScrolled(sy(80), new HudPositionSlider(cx - 205, sy(80), 200, 20, "HUD Size", 0.5, 2.0,
+        addScrolled(sy(HUD_ROW_2_Y), new HudPositionSlider(cx - 205, sy(HUD_ROW_2_Y), 200, 20, "HUD Size", 0.5, 2.0,
                 config.hudScale, v -> {
             config.hudScale = v;
             config.save();
         }));
 
         // --- HUD text colors: hex inputs with live swatches (drawn in extractRenderState) ---
-        primaryColorInput = new EditBox(this.font, cx + 5, sy(80), 70, 20,
+        primaryColorInput = new EditBox(this.font, cx + 5, sy(HUD_ROW_2_Y), 70, 20,
                 Component.translatable("relay.config.hud_primary_color"));
         primaryColorInput.setTooltip(Tooltip.create(
                 Component.translatable("relay.config.hud_primary_color")));
@@ -358,8 +399,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 primaryColorInput.setTextColor(0xFFFF5555);
             }
         });
-        addScrolled(sy(80), primaryColorInput);
-        secondaryColorInput = new EditBox(this.font, cx + 107, sy(80), 70, 20,
+        addScrolled(sy(HUD_ROW_2_Y), primaryColorInput);
+        secondaryColorInput = new EditBox(this.font, cx + 107, sy(HUD_ROW_2_Y), 70, 20,
                 Component.translatable("relay.config.hud_secondary_color"));
         secondaryColorInput.setTooltip(Tooltip.create(
                 Component.translatable("relay.config.hud_secondary_color")));
@@ -374,44 +415,44 @@ public class TeamLocatorConfigScreen extends Screen {
                 secondaryColorInput.setTextColor(0xFFFF5555);
             }
         });
-        addScrolled(sy(80), secondaryColorInput);
+        addScrolled(sy(HUD_ROW_2_Y), secondaryColorInput);
 
         // HUD row 3: row text alignment | list growth direction (down vs. up from the anchor).
-        addScrolled(sy(104), CycleButton.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
+        addScrolled(sy(HUD_ROW_3_Y), CycleButton.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
                 .withValues(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER,
                         TeamConfig.HudAlign.RIGHT, TeamConfig.HudAlign.TABLE)
-                .create(cx - 205, sy(104), 200, 20, Component.translatable("relay.config.hud_align"),
+                .create(cx - 205, sy(HUD_ROW_3_Y), 200, 20, Component.translatable("relay.config.hud_align"),
                         (btn, value) -> {
                             config.hudAlign = value;
                             config.save();
                         }));
-        addScrolled(sy(104), described(CycleButton.onOffBuilder(config.hudGrowUp)
-                .create(cx + 5, sy(104), 200, 20, Component.translatable("relay.config.hud_grow_up"),
+        addScrolled(sy(HUD_ROW_3_Y), described(CycleButton.onOffBuilder(config.hudGrowUp)
+                .create(cx + 5, sy(HUD_ROW_3_Y), 200, 20, Component.translatable("relay.config.hud_grow_up"),
                         (btn, value) -> {
                             config.hudGrowUp = value;
                             config.save();
                         }), "relay.config.hud_grow_up.desc"));
 
         // HUD row 4: what each row displays. Armor only ever shows what a teammate shares.
-        addScrolled(sy(128), CycleButton.onOffBuilder(config.hudShowCoords)
-                .create(cx - 205, sy(128), 200, 20, Component.translatable("relay.config.hud_show_coords"),
+        addScrolled(sy(HUD_ROW_4_Y), CycleButton.onOffBuilder(config.hudShowCoords)
+                .create(cx - 205, sy(HUD_ROW_4_Y), 200, 20, Component.translatable("relay.config.hud_show_coords"),
                         (btn, value) -> {
                             config.hudShowCoords = value;
                             config.save();
                         }));
-        addScrolled(sy(128), CycleButton
+        addScrolled(sy(HUD_ROW_4_Y), CycleButton
                 .<TeamConfig.ArmorDisplay>builder(this::armorDisplayLabel, config.hudArmorDisplay)
                 .withValues(TeamConfig.ArmorDisplay.OFF, TeamConfig.ArmorDisplay.ALL,
                         TeamConfig.ArmorDisplay.LOWEST)
-                .create(cx + 5, sy(128), 200, 20, Component.translatable("relay.config.hud_show_armor"),
+                .create(cx + 5, sy(HUD_ROW_4_Y), 200, 20, Component.translatable("relay.config.hud_show_armor"),
                         (btn, value) -> {
                             config.hudArmorDisplay = value;
                             config.save();
                         }));
 
         // HUD row 5: teammate health.
-        addScrolled(sy(152), described(CycleButton.onOffBuilder(config.hudShowHealth)
-                .create(cx - 205, sy(152), 200, 20,
+        addScrolled(sy(HUD_ROW_5_Y), described(CycleButton.onOffBuilder(config.hudShowHealth)
+                .create(cx - 205, sy(HUD_ROW_5_Y), 200, 20,
                         Component.translatable("relay.config.hud_show_health"),
                         (btn, value) -> {
                             config.hudShowHealth = value;
@@ -423,27 +464,27 @@ public class TeamLocatorConfigScreen extends Screen {
         // toggle beside it. Stored inverted (hideAllAlerts) but shown as "Enable Alerts", so the
         // label and the ON/OFF it carries agree — a switch reading "Hide All Alerts: OFF" for the
         // normal case is a double negative.
-        addScrolled(sy(172), CycleButton.onOffBuilder(!config.hideAllAlerts)
-                .create(cx - 205, sy(172), 200, 20, Component.translatable("relay.config.enable_alerts"),
+        addScrolled(sy(ALERTS_ROW_1_Y), CycleButton.onOffBuilder(!config.hideAllAlerts)
+                .create(cx - 205, sy(ALERTS_ROW_1_Y), 200, 20, Component.translatable("relay.config.enable_alerts"),
                         (btn, value) -> {
                             config.hideAllAlerts = !value;
                             config.save();
                         }));
-        addScrolled(sy(172), described(CycleButton.onOffBuilder(config.crossServerPings)
-                .create(cx + 5, sy(172), 200, 20, Component.translatable("relay.config.cross_server_pings"),
+        addScrolled(sy(ALERTS_ROW_1_Y), described(CycleButton.onOffBuilder(config.crossServerPings)
+                .create(cx + 5, sy(ALERTS_ROW_1_Y), 200, 20, Component.translatable("relay.config.cross_server_pings"),
                         (btn, value) -> {
                             config.crossServerPings = value;
                             config.save();
                         }), "relay.config.cross_server_pings.desc"));
         // Row 2: alert sound (left) | cooldown (right).
-        addScrolled(sy(196), CycleButton.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
+        addScrolled(sy(ALERTS_ROW_2_Y), CycleButton.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
                 .withValues(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
-                .create(cx - 205, sy(196), 200, 20, Component.translatable("relay.config.alert_sound"),
+                .create(cx - 205, sy(ALERTS_ROW_2_Y), 200, 20, Component.translatable("relay.config.alert_sound"),
                         (btn, value) -> {
                             config.alertSound = value;
                             config.save();
                         }));
-        addScrolled(sy(196), described(new SecondsSlider(cx + 5, sy(196), 200, 20, "Alert Cooldown",
+        addScrolled(sy(ALERTS_ROW_2_Y), described(new SecondsSlider(cx + 5, sy(ALERTS_ROW_2_Y), 200, 20, "Alert Cooldown",
                 SecondsSlider.COOLDOWN_STEPS, config.pingCooldownSeconds, v -> {
             config.pingCooldownSeconds = v;
             config.save();
@@ -729,16 +770,16 @@ public class TeamLocatorConfigScreen extends Screen {
 
     private void drawSettingsLabels(GuiGraphicsExtractor graphics, int cx) {
         // Live color swatches beside the HUD hex inputs: white border, current color inside.
-        drawSwatch(graphics, cx + 78, sy(80), config.hudPrimaryArgb());
-        drawSwatch(graphics, cx + 180, sy(80), config.hudSecondaryArgb());
+        drawSwatch(graphics, cx + 78, sy(HUD_ROW_2_Y), config.hudPrimaryArgb());
+        drawSwatch(graphics, cx + 180, sy(HUD_ROW_2_Y), config.hudSecondaryArgb());
 
         // Section headers, scrolling with the widgets they label.
         graphics.text(this.font, Component.translatable("relay.config.section.sharing"),
-                cx - 205, sy(0), 0xFFFFFFFF, false);
+                cx - 205, sy(SHARING_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
-                cx - 205, sy(44), 0xFFFFFFFF, false);
+                cx - 205, sy(HUD_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
-                cx - 205, sy(160), 0xFFFFFFFF, false);
+                cx - 205, sy(ALERTS_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.map_pings"),
                 cx - 205, sy(PINGS_ROW_Y - 12), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.chat"),

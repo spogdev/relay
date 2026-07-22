@@ -12,6 +12,8 @@
   "relay.config.active_list.server": "This Server",
   "relay.config.share_location": "Location",
   "relay.config.share_armor": "Armor Durability",
+  "relay.config.share_health": "Health",
+  "relay.config.share_health.desc": "If relay should share your health to trusted players",
   "relay.config.hud_show_coords": "Show Coords",
   "relay.config.hud_show_armor": "Show Armor",
   "relay.config.hud_show_armor.lowest": "Lowest",

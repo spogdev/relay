@@ -4,7 +4,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.util.Formatting;
 import net.minecraft.client.MinecraftClient;
@@ -30,7 +30,7 @@ public final class RelayAdminCommand {
 
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
-                dispatcher.register(ClientCommands.literal("relay")
+                dispatcher.register(ClientCommandManager.literal("relay")
                         // Brigadier hides a node whose requirement fails: for a non-admin the whole
                         // /relay tree is absent from autocomplete and unexecutable, so the command
                         // does not appear to exist. Cosmetic only — the relay re-checks every
@@ -46,7 +46,7 @@ public final class RelayAdminCommand {
                         .then(sub("test"))
                         .then(sub("blacklist"))
                         .then(sub("whitelist"))
-                        .then(ClientCommands.literal("stats").executes(ctx -> {
+                        .then(ClientCommandManager.literal("stats").executes(ctx -> {
                             run(ctx.getSource(), "stats", List.of());
                             return 1;
                         }))
@@ -54,9 +54,9 @@ public final class RelayAdminCommand {
                         // colour can be pasted with surrounding spaces without the parse failing;
                         // the relay trims and validates it, and answers with the usage line when it
                         // isn't a well-formed #rrggbb or -remove.
-                        .then(ClientCommands.literal("pingcolor").then(
-                                ClientCommands.argument("player", StringArgumentType.word()).then(
-                                        ClientCommands.argument("color", StringArgumentType.greedyString())
+                        .then(ClientCommandManager.literal("pingcolor").then(
+                                ClientCommandManager.argument("player", StringArgumentType.word()).then(
+                                        ClientCommandManager.argument("color", StringArgumentType.greedyString())
                                                 .executes(ctx -> {
                                                     run(ctx.getSource(), "pingcolor", List.of(
                                                             StringArgumentType.getString(ctx, "player"),
@@ -72,8 +72,8 @@ public final class RelayAdminCommand {
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
             sub(String name) {
-        return ClientCommands.literal(name).then(
-                ClientCommands.argument("player", StringArgumentType.word())
+        return ClientCommandManager.literal(name).then(
+                ClientCommandManager.argument("player", StringArgumentType.word())
                         .executes(ctx -> {
                             run(ctx.getSource(), name,
                                     List.of(StringArgumentType.getString(ctx, "player")));

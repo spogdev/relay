@@ -7,7 +7,7 @@ import dev.spog.teamlocator.client.compat.xaero.XaeroWaypoints;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.minecraft.util.Formatting;
 import net.minecraft.text.Text;
 
@@ -30,11 +30,11 @@ public final class RelayWaypointCommand {
 
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
-                dispatcher.register(ClientCommands.literal("relaywaypoint")
-                        .then(ClientCommands.argument("name", StringArgumentType.string())
-                                .then(ClientCommands.argument("x", IntegerArgumentType.integer())
-                                        .then(ClientCommands.argument("y", IntegerArgumentType.integer())
-                                                .then(ClientCommands.argument("z", IntegerArgumentType.integer())
+                dispatcher.register(ClientCommandManager.literal("relaywaypoint")
+                        .then(ClientCommandManager.argument("name", StringArgumentType.string())
+                                .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
+                                                .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
                                                         .executes(ctx -> {
                                                             add(ctx.getSource(),
                                                                     StringArgumentType.getString(ctx, "name"),
@@ -43,7 +43,7 @@ public final class RelayWaypointCommand {
                                                                     IntegerArgumentType.getInteger(ctx, "z"));
                                                             return 1;
                                                         })
-                                                        .then(ClientCommands.argument("dimension", StringArgumentType.greedyString())
+                                                        .then(ClientCommandManager.argument("dimension", StringArgumentType.greedyString())
                                                                 .executes(ctx -> {
                                                                     add(ctx.getSource(),
                                                                             StringArgumentType.getString(ctx, "name"),

@@ -28,7 +28,7 @@ public class PingColorButton extends ButtonWidget {
         // The press is handled by the override below, so the callback here is a no-op; extending
         // ButtonWidget rather than PressableWidget gets vanilla's own texture, narration and hover
         // states for free, which is what keeps this looking like every other control on the page.
-        super(x, y, width, height, Text.empty(), b -> { }, DEFAULT_NARRATION_SUPPLIER);
+        super(x, y, width, height, net.minecraft.text.Text.empty(), b -> { }, DEFAULT_NARRATION_SUPPLIER);
         this.config = config;
         updateMessage();
     }
@@ -49,8 +49,8 @@ public class PingColorButton extends ButtonWidget {
         // "Ping Colour: 2/5" — the swatch carries the actual colour, so the number is only there to
         // make it obvious the button cycles and how far through the palette you are.
         setMessage(palette.isEmpty()
-                ? Text.translatable("relay.config.ping_color")
-                : Text.literal(Text.translatable("relay.config.ping_color").getString()
+                ? net.minecraft.text.Text.translatable("relay.config.ping_color")
+                : net.minecraft.text.Text.literal(net.minecraft.text.Text.translatable("relay.config.ping_color").getString()
                         + ": " + (config.pingColorIndex + 1) + "/" + palette.size()));
     }
 

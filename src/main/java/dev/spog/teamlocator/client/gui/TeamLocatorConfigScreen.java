@@ -1,6 +1,7 @@
 package dev.spog.teamlocator.client.gui;
 
 import dev.spog.teamlocator.client.TeamLocatorClient;
+import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.config.TrustEntry;
 import dev.spog.teamlocator.client.net.NameLookup;
@@ -27,24 +28,29 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Hand-rolled config screen (no cloth-config), split across two tabs: Settings (sharing, HUD,
- * alerts, Xaero's) and Trust List (the active mode's players, with per-player alert and visibility
- * toggles). Any change is written to disk and pushed to the relay immediately via
- * {@link TeamLocatorClient#syncToServer()}.
+ * Hand-rolled config screen (no cloth-config), split across three tabs: General (sharing, HUD,
+ * alerts, pings, advanced), Integrations (other mods this one talks to) and Trust List (the active
+ * mode's players, with per-player alert and visibility toggles). Any change is written to disk and
+ * pushed to the relay immediately via {@link TeamLocatorClient#syncToServer()}.
  *
- * <p>The tab bar and the bottom bar (relay address + Done) are fixed; only the area between them
- * scrolls, and in practice only the trust list is long enough to need it.
+ * <p>The tab bar and the bottom bar (Done) are fixed; only the area between them scrolls, and in
+ * practice only the trust list is long enough to need it.
  */
 @Environment(EnvType.CLIENT)
 public class TeamLocatorConfigScreen extends Screen {
-    /** Which page is showing. Each tab keeps its own scroll offset. */
-    private enum Tab { SETTINGS, TRUST }
+    /**
+     * Which page is showing. Each tab keeps its own scroll offset. Integrations sits between General
+     * and Trust so the tabs run from "this mod's own settings" out to "who you share with".
+     */
+    private enum Tab { GENERAL, INTEGRATIONS, TRUST }
 
     private final Screen parent;
     private final TeamConfig config;
-    private Tab tab = Tab.SETTINGS;
+    private Tab tab = Tab.GENERAL;
 
     private static final String SCHEME_LABEL = "wss://";
+    /** Width of the relay address frame in the Advanced section, centred on the page. */
+    private static final int RELAY_BOX_W = 200;
     private static final Identifier TEXT_FIELD_SPRITE =
             Identifier.of("minecraft:widget/text_field");
     private static final Identifier TEXT_FIELD_HIGHLIGHTED_SPRITE =
@@ -58,11 +64,13 @@ public class TeamLocatorConfigScreen extends Screen {
     private int scroll;
     /** Parked scroll offsets, so switching tabs and back returns to where you were. */
     private int settingsScroll;
+    private int integrationsScroll;
     private int trustScroll;
     /** Total content height, measured during the last {@link #init()}; drives the scroll clamp. */
     private int contentHeight;
     private TextFieldWidget nameInput;
     private TextFieldWidget relayUrlInput;
+    private TextFieldWidget chatPrefixInput;
     private TextFieldWidget primaryColorInput;
     private TextFieldWidget secondaryColorInput;
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
@@ -102,26 +110,83 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Wheel notch distance, in content pixels. */
     private static final int SCROLL_STEP = 20;
 
-    /** Content Y of the settings page's last row (Xaero's); drives that page's scroll extent. */
-    private static final int SETTINGS_LAST_ROW_Y = 240;
+    /**
+     * The General page's vertical layout, as named constants rather than literals scattered through
+     * the builder and the header draw.
+     *
+     * <p>Rows are {@link #BUTTON_H} tall and stack {@link #ROW_STRIDE} apart; a section's header sits
+     * {@link #HEADER_GAP} above its first row, and a section starts {@link #SECTION_GAP} after the
+     * previous one's last row. Deriving each section from the one above means inserting a row shifts
+     * everything below it automatically — adding the health row as a bare literal is exactly how the
+     * Alerts header ended up overlapped.
+     *
+     * <p>{@link #SECTION_GAP} is kept comfortably larger than {@link #HEADER_GAP} so a header still
+     * reads as belonging to the section below it rather than drifting toward the rows above. That
+     * relationship, not the absolute value, is what keeps the page legible when spacing is
+     * tightened.
+     */
+    private static final int SECTION_GAP = 26;
+    private static final int ROW_STRIDE = 24;
+    private static final int HEADER_GAP = 12;
+
+    /** Sharing: header, then two rows — location/armor, then health. */
+    private static final int SHARING_HEADER_Y = 0;
+    private static final int SHARING_ROW_Y = SHARING_HEADER_Y + HEADER_GAP;
+    private static final int SHARING_ROW_2_Y = SHARING_ROW_Y + ROW_STRIDE;
+
+    /** HUD: five rows — position, size/colour, alignment, contents, health. */
+    private static final int HUD_HEADER_Y = SHARING_ROW_2_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int HUD_ROW_1_Y = HUD_HEADER_Y + HEADER_GAP;
+    private static final int HUD_ROW_2_Y = HUD_ROW_1_Y + ROW_STRIDE;
+    private static final int HUD_ROW_3_Y = HUD_ROW_2_Y + ROW_STRIDE;
+    private static final int HUD_ROW_4_Y = HUD_ROW_3_Y + ROW_STRIDE;
+    private static final int HUD_ROW_5_Y = HUD_ROW_4_Y + ROW_STRIDE;
+
+    /** Alerts: two rows. */
+    private static final int ALERTS_HEADER_Y = HUD_ROW_5_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int ALERTS_ROW_1_Y = ALERTS_HEADER_Y + HEADER_GAP;
+    private static final int ALERTS_ROW_2_Y = ALERTS_ROW_1_Y + ROW_STRIDE;
+
+    /** Pings: three rows. */
+    private static final int PINGS_ROW_Y = ALERTS_ROW_2_Y + BUTTON_H + SECTION_GAP;
+    /**
+     * First (and last) row of the Advanced section, which took the slot Xaero's used to occupy when
+     * those moved to Integrations. Holds the relay address, which was previously pinned in the
+     * bottom bar on every tab — it is a set-once setting, so it belongs behind an "Advanced" heading
+     * rather than permanently on screen.
+     */
+    /** Chat: one row, a section gap below the Pings block's last row. */
+    private static final int CHAT_ROW_Y = PINGS_ROW_Y + ROW_STRIDE * 2 + BUTTON_H + SECTION_GAP;
+    /** Advanced: one row (the relay address). */
+    private static final int ADVANCED_ROW_Y = CHAT_ROW_Y + BUTTON_H + SECTION_GAP;
+    private static final int SETTINGS_LAST_ROW_Y = ADVANCED_ROW_Y;
+    /**
+     * The Integrations page's only section so far: Xaero's two toggles. Offset by the header gap so
+     * the "Xaero's" heading above them has room to sit at content Y 0 rather than being clipped off
+     * the top of the page.
+     */
+    private static final int INTEGRATIONS_ROW_Y = 12; // == COL_HEADER_OFFSET, declared below
     /** How far the column header's text floats above the first table row. */
     private static final int COL_HEADER_OFFSET = 12;
-    /** Gap from one section's last row to the next section's header, on the settings page. */
-    private static final int SECTION_GAP = 44;
     /**
-     * First row of the trust table: a section's gap below the mode/add row at content Y 0, matching
-     * the settings page's rhythm. That gap is what gives the column header room to sit
-     * {@link #COL_HEADER_OFFSET} above the first row without clipping into the buttons overhead.
+     * First row of the trust table, measured from the mode/add row at content Y 0.
+     *
+     * <p>Deliberately its own value rather than {@link #SECTION_GAP}. The settings page's gap
+     * separates two stacks of buttons, but this one has to clear a floating column header as well:
+     * the header sits {@link #COL_HEADER_OFFSET} above the first row, so anything under about
+     * {@code COL_HEADER_OFFSET} plus the header's own line height drives that text up into the
+     * buttons overhead. Tying the two together once already did exactly that when the settings gap
+     * was tightened.
      */
-    private static final int LIST_TOP = SECTION_GAP;
+    private static final int LIST_TOP = 44;
     /**
      * Column x-offsets from the screen centre, shared by the header labels and the row widgets.
      * The toggles only carry ON/OFF now that the header names them, so they need far less width
      * than the old inline labels did; the name column absorbs what they gave up.
      *
-     * <p>Alerts and Visibility are one width: they hold the same ON/OFF, so any difference between
-     * them reads as meaning something it doesn't. 45 clears the wider heading — "Visibility" is
-     * 39px, narrower than it looks, since four of its ten letters are a 2px {@code i}.
+     * <p>Mute and Sharing are one width: they hold the same ON/OFF, so any difference between
+     * them reads as meaning something it doesn't. 45 clears the wider heading — "Sharing" is
+     * 38px ({@code i} is only 2px wide); "Mute" is narrower still, so both fit comfortably.
      */
     private static final int TOGGLE_W = 45;
     /** Gap between adjacent columns, even across the row. */
@@ -205,20 +270,32 @@ public class TeamLocatorConfigScreen extends Screen {
     protected void init() {
         int cx = this.width / 2;
 
+        // Page widgets are rebuilt from scratch on every init; clear the references to the ones that
+        // only some pages create, so a stale widget from the previous tab can't be drawn or focused.
+        relayUrlInput = null;
+        chatPrefixInput = null;
+
         // --- Tab bar: pinned above the scrolling area, so switching pages is always reachable.
-        // The two tabs meet in the middle and span the page's full width, so the strip reads as one
-        // unit sitting on top of the page rather than as two more buttons among the settings.
-        addDrawableChild(new TabButton(cx - 205, TAB_BUTTON_Y, 205, BUTTON_H,
-                Text.translatable("relay.config.tab.settings"),
-                tab == Tab.SETTINGS, () -> switchTab(Tab.SETTINGS)));
-        addDrawableChild(new TabButton(cx, TAB_BUTTON_Y, 205, BUTTON_H,
+        // The tabs abut and together span the page's full width, so the strip reads as one unit
+        // sitting on top of the page rather than as more buttons among the settings. 410px split
+        // three ways leaves a remainder; the last tab absorbs it so the strip ends flush right
+        // rather than a pixel or two short.
+        int tabW = 410 / 3;
+        int lastTabX = cx - 205 + tabW * 2;
+        addDrawableChild(new TabButton(cx - 205, TAB_BUTTON_Y, tabW, BUTTON_H,
+                Text.translatable("relay.config.tab.general"),
+                tab == Tab.GENERAL, () -> switchTab(Tab.GENERAL)));
+        addDrawableChild(new TabButton(cx - 205 + tabW, TAB_BUTTON_Y, tabW, BUTTON_H,
+                Text.translatable("relay.config.tab.integrations"),
+                tab == Tab.INTEGRATIONS, () -> switchTab(Tab.INTEGRATIONS)));
+        addDrawableChild(new TabButton(lastTabX, TAB_BUTTON_Y, cx + 205 - lastTabX, BUTTON_H,
                 Text.translatable("relay.config.tab.trust"),
                 tab == Tab.TRUST, () -> switchTab(Tab.TRUST)));
 
-        if (tab == Tab.SETTINGS) {
-            initSettingsPage(cx);
-        } else {
-            initTrustPage(cx);
+        switch (tab) {
+            case GENERAL -> initSettingsPage(cx);
+            case INTEGRATIONS -> initIntegrationsPage(cx);
+            case TRUST -> initTrustPage(cx);
         }
 
         // Re-clamp after the page has measured itself: the content may have shrunk (a removed entry,
@@ -238,52 +315,78 @@ public class TeamLocatorConfigScreen extends Screen {
         if (tab == next) {
             return;
         }
-        if (tab == Tab.SETTINGS) {
-            settingsScroll = scroll;
-        } else {
-            trustScroll = scroll;
+        switch (tab) {
+            case GENERAL -> settingsScroll = scroll;
+            case INTEGRATIONS -> integrationsScroll = scroll;
+            case TRUST -> trustScroll = scroll;
         }
         tab = next;
-        scroll = next == Tab.SETTINGS ? settingsScroll : trustScroll;
+        scroll = switch (next) {
+            case GENERAL -> settingsScroll;
+            case INTEGRATIONS -> integrationsScroll;
+            case TRUST -> trustScroll;
+        };
         addStatus = null; // lookup feedback belongs to the trust page's Add box
         rebuild();
+    }
+
+    /**
+     * Attaches a hover description to a control and returns it, so a widget can be described inline
+     * at its construction site rather than needing a local just to call setTooltip on it.
+     *
+     * <p>{@code setTooltip} is declared on AbstractWidget, so this works uniformly for cycle buttons,
+     * sliders and plain buttons alike — unlike CyclingButtonWidget's own builder-level tooltip, which only
+     * exists on that one type and is keyed by value rather than being a fixed description.
+     */
+    private static <T extends net.minecraft.client.gui.widget.ClickableWidget> T described(
+            T widget, String descriptionKey) {
+        widget.setTooltip(Tooltip.of(Text.translatable(descriptionKey)));
+        return widget;
     }
 
     private void initSettingsPage(int cx) {
         // --- Sharing section: what we send to trusted players. Location is the master coordinate
         // toggle; armor is opt-in and rides the same trust gate relay-side.
-        addScrolled(sy(12), CyclingButtonWidget.onOffBuilder(config.globalShareEnabled)
-                .build(cx - 205, sy(12), 200, 20, Text.translatable("relay.config.share_location"),
+        addScrolled(sy(SHARING_ROW_Y), described(CyclingButtonWidget.onOffBuilder(config.globalShareEnabled)
+                .build(cx - 205, sy(SHARING_ROW_Y), 200, 20, Text.translatable("relay.config.share_location"),
                         (btn, value) -> {
                             config.globalShareEnabled = value;
                             config.save();
                             TeamLocatorClient.syncToServer();
-                        }));
-        addScrolled(sy(12), CyclingButtonWidget.onOffBuilder(config.shareArmor)
-                .build(cx + 5, sy(12), 200, 20, Text.translatable("relay.config.share_armor"),
+                        }), "relay.config.share_location.desc"));
+        addScrolled(sy(SHARING_ROW_Y), described(CyclingButtonWidget.onOffBuilder(config.shareArmor)
+                .build(cx + 5, sy(SHARING_ROW_Y), 200, 20, Text.translatable("relay.config.share_armor"),
                         (btn, value) -> {
                             config.shareArmor = value;
                             config.save();
                             // The reporter retracts or re-sends on its next tick; nothing to push here.
-                        }));
+                        }), "relay.config.share_armor.desc"));
+        addScrolled(sy(SHARING_ROW_2_Y), described(CyclingButtonWidget.onOffBuilder(config.shareHealth)
+                .build(cx - 205, sy(SHARING_ROW_2_Y), 200, 20,
+                        Text.translatable("relay.config.share_health"),
+                        (btn, value) -> {
+                            config.shareHealth = value;
+                            config.save();
+                            // Takes effect on the next position update, which is every 4 ticks.
+                        }), "relay.config.share_health.desc"));
 
         // --- HUD section: position sliders side by side, size slider below ---
-        addScrolled(sy(56), new HudPositionSlider(cx - 205, sy(56), 200, 20, "HUD X", config.hudX, v -> {
+        addScrolled(sy(HUD_ROW_1_Y), new HudPositionSlider(cx - 205, sy(HUD_ROW_1_Y), 200, 20, "HUD X", config.hudX, v -> {
             config.hudX = v;
             config.save();
         }));
-        addScrolled(sy(56), new HudPositionSlider(cx + 5, sy(56), 200, 20, "HUD Y", config.hudY, v -> {
+        addScrolled(sy(HUD_ROW_1_Y), new HudPositionSlider(cx + 5, sy(HUD_ROW_1_Y), 200, 20, "HUD Y", config.hudY, v -> {
             config.hudY = v;
             config.save();
         }));
-        addScrolled(sy(80), new HudPositionSlider(cx - 205, sy(80), 200, 20, "HUD Size", 0.5, 2.0,
+        addScrolled(sy(HUD_ROW_2_Y), new HudPositionSlider(cx - 205, sy(HUD_ROW_2_Y), 200, 20, "HUD Size", 0.5, 2.0,
                 config.hudScale, v -> {
             config.hudScale = v;
             config.save();
         }));
 
         // --- HUD text colors: hex inputs with live swatches (drawn in extractRenderState) ---
-        primaryColorInput = new TextFieldWidget(this.textRenderer, cx + 5, sy(80), 70, 20,
+        primaryColorInput = new TextFieldWidget(this.textRenderer, cx + 5, sy(HUD_ROW_2_Y), 70, 20,
                 Text.translatable("relay.config.hud_primary_color"));
         primaryColorInput.setTooltip(Tooltip.of(
                 Text.translatable("relay.config.hud_primary_color")));
@@ -298,8 +401,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 primaryColorInput.setEditableColor(0xFFFF5555);
             }
         });
-        addScrolled(sy(80), primaryColorInput);
-        secondaryColorInput = new TextFieldWidget(this.textRenderer, cx + 107, sy(80), 70, 20,
+        addScrolled(sy(HUD_ROW_2_Y), primaryColorInput);
+        secondaryColorInput = new TextFieldWidget(this.textRenderer, cx + 107, sy(HUD_ROW_2_Y), 70, 20,
                 Text.translatable("relay.config.hud_secondary_color"));
         secondaryColorInput.setTooltip(Tooltip.of(
                 Text.translatable("relay.config.hud_secondary_color")));
@@ -314,76 +417,231 @@ public class TeamLocatorConfigScreen extends Screen {
                 secondaryColorInput.setEditableColor(0xFFFF5555);
             }
         });
-        addScrolled(sy(80), secondaryColorInput);
+        addScrolled(sy(HUD_ROW_2_Y), secondaryColorInput);
 
         // HUD row 3: row text alignment | list growth direction (down vs. up from the anchor).
-        addScrolled(sy(104), CyclingButtonWidget.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
-                .values(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER, TeamConfig.HudAlign.RIGHT)
-                .build(cx - 205, sy(104), 200, 20, Text.translatable("relay.config.hud_align"),
+        addScrolled(sy(HUD_ROW_3_Y), CyclingButtonWidget.<TeamConfig.HudAlign>builder(this::hudAlignLabel, config.hudAlign)
+                .values(TeamConfig.HudAlign.LEFT, TeamConfig.HudAlign.CENTER,
+                        TeamConfig.HudAlign.RIGHT, TeamConfig.HudAlign.TABLE)
+                .build(cx - 205, sy(HUD_ROW_3_Y), 200, 20, Text.translatable("relay.config.hud_align"),
                         (btn, value) -> {
                             config.hudAlign = value;
                             config.save();
                         }));
-        addScrolled(sy(104), CyclingButtonWidget.onOffBuilder(config.hudGrowUp)
-                .build(cx + 5, sy(104), 200, 20, Text.translatable("relay.config.hud_grow_up"),
+        addScrolled(sy(HUD_ROW_3_Y), described(CyclingButtonWidget.onOffBuilder(config.hudGrowUp)
+                .build(cx + 5, sy(HUD_ROW_3_Y), 200, 20, Text.translatable("relay.config.hud_grow_up"),
                         (btn, value) -> {
                             config.hudGrowUp = value;
                             config.save();
-                        }));
+                        }), "relay.config.hud_grow_up.desc"));
 
         // HUD row 4: what each row displays. Armor only ever shows what a teammate shares.
-        addScrolled(sy(128), CyclingButtonWidget.onOffBuilder(config.hudShowCoords)
-                .build(cx - 205, sy(128), 200, 20, Text.translatable("relay.config.hud_show_coords"),
+        addScrolled(sy(HUD_ROW_4_Y), CyclingButtonWidget.onOffBuilder(config.hudShowCoords)
+                .build(cx - 205, sy(HUD_ROW_4_Y), 200, 20, Text.translatable("relay.config.hud_show_coords"),
                         (btn, value) -> {
                             config.hudShowCoords = value;
                             config.save();
                         }));
-        addScrolled(sy(128), CyclingButtonWidget
+        addScrolled(sy(HUD_ROW_4_Y), CyclingButtonWidget
                 .<TeamConfig.ArmorDisplay>builder(this::armorDisplayLabel, config.hudArmorDisplay)
                 .values(TeamConfig.ArmorDisplay.OFF, TeamConfig.ArmorDisplay.ALL,
                         TeamConfig.ArmorDisplay.LOWEST)
-                .build(cx + 5, sy(128), 200, 20, Text.translatable("relay.config.hud_show_armor"),
+                .build(cx + 5, sy(HUD_ROW_4_Y), 200, 20, Text.translatable("relay.config.hud_show_armor"),
                         (btn, value) -> {
                             config.hudArmorDisplay = value;
                             config.save();
                         }));
 
-        // --- Pings section: cross-server pings toggle | ping display cooldown ---
-        addScrolled(sy(172), CyclingButtonWidget.onOffBuilder(config.crossServerPings)
-                .build(cx - 205, sy(172), 200, 20, Text.translatable("relay.config.cross_server_pings"),
+        // HUD row 5: teammate health.
+        addScrolled(sy(HUD_ROW_5_Y), described(CyclingButtonWidget.onOffBuilder(config.hudShowHealth)
+                .build(cx - 205, sy(HUD_ROW_5_Y), 200, 20,
+                        Text.translatable("relay.config.hud_show_health"),
+                        (btn, value) -> {
+                            config.hudShowHealth = value;
+                            config.save();
+                        }), "relay.config.hud_show_health.desc"));
+
+        addScrolled(sy(HUD_ROW_5_Y), described(CyclingButtonWidget
+                .<TeamConfig.DurabilityDisplay>builder(this::durabilityDisplayLabel,
+                        config.hudDurabilityDisplay)
+                .values(TeamConfig.DurabilityDisplay.BAR,
+                        TeamConfig.DurabilityDisplay.NUMBER_ONLY,
+                        TeamConfig.DurabilityDisplay.NEXT_TO)
+                .build(cx + 5, sy(HUD_ROW_5_Y), 200, 20,
+                        Text.translatable("relay.config.hud_durability"),
+                        (btn, value) -> {
+                            config.hudDurabilityDisplay = value;
+                            config.save();
+                        }), "relay.config.hud_durability.desc"));
+
+        // --- Alerts section ---
+        // Row 1: the master switch first, since it gates everything below it, with the cross-server
+        // toggle beside it. Stored inverted (hideAllAlerts) but shown as "Enable Alerts", so the
+        // label and the ON/OFF it carries agree — a switch reading "Hide All Alerts: OFF" for the
+        // normal case is a double negative.
+        addScrolled(sy(ALERTS_ROW_1_Y), CyclingButtonWidget.onOffBuilder(!config.hideAllAlerts)
+                .build(cx - 205, sy(ALERTS_ROW_1_Y), 200, 20, Text.translatable("relay.config.enable_alerts"),
+                        (btn, value) -> {
+                            config.hideAllAlerts = !value;
+                            config.save();
+                        }));
+        addScrolled(sy(ALERTS_ROW_1_Y), described(CyclingButtonWidget.onOffBuilder(config.crossServerPings)
+                .build(cx + 5, sy(ALERTS_ROW_1_Y), 200, 20, Text.translatable("relay.config.cross_server_pings"),
                         (btn, value) -> {
                             config.crossServerPings = value;
                             config.save();
-                        }));
-        addScrolled(sy(172), new SecondsSlider(cx + 5, sy(172), 200, 20, "Alert Cooldown", 0, 60,
-                config.pingCooldownSeconds, v -> {
-            config.pingCooldownSeconds = v;
-            config.save();
-        }));
-        // Alerts row 2: choose the alert sound (new alarm vs. the old 3-noteblock chord).
-        addScrolled(sy(196), CyclingButtonWidget.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
+                        }), "relay.config.cross_server_pings.desc"));
+        // Row 2: alert sound (left) | cooldown (right).
+        addScrolled(sy(ALERTS_ROW_2_Y), CyclingButtonWidget.<TeamConfig.AlertSound>builder(this::alertSoundLabel, config.alertSound)
                 .values(TeamConfig.AlertSound.ALARM, TeamConfig.AlertSound.NOTEBLOCKS)
-                .build(cx - 205, sy(196), 200, 20, Text.translatable("relay.config.alert_sound"),
+                .build(cx - 205, sy(ALERTS_ROW_2_Y), 200, 20, Text.translatable("relay.config.alert_sound"),
                         (btn, value) -> {
                             config.alertSound = value;
                             config.save();
                         }));
+        addScrolled(sy(ALERTS_ROW_2_Y), described(new SecondsSlider(cx + 5, sy(ALERTS_ROW_2_Y), 200, 20, "Alert Cooldown",
+                SecondsSlider.COOLDOWN_STEPS, config.pingCooldownSeconds, v -> {
+            config.pingCooldownSeconds = v;
+            config.save();
+        }), "relay.config.alert_cooldown.desc"));
 
+        // --- Pings section ---
+        // Row 1: the master switch first (it gates the rest), colour picker beside it — the same
+        // "enable, then configure" order the Alerts section above uses.
+        addScrolled(sy(PINGS_ROW_Y), CyclingButtonWidget.onOffBuilder(config.showPings)
+                .build(cx - 205, sy(PINGS_ROW_Y), 200, 20,
+                        Text.translatable("relay.config.show_pings"),
+                        (btn, value) -> {
+                            config.showPings = value;
+                            config.save();
+                        }));
+        addScrolled(sy(PINGS_ROW_Y), described(
+                new PingColorButton(cx + 5, sy(PINGS_ROW_Y), 200, 20, config),
+                "relay.config.ping_color.desc"));
+        // Row 2: how long THIS player sees pings for — theirs and teammates' alike — and whether
+        // they punch through terrain.
+        addScrolled(sy(PINGS_ROW_Y + 24), new SecondsSlider(cx - 205, sy(PINGS_ROW_Y + 24), 200, 20,
+                "Ping Duration", SecondsSlider.PING_DURATION_STEPS, config.pingDisplaySeconds, v -> {
+            config.pingDisplaySeconds = v;
+            config.save();
+        }));
+        addScrolled(sy(PINGS_ROW_Y + 24), described(CyclingButtonWidget.onOffBuilder(config.pingsThroughWalls)
+                .build(cx + 5, sy(PINGS_ROW_Y + 24), 200, 20,
+                        Text.translatable("relay.config.pings_through_walls"),
+                        (btn, value) -> {
+                            config.pingsThroughWalls = value;
+                            config.save();
+                        }), "relay.config.pings_through_walls.desc"));
+        // Row 3: rate limit on how often any one teammate's pings are accepted.
+        addScrolled(sy(PINGS_ROW_Y + 48), described(new SecondsSlider(
+                cx - 205, sy(PINGS_ROW_Y + 48), 200, 20,
+                "Ping Cooldown", SecondsSlider.PING_COOLDOWN_STEPS, config.mapPingCooldownSeconds, v -> {
+            config.mapPingCooldownSeconds = v;
+            config.save();
+        }), "relay.config.ping_cooldown.desc"));
+        addScrolled(sy(PINGS_ROW_Y + 48), described(CyclingButtonWidget.onOffBuilder(config.mapPingSound)
+                .build(cx + 5, sy(PINGS_ROW_Y + 48), 200, 20,
+                        Text.translatable("relay.config.ping_sound"),
+                        (btn, value) -> {
+                            config.mapPingSound = value;
+                            config.save();
+                        }), "relay.config.ping_sound.desc"));
+
+        // --- Chat section: master switch | the prefix character that triggers relay chat ---
+        addScrolled(sy(CHAT_ROW_Y), described(CyclingButtonWidget.onOffBuilder(config.chatEnabled)
+                .build(cx - 205, sy(CHAT_ROW_Y), 200, 20,
+                        Text.translatable("relay.config.chat_enabled"),
+                        (btn, value) -> {
+                            config.chatEnabled = value;
+                            config.save();
+                        }), "relay.config.chat_enabled.desc"));
+        chatPrefixInput = new TextFieldWidget(this.textRenderer, cx + 5, sy(CHAT_ROW_Y), 200, 20,
+                Text.translatable("relay.config.chat_prefix"));
+        chatPrefixInput.setMaxLength(1);
+        chatPrefixInput.setText(config.chatPrefix);
+        chatPrefixInput.setPlaceholder(Text.translatable("relay.config.chat_prefix"));
+        chatPrefixInput.setChangedListener(value -> {
+            // Ignore an empty box mid-edit rather than resetting to the default under the user's
+            // cursor; the config's own validation catches anything still invalid on load.
+            if (value != null && value.length() == 1 && !Character.isWhitespace(value.charAt(0))) {
+                config.chatPrefix = value;
+                config.save();
+            }
+        });
+        chatPrefixInput.setTooltip(Tooltip.of(
+                Text.translatable("relay.config.chat_prefix.desc")));
+        addScrolled(sy(CHAT_ROW_Y), chatPrefixInput);
+
+        // --- Advanced section: the relay address, centred ---
+        // Previously pinned in the bottom bar on every tab. It is a set-once setting, so it lives
+        // behind an Advanced heading instead of occupying permanent screen space. The frame and the
+        // fixed wss:// label are drawn in render() at the same content Y, so all three scroll
+        // together; only the TextFieldWidget is a real widget.
+        int boxY = sy(ADVANCED_ROW_Y);
+        int textStart = cx - 205 + 4 + this.textRenderer.getWidth(SCHEME_LABEL);
+        relayUrlInput = new TextFieldWidget(this.textRenderer, textStart, boxY + 6,
+                cx - 205 + RELAY_BOX_W - 4 - textStart, 12,
+                Text.translatable("relay.config.relay_url"));
+        relayUrlInput.setDrawsBackground(false);
+        relayUrlInput.setMaxLength(256);
+        relayUrlInput.setText(config.relayUrl);
+        relayUrlInput.setChangedListener(value -> {
+            config.relayUrl = TeamConfig.normalizeRelayAddress(value);
+            config.save();
+        });
+        // The box is borderless and inset inside the drawn frame, so this only triggers over the
+        // editable text itself rather than the whole frame — that is where anyone hovering to ask
+        // "what is this?" will actually be pointing.
+        relayUrlInput.setTooltip(Tooltip.of(
+                Text.translatable("relay.config.relay_url.desc")));
+        addScrolled(boxY, relayUrlInput);
+
+        contentHeight = SETTINGS_LAST_ROW_Y + 20 + 4; // last row, its height, and a little padding
+    }
+
+    /**
+     * Integrations: settings for other mods this one talks to. Only Xaero's so far; the page exists
+     * as its own tab so future cross-mod options have an obvious home rather than being wedged into
+     * General.
+     */
+    private void initIntegrationsPage(int cx) {
         // --- Xaero's section: map icons | in-world icons (read live by the Xaero trackers) ---
-        addScrolled(sy(SETTINGS_LAST_ROW_Y), CyclingButtonWidget.onOffBuilder(config.xaeroMapIcons)
-                .build(cx - 205, sy(SETTINGS_LAST_ROW_Y), 200, 20, Text.translatable("relay.config.xaero_map_icons"),
+        // Each control is disabled when the mod that acts on it isn't installed, so a setting that
+        // could not possibly do anything reads as unavailable rather than as broken. The two have
+        // different requirements: the map-icon flag is honoured by both Xaero trackers, while the
+        // in-world icon is enforced by a mixin into the minimap's renderer specifically.
+        boolean minimap = XaeroCompat.isMinimapInstalled();
+        boolean worldMap = XaeroCompat.isWorldMapInstalled();
+
+        var mapIcons = CyclingButtonWidget.onOffBuilder(config.xaeroMapIcons)
+                .build(cx - 205, sy(INTEGRATIONS_ROW_Y), 200, 20,
+                        Text.translatable("relay.config.xaero_map_icons"),
                         (btn, value) -> {
                             config.xaeroMapIcons = value;
                             config.save();
-                        }));
-        addScrolled(sy(SETTINGS_LAST_ROW_Y), CyclingButtonWidget.onOffBuilder(config.xaeroInWorldIcons)
-                .build(cx + 5, sy(SETTINGS_LAST_ROW_Y), 200, 20, Text.translatable("relay.config.xaero_world_icons"),
+                        });
+        mapIcons.active = minimap || worldMap;
+        if (!mapIcons.active) {
+            mapIcons.setTooltip(Tooltip.of(
+                    Text.translatable("relay.config.integration.missing")));
+        }
+        addScrolled(sy(INTEGRATIONS_ROW_Y), mapIcons);
+
+        var inWorldIcons = CyclingButtonWidget.onOffBuilder(config.xaeroInWorldIcons)
+                .build(cx + 5, sy(INTEGRATIONS_ROW_Y), 200, 20,
+                        Text.translatable("relay.config.xaero_world_icons"),
                         (btn, value) -> {
                             config.xaeroInWorldIcons = value;
                             config.save();
-                        }));
+                        });
+        inWorldIcons.active = minimap;
+        if (!inWorldIcons.active) {
+            inWorldIcons.setTooltip(Tooltip.of(
+                    Text.translatable("relay.config.integration.missing")));
+        }
+        addScrolled(sy(INTEGRATIONS_ROW_Y), inWorldIcons);
 
-        contentHeight = SETTINGS_LAST_ROW_Y + 20 + 4; // last row, its height, and a little padding
+        contentHeight = INTEGRATIONS_ROW_Y + 20 + 4;
     }
 
     /** The trust list page: mode cycle and add-player controls up top, then the player table. */
@@ -434,32 +692,22 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     private void initBottomBar(int cx) {
-        // --- Relay address: one Done-sized frame with the fixed wss:// scheme drawn inside ---
-        // The TextFieldWidget itself is borderless and sits inside the frame, after the scheme label.
-        int frameX = cx - 205;
-        int frameY = this.height - 28;
-        int textStart = frameX + 4 + this.textRenderer.getWidth(SCHEME_LABEL);
-        relayUrlInput = new TextFieldWidget(this.textRenderer, textStart, frameY + 6,
-                frameX + 200 - 4 - textStart, 12, Text.translatable("relay.config.relay_url"));
-        relayUrlInput.setDrawsBackground(false);
-        relayUrlInput.setMaxLength(256);
-        relayUrlInput.setText(config.relayUrl);
-        relayUrlInput.setChangedListener(value -> {
-            config.relayUrl = TeamConfig.normalizeRelayAddress(value);
-            config.save();
-        });
-        addDrawableChild(relayUrlInput);
-
-        // --- Done ---
+        // --- Done, centred ---
+        // The relay address used to share this bar; with it moved to General > Advanced, Done is the
+        // bar's only occupant and sits centred rather than stranded against the right edge.
         addDrawableChild(ButtonWidget.builder(Text.translatable("relay.config.done"),
-                b -> close()).dimensions(cx + 5, this.height - 28, 200, 20).build());
+                b -> close()).dimensions(cx - 100, this.height - 28, 200, 20).build());
     }
 
     private void buildRow(int cx, int y, TrustEntry entry, List<TrustEntry> backing) {
-        // Bare ON/OFF, not composeToggleText's "<label>: <on|off>" — the column header names the toggle
+        // Bare ON/OFF, not optionStatus's "<label>: <on|off>" — the column header names the toggle
         // once for the whole table, so repeating it on every row is noise. Still vanilla's own
         // components, so a pack restyling options.on/off (into check/X glyphs, say) reaches these.
-        addScrolled(y, ButtonWidget.builder(onOff(!entry.mutePings),
+        //
+        // This is the Mute column: ON means "muted" (you won't hear this player's alerts). It is
+        // inbound and local only — muting someone never affects whether they receive YOUR alerts.
+        // Default is unmuted (mutePings = false), so ON here is an opt-in silence.
+        addScrolled(y, ButtonWidget.builder(onOff(entry.mutePings),
                 b -> {
                     entry.mutePings = !entry.mutePings;
                     config.save();
@@ -495,10 +743,10 @@ public class TeamLocatorConfigScreen extends Screen {
         // Scrolling labels first, then the bars' backdrops over them, then super's widgets on top:
         // that ordering lets the backdrops hide a label that has scrolled into a bar, while the tab
         // buttons and the borderless address TextFieldWidget still land above their own backdrop.
-        if (tab == Tab.SETTINGS) {
-            drawSettingsLabels(graphics, cx);
-        } else {
-            drawTrustLabels(graphics, cx);
+        switch (tab) {
+            case GENERAL -> drawSettingsLabels(graphics, cx);
+            case INTEGRATIONS -> drawIntegrationsLabels(graphics, cx);
+            case TRUST -> drawTrustLabels(graphics, cx);
         }
         drawBarBackdrops(graphics, cx);
 
@@ -509,10 +757,9 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     /**
-     * The two pinned bars' backdrops, plus the relay-address frame that the borderless TextFieldWidget sits
-     * inside. Drawn before {@code super} so the widgets on the bars land on top of them; the
-     * backdrops cover scrolled *labels*, while scrolled widgets are culled instead (see
-     * {@link #addScrolled}), since nothing this screen draws can cover them.
+     * The two pinned bars' backdrops. Drawn before {@code super} so the widgets on the bars land on
+     * top of them; the backdrops cover scrolled *labels*, while scrolled widgets are culled instead
+     * (see {@link #addScrolled}), since nothing this screen draws can cover them.
      */
     private void drawBarBackdrops(DrawContext graphics, int cx) {
         // No divider under the tab strip: the selected tab's open bottom edge is what joins it to
@@ -523,27 +770,55 @@ public class TeamLocatorConfigScreen extends Screen {
         int top = this.height - BOTTOM_BAR_H;
         graphics.fill(0, top, this.width, this.height, 0xFF101010);
         graphics.fill(0, top, this.width, top + 1, 0xFF000000);
+    }
+
+    /**
+     * The relay-address frame and its fixed {@code wss://} label, which the borderless TextFieldWidget sits
+     * inside. Part of the General page's Advanced section, so it scrolls with the rest — and is
+     * skipped entirely when scrolled behind a bar, matching how {@link #addScrolled} culls widgets.
+     */
+    private void drawRelayFrame(DrawContext graphics, int cx) {
+        int y = sy(ADVANCED_ROW_Y);
+        if (y < TAB_BAR_H || y + BUTTON_H > viewportBottom()) {
+            return;
+        }
+        int x = cx - 205;
         graphics.drawGuiTexture(RenderPipelines.GUI_TEXTURED,
                 relayUrlInput != null && relayUrlInput.isFocused()
                         ? TEXT_FIELD_HIGHLIGHTED_SPRITE : TEXT_FIELD_SPRITE,
-                cx - 205, this.height - 28, 200, 20);
-        graphics.drawText(this.textRenderer, SCHEME_LABEL, cx - 205 + 4, this.height - 28 + 6, 0xFFA0A0A0, false);
+                x, y, RELAY_BOX_W, BUTTON_H);
+        graphics.drawText(this.textRenderer, SCHEME_LABEL, x + 4, y + 6, 0xFFA0A0A0, false);
     }
 
     private void drawSettingsLabels(DrawContext graphics, int cx) {
         // Live color swatches beside the HUD hex inputs: white border, current color inside.
-        drawSwatch(graphics, cx + 78, sy(80), config.hudPrimaryArgb());
-        drawSwatch(graphics, cx + 180, sy(80), config.hudSecondaryArgb());
+        drawSwatch(graphics, cx + 78, sy(HUD_ROW_2_Y), config.hudPrimaryArgb());
+        drawSwatch(graphics, cx + 180, sy(HUD_ROW_2_Y), config.hudSecondaryArgb());
 
         // Section headers, scrolling with the widgets they label.
         graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.sharing"),
-                cx - 205, sy(0), 0xFFFFFFFF, false);
+                cx - 205, sy(SHARING_HEADER_Y), 0xFFFFFFFF, false);
         graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.hud"),
-                cx - 205, sy(44), 0xFFFFFFFF, false);
+                cx - 205, sy(HUD_HEADER_Y), 0xFFFFFFFF, false);
         graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.pings"),
-                cx - 205, sy(160), 0xFFFFFFFF, false);
+                cx - 205, sy(ALERTS_HEADER_Y), 0xFFFFFFFF, false);
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.map_pings"),
+                cx - 205, sy(PINGS_ROW_Y - 12), 0xFFFFFFFF, false);
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.chat"),
+                cx - 205, sy(CHAT_ROW_Y - 12), 0xFFFFFFFF, false);
+        graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.advanced"),
+                cx - 205, sy(ADVANCED_ROW_Y - 12), 0xFFFFFFFF, false);
+        // The address frame belongs to this page now, so it is drawn here — before super, so the
+        // borderless TextFieldWidget still lands on top of it.
+        drawRelayFrame(graphics, cx);
+    }
+
+    private void drawIntegrationsLabels(DrawContext graphics, int cx) {
+        // Dim the heading too when neither Xaero mod is present, so the whole block reads as
+        // unavailable rather than a live section that happens to hold two dead controls.
+        boolean anyXaero = XaeroCompat.isMinimapInstalled() || XaeroCompat.isWorldMapInstalled();
         graphics.drawText(this.textRenderer, Text.translatable("relay.config.section.xaero"),
-                cx - 205, sy(228), 0xFFFFFFFF, false);
+                cx - 205, sy(INTEGRATIONS_ROW_Y - 12), anyXaero ? 0xFFFFFFFF : 0xFF808080, false);
     }
 
     private void drawTrustLabels(DrawContext graphics, int cx) {
@@ -559,7 +834,7 @@ public class TeamLocatorConfigScreen extends Screen {
         boolean headerVisible = headerY >= TAB_BAR_H && headerY + this.textRenderer.fontHeight <= viewportBottom();
         if (headerVisible) {
             graphics.drawText(this.textRenderer, Text.translatable("relay.config.column.player"),
-                    cx - 205, headerY, 0xFFA0A0A0, false);
+                    cx - 205, headerY, 0xFFFFFFFF, false);
             drawColumnHeader(graphics, "relay.config.column.alerts",
                     cx + COL_ALERTS_X, COL_ALERTS_W, headerY);
             // Lookup feedback shares this row, right-aligned where the Remove column sits. It
@@ -586,10 +861,16 @@ public class TeamLocatorConfigScreen extends Screen {
         }
     }
 
-    /** One column heading, centered over a column of the given x/width. */
+    /**
+     * One column heading, centered over a column of the given x/width. Drawn white and shadowless
+     * to match the left-aligned "Player" heading — {@code centeredText} has no shadowless overload
+     * and would draw a shadow, so this centers by hand and uses the shadowless {@code text}.
+     */
     private void drawColumnHeader(DrawContext graphics, String key, int colX, int colW,
                                   int y) {
-        graphics.drawCenteredTextWithShadow(this.textRenderer, Text.translatable(key), colX + colW / 2, y, 0xFFA0A0A0);
+        Text label = Text.translatable(key);
+        int x = colX + colW / 2 - this.textRenderer.getWidth(label) / 2;
+        graphics.drawText(this.textRenderer, label, x, y, 0xFFFFFFFF, false);
     }
 
     /** A slim scrollbar down the right edge, so the page's length and position are visible. */
@@ -702,6 +983,7 @@ public class TeamLocatorConfigScreen extends Screen {
         String key = switch (align) {
             case CENTER -> "relay.config.hud_align.center";
             case RIGHT -> "relay.config.hud_align.right";
+            case TABLE -> "relay.config.hud_align.table";
             default -> "relay.config.hud_align.left";
         };
         return Text.translatable(key);
@@ -719,6 +1001,16 @@ public class TeamLocatorConfigScreen extends Screen {
             case LOWEST -> Text.translatable("relay.config.hud_show_armor.lowest");
             default -> ScreenTexts.ON;
         };
+    }
+
+    /** Each durability style names itself; none maps onto vanilla's On/Off wording. */
+    private Text durabilityDisplayLabel(TeamConfig.DurabilityDisplay display) {
+        String key = switch (display) {
+            case BAR -> "bar";
+            case NUMBER_ONLY -> "number_only";
+            case NEXT_TO -> "next_to";
+        };
+        return Text.translatable("relay.config.hud_durability." + key);
     }
 
     private Text alertSoundLabel(TeamConfig.AlertSound sound) {
@@ -746,11 +1038,19 @@ public class TeamLocatorConfigScreen extends Screen {
             return true;
         }
         // Clicking the wss:// prefix (inside the frame but left of the borderless TextFieldWidget) should
-        // still focus the address field — the whole frame reads as one text box.
+        // still focus the address field — the whole frame reads as one text box. The frame now
+        // scrolls with the General page's Advanced section, so the hit test follows it, and only
+        // counts while it is actually within the scrolling viewport.
+        if (tab != Tab.GENERAL || relayUrlInput == null) {
+            return false;
+        }
         int cx = this.width / 2;
-        if (relayUrlInput != null
-                && event.x() >= cx - 205 && event.x() < cx - 5
-                && event.y() >= this.height - 28 && event.y() < this.height - 8) {
+        int frameY = sy(ADVANCED_ROW_Y);
+        if (frameY < TAB_BAR_H || frameY + BUTTON_H > viewportBottom()) {
+            return false;
+        }
+        if (event.x() >= cx - 205 && event.x() < cx - 205 + RELAY_BOX_W
+                && event.y() >= frameY && event.y() < frameY + BUTTON_H) {
             this.setFocused(relayUrlInput);
             return true;
         }
@@ -760,16 +1060,20 @@ public class TeamLocatorConfigScreen extends Screen {
     /**
      * Scroll the current page. Only the area between the pinned bars scrolls.
      *
-     * <p>Sliders swallow the wheel to change their value, so this only sees notches not consumed by
-     * a widget under the cursor; that is vanilla's own convention.
+     * <p>The page takes the wheel <b>before</b> any widget under the cursor. Deferring to
+     * {@code super} first — vanilla's convention, and what this used to do — meant scrolling past a
+     * toggle or slider fed the notch to that widget instead: the cursor happened to be over a
+     * control, so scrolling the page silently changed a setting. On a page that is mostly controls
+     * there is nowhere safe to put the cursor, which makes the wheel actively dangerous.
+     *
+     * <p>Widgets still get the wheel when the page cannot use it (already at an end, or the cursor
+     * is outside the scrolling area), so a slider is still adjustable by wheel where that cannot be
+     * confused with scrolling.
      */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
-            return true;
-        }
         if (maxScroll() == 0 || mouseY < TAB_BAR_H || mouseY > viewportBottom()) {
-            return false;
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         int next = Math.max(0, Math.min(scroll - (int) Math.signum(scrollY) * SCROLL_STEP,
                 maxScroll()));

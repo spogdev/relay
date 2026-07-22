@@ -3,7 +3,7 @@ package dev.spog.teamlocator.client;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
@@ -30,7 +30,7 @@ public final class AvailableCommand {
 
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
-                dispatcher.register(ClientCommands.literal("available").executes(ctx -> {
+                dispatcher.register(ClientCommandManager.literal("available").executes(ctx -> {
                     run(ctx.getSource());
                     return 1;
                 })));

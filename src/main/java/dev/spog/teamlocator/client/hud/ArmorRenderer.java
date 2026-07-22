@@ -97,8 +97,7 @@ final class ArmorRenderer {
             return 0;
         }
         int drawn = Math.round(ICON_SIZE * iconScale);
-        if (font == null || mode == DurabilityDisplay.BAR || mode == DurabilityDisplay.OVER_ICON) {
-            // OVER_ICON prints inside the icon's own footprint, so it costs no extra width.
+        if (font == null || mode == DurabilityDisplay.BAR) {
             return pieces.size() * (drawn + ICON_GAP);
         }
         int total = 0;
@@ -169,15 +168,7 @@ final class ArmorRenderer {
             pose.popMatrix();
             x += drawn;
 
-            if (style == DurabilityDisplay.OVER_ICON && !label.isEmpty()) {
-                // Bottom-right of the icon, where vanilla puts a stack count — the position players
-                // already read as "a number about this item". Shadowed so it survives the artwork
-                // underneath it.
-                int textX = x - font.width(label);
-                int textY = y + drawn - font.lineHeight;
-                graphics.text(font, label, textX, textY, durabilityColor(piece, textColor), true);
-                x += ICON_GAP;
-            } else if (style == DurabilityDisplay.NEXT_TO) {
+            if (style == DurabilityDisplay.NEXT_TO) {
                 if (!label.isEmpty()) {
                     int textY = centerY - font.lineHeight / 2;
                     graphics.text(font, label, x + NUMBER_GAP, textY,

@@ -80,7 +80,7 @@ public final class RelayRouter {
         UUID ownerId = owner.uuid();
         Messages.PositionSnapshot.Entry entry = new Messages.PositionSnapshot.Entry(
                 ownerId.toString(), owner.x, owner.y, owner.z, owner.dimension, owner.armor,
-                owner.health);
+                owner.health, owner.pingColor);
 
         for (Session viewer : registry.sessionsInScope(owner.scope())) {
             if (viewer.uuid().equals(ownerId)) {
@@ -125,7 +125,7 @@ public final class RelayRouter {
             if (shares(other.uuid(), viewerId)) {
                 entries.add(new Messages.PositionSnapshot.Entry(
                         other.uuid().toString(), other.x, other.y, other.z, other.dimension,
-                        other.armor, other.health));
+                        other.armor, other.health, other.pingColor));
             }
         }
         if (!entries.isEmpty()) {

@@ -432,6 +432,15 @@ public final class RelayServer extends WebSocketServer {
         // double the chattiest path in the protocol for no benefit. Absent from older clients,
         // which the -1 default leaves as "unknown".
         session.health = obj.has("health") ? obj.get("health").getAsFloat() : -1.0f;
+        // Ping colour rides along for the same reasons, so teammates can tint this player's HUD row
+        // to match their pings. Re-resolved rather than trusted: it goes through exactly the
+        // validation a ping does, so a client cannot claim a colour outside its own palette, and an
+        // administrator's override still wins.
+        if (obj.has("pingColor") && !obj.get("pingColor").isJsonNull()) {
+            session.pingColor = RelayRouter.resolvePingColor(session.uuid(),
+                    obj.get("pingColor").getAsString(),
+                    admins.pingColorOverride(session.uuid()));
+        }
         session.hasPosition = true;
         router.broadcastPosition(session);
     }

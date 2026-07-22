@@ -38,6 +38,13 @@ public final class Session {
      * than 0 as the "unknown" marker, since 0 is a real value meaning a dead player.
      */
     public volatile float health = -1.0f;
+    /**
+     * The player's ping colour as {@code #rrggbb}, already resolved against their own palette, or
+     * null until they report one. Held per session so it can ride along with their position and be
+     * replayed into a late viewer's snapshot, letting teammates tint that player's HUD row to match
+     * their pings.
+     */
+    public volatile String pingColor;
     public volatile String dimension = "minecraft:overworld";
     public volatile boolean hasPosition;
 

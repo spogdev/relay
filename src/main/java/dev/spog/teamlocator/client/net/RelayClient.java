@@ -8,13 +8,16 @@ import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PingPalette;
 import dev.spog.teamlocator.client.PingState;
 import dev.spog.teamlocator.client.RelayToasts;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import dev.spog.teamlocator.client.RelayChatMessages;
+import dev.spog.teamlocator.client.RelaySounds;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.resources.Identifier;
 
 import java.net.URI;
@@ -317,6 +320,14 @@ public final class RelayClient {
         o.addProperty("y", y);
         o.addProperty("z", z);
         o.addProperty("dimension", dimension);
+        // Our ping colour, so teammates can tint our HUD row to match our pings. Sent every update
+        // rather than once at auth so changing it takes effect on their HUDs immediately; the relay
+        // re-validates it against our own palette either way.
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getUser() != null) {
+            o.addProperty("pingColor", PingPalette.forPlayer(
+                    mc.getUser().getProfileId(), TeamLocatorClient.CONFIG.pingColorIndex));
+        }
         sendIfReady(o);
     }
 
@@ -465,6 +476,7 @@ public final class RelayClient {
             if (!mapPingAllowed(owner)) {
                 return;
             }
+            boolean isNew = !PingState.has(owner);
             PingState.put(new PingState.Ping(
                     owner,
                     obj.get("x").getAsDouble(),
@@ -473,9 +485,35 @@ public final class RelayClient {
                     dim,
                     argbOf(color),
                     System.currentTimeMillis()));
+            if (isNew) {
+                playMapPingSound(owner);
+            }
         } catch (RuntimeException e) {
             TeamLocatorConstants.LOGGER.debug("Bad map ping: {}", e.toString());
         }
+    }
+
+    /**
+     * Chime for a ping that just appeared, unless it is our own or the player has muted it.
+     *
+     * <p>Skipping our own matters because the relay echoes every ping back to its placer to correct
+     * the colour — without this you would hear the sound each time you placed one, on top of already
+     * knowing you had.
+     *
+     * <p>Only fires for pings that are genuinely new. A player who re-pings while their previous
+     * marker is still up replaces it rather than adding one, and re-chiming for a marker that was
+     * already on screen would let a teammate repeat the sound indefinitely.
+     */
+    private void playMapPingSound(UUID owner) {
+        if (!TeamLocatorClient.CONFIG.mapPingSound) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getUser() != null && owner.equals(mc.getUser().getProfileId())) {
+            return;
+        }
+        mc.execute(() -> mc.getSoundManager().playDelayed(
+                SimpleSoundInstance.forUI(RelaySounds.PING, 1.0f), 0));
     }
 
     /**
@@ -843,7 +881,9 @@ public final class RelayClient {
                         parseArmor(e),
                         // Absent from an older client, and from a relay that predates health.
                         e.has("health") ? e.get("health").getAsFloat()
-                                : TrackedPos.UNKNOWN_HEALTH));
+                                : TrackedPos.UNKNOWN_HEALTH,
+                        e.has("pingColor") && !e.get("pingColor").isJsonNull()
+                                ? e.get("pingColor").getAsString() : null));
             } catch (RuntimeException ex) {
                 TeamLocatorConstants.LOGGER.debug("Bad snapshot entry: {}", ex.toString());
             }

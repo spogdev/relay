@@ -3,5 +3,10 @@
     "sounds": [
       { "name": "relay:alarm", "stream": false }
     ]
+  },
+  "ping": {
+    "sounds": [
+      { "name": "relay:ping", "stream": false }
+    ]
   }
 }

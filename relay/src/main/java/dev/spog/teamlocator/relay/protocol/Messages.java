@@ -103,6 +103,18 @@ public final class Messages {
          * would double the chattiest path in the protocol for nothing. Absent from older clients.
          */
         public float health;
+        /**
+         * The sender's chosen ping colour as {@code #rrggbb}, so teammates can tint that player's
+         * HUD row to match their pings. Null from older clients.
+         *
+         * <p>Rides along here despite changing far less often than position. Announcing it once at
+         * auth would be cheaper, but then a player who changed colour mid-session would keep the old
+         * tint on everyone's HUD until they reconnected; sent per update it simply corrects itself.
+         *
+         * <p>Advisory only — the relay re-resolves it against the sender's own palette before
+         * passing it on, so a client cannot paint itself a colour it has no claim to.
+         */
+        public String pingColor;
     }
 
     /** "I'm being attacked." The relay fans it out to mutual-trust peers who haven't blocked us. */
@@ -462,9 +474,15 @@ public final class Messages {
              * value meaning dead, and a HUD that renders "unknown" as "dead" would be alarming.
              */
             public float health;
+            /**
+             * The player's ping colour as {@code #rrggbb}, already resolved by the relay, or null if
+             * they have not reported one. Lets a joining client tint HUD rows straight away rather
+             * than waiting for each player's next position update.
+             */
+            public String pingColor;
 
             public Entry(String id, double x, double y, double z, String dimension,
-                         List<ArmorPiece> armor, float health) {
+                         List<ArmorPiece> armor, float health, String pingColor) {
                 this.id = id;
                 this.x = x;
                 this.y = y;
@@ -472,6 +490,7 @@ public final class Messages {
                 this.dimension = dimension;
                 this.armor = armor;
                 this.health = health;
+                this.pingColor = pingColor;
             }
         }
     }

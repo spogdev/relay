@@ -46,11 +46,11 @@ public class TeamConfig {
     /**
      * How a piece's remaining durability is shown.
      *
-     * <p>{@link #BAR} is vanilla's inventory bar under the icon. The other three trade that for a
+     * <p>{@link #BAR} is vanilla's inventory bar under the icon. The other two trade that for a
      * figure, which is precise where the bar is only approximate — at a glance a bar cannot tell
      * you whether a chestplate has 40 hits left or 4.
      */
-    public enum DurabilityDisplay { BAR, NUMBER_ONLY, OVER_ICON, NEXT_TO }
+    public enum DurabilityDisplay { BAR, NUMBER_ONLY, NEXT_TO }
 
     /** A named trust list (a set of entries). */
     public static class TrustList {
@@ -122,6 +122,14 @@ public class TeamConfig {
      * like ordinary geometry, for players who find them visually noisy.
      */
     public boolean pingsThroughWalls = true;
+    /**
+     * Whether an arriving ping plays a sound.
+     *
+     * <p>Separate from {@link #alertSound}, which governs help alerts: the two are different events
+     * and sharing a sound would mean having to look at the screen to tell them apart. On by default
+     * because a ping placed behind you is invisible until something draws your attention to it.
+     */
+    public boolean mapPingSound = true;
 
     /**
      * Whether relay chat works at all. Gates both directions: with this off nothing is sent when you
@@ -272,6 +280,10 @@ public class TeamConfig {
             hudShowArmor = null;
         }
         if (hudArmorDisplay == null) hudArmorDisplay = ArmorDisplay.ALL;
+        // Also catches a config written when OVER_ICON still existed: Gson leaves an unknown enum
+        // constant null rather than failing, so without this the HUD would NPE on the first frame
+        // for anyone who had selected it.
+        if (hudDurabilityDisplay == null) hudDurabilityDisplay = DurabilityDisplay.BAR;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
         // Upper bound matches the cooldown slider's longest step (10 minutes). It was 60 when the

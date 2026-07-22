@@ -466,7 +466,6 @@ public class TeamLocatorConfigScreen extends Screen {
                         config.hudDurabilityDisplay)
                 .withValues(TeamConfig.DurabilityDisplay.BAR,
                         TeamConfig.DurabilityDisplay.NUMBER_ONLY,
-                        TeamConfig.DurabilityDisplay.OVER_ICON,
                         TeamConfig.DurabilityDisplay.NEXT_TO)
                 .create(cx + 5, sy(HUD_ROW_5_Y), 200, 20,
                         Component.translatable("relay.config.hud_durability"),
@@ -540,6 +539,13 @@ public class TeamLocatorConfigScreen extends Screen {
             config.mapPingCooldownSeconds = v;
             config.save();
         }), "relay.config.ping_cooldown.desc"));
+        addScrolled(sy(PINGS_ROW_Y + 48), described(CycleButton.onOffBuilder(config.mapPingSound)
+                .create(cx + 5, sy(PINGS_ROW_Y + 48), 200, 20,
+                        Component.translatable("relay.config.ping_sound"),
+                        (btn, value) -> {
+                            config.mapPingSound = value;
+                            config.save();
+                        }), "relay.config.ping_sound.desc"));
 
         // --- Chat section: master switch | the prefix character that triggers relay chat ---
         addScrolled(sy(CHAT_ROW_Y), described(CycleButton.onOffBuilder(config.chatEnabled)
@@ -1002,7 +1008,6 @@ public class TeamLocatorConfigScreen extends Screen {
         String key = switch (display) {
             case BAR -> "bar";
             case NUMBER_ONLY -> "number_only";
-            case OVER_ICON -> "over_icon";
             case NEXT_TO -> "next_to";
         };
         return Component.translatable("relay.config.hud_durability." + key);

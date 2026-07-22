@@ -55,9 +55,13 @@ public class TeamHud implements HudElement {
     private record Coords(String x, String y, String z, String dim) {
     }
 
+    /**
+     * @param nameColor the player's ping colour, kept separate from {@code pri} because only the
+     *                  name is tinted — the punctuation and dimension stay the configured primary
+     */
     private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width,
                        List<ArmorPiece> armor, int textWidth, String name, Coords coords,
-                       int pri, int sec) {
+                       int pri, int sec, int nameColor) {
     }
 
     /**
@@ -133,13 +137,20 @@ public class TeamHud implements HudElement {
             boolean attacked = ClientState.isUnderAttack(e.id());
             int pri = attacked ? COLOR_ATTACKED : primary;
             int sec = attacked ? COLOR_ATTACKED : secondary;
+            // The name alone carries the player's ping colour, so a row can be matched to the ping
+            // that player left in the world. Everything else on the row keeps the configured
+            // colours: tinting the coordinates too would drown the row in one hue and undo the
+            // primary/secondary distinction. Falls back to primary for anyone not reporting a
+            // colour, and an attack still overrides it — knowing someone needs help outranks
+            // knowing whose ping is whose.
+            int nameColor = attacked ? COLOR_ATTACKED : e.nameColor(primary);
             List<Segment> segments = new ArrayList<>();
             // Trailing spaces only pad toward what follows; without coords the name would
             // otherwise carry a dangling gap before the armor icons.
             boolean showCoords = config.hudShowCoords;
             String name = info.getProfile().name();
             Coords coords = null;
-            segments.add(new Segment(showCoords ? name + "  " : name, pri));
+            segments.add(new Segment(showCoords ? name + "  " : name, nameColor));
             if (showCoords) {
                 String xs = Integer.toString((int) Math.floor(e.x()));
                 String ys = Integer.toString((int) Math.floor(e.y()));
@@ -173,7 +184,7 @@ public class TeamHud implements HudElement {
             }
             int rowWidth = FACE_SIZE + 3 + textWidth + healthWidth + armorWidth;
             rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth, name, coords,
-                    pri, sec));
+                    pri, sec, nameColor));
             maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
@@ -304,7 +315,7 @@ public class TeamHud implements HudElement {
         PlayerFaceExtractor.extractRenderState(graphics, row.skin(), 0,
                 y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
         int nameX = FACE_SIZE + 3;
-        graphics.text(font, row.name(), nameX, textY, row.pri(), true);
+        graphics.text(font, row.name(), nameX, textY, row.nameColor(), true);
 
         Coords c = row.coords();
         if (c == null) {

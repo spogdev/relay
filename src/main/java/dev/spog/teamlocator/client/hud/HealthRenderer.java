@@ -19,12 +19,24 @@ import net.minecraft.resources.Identifier;
 public final class HealthRenderer {
     /** Vanilla's own full-heart sprite, so it matches the player's own HUD exactly. */
     private static final Identifier HEART_SPRITE = Identifier.parse("hud/heart/full");
-    /** The sprite is 9x9 in the atlas. */
-    private static final int SPRITE_SIZE = 9;
-    /** Drawn slightly smaller so it sits inside the row rather than setting the row's height. */
-    private static final int ICON_SIZE = 8;
+    /**
+     * Drawn a touch larger than the row's text so the heart reads as an icon rather than a glyph,
+     * while still not setting the row height (the face and font decide that).
+     */
+    private static final int ICON_SIZE = 10;
     /** Space between the heart and the number. */
-    private static final int ICON_GAP = 2;
+    private static final int ICON_GAP = 3;
+    /**
+     * Lifts the heart off the text baseline. Centring it on the row's content band leaves it
+     * sitting visually low against the digits, because a heart's mass is in its upper half while a
+     * digit's is centred — so it is nudged up to look aligned rather than to measure aligned.
+     *
+     * <p>Held at 1px because the icon is now as tall as the row's content band: at 2 the heart's top
+     * edge lands flush against the bottom of the row above, which reads as the two touching.
+     */
+    private static final int ICON_RAISE = 1;
+    /** Space left after the number, before whatever follows (the armor icons). */
+    private static final int TRAILING_GAP = 2;
 
     private HealthRenderer() {
     }
@@ -50,7 +62,7 @@ public final class HealthRenderer {
         if (!has(entry)) {
             return 0;
         }
-        return ICON_SIZE + ICON_GAP + font.width(text(entry.health()));
+        return ICON_SIZE + ICON_GAP + font.width(text(entry.health())) + TRAILING_GAP;
     }
 
     /**
@@ -63,13 +75,16 @@ public final class HealthRenderer {
         if (!has(entry)) {
             return 0;
         }
-        int iconY = y + (contentHeight - ICON_SIZE) / 2;
+        int iconY = y + (contentHeight - ICON_SIZE) / 2 - ICON_RAISE;
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_SPRITE,
                 x, iconY, ICON_SIZE, ICON_SIZE);
 
         String label = text(entry.health());
         int textY = y + (contentHeight - font.lineHeight) / 2;
-        graphics.text(font, label, x + ICON_SIZE + ICON_GAP, textY, textColor, false);
-        return ICON_SIZE + ICON_GAP + font.width(label);
+        // Shadowed, unlike the rest of the row: the number sits right beside a bright red sprite
+        // and against whatever the world happens to be behind the HUD, so it needs the outline to
+        // stay legible where flat text would not.
+        graphics.text(font, label, x + ICON_SIZE + ICON_GAP, textY, textColor, true);
+        return ICON_SIZE + ICON_GAP + font.width(label) + TRAILING_GAP;
     }
 }

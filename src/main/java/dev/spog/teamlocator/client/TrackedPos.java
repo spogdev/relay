@@ -15,13 +15,29 @@ import java.util.UUID;
  * check, and armor changing must count as a real change there.
  */
 public record TrackedPos(UUID id, double x, double y, double z, Identifier dimension,
-                         List<ArmorPiece> armor) {
+                         List<ArmorPiece> armor, float health, String pingColor) {
+    /** Health value meaning "not reported" — an older client, or one yet to send a position. */
+    public static final float UNKNOWN_HEALTH = -1.0f;
+
     public TrackedPos {
         armor = armor == null ? List.of() : List.copyOf(armor);
     }
 
-    /** Convenience for the common case of a position with no armor attached. */
+    /** Convenience for the common case of a position with no armor, health or colour attached. */
     public TrackedPos(UUID id, double x, double y, double z, Identifier dimension) {
-        this(id, x, y, z, dimension, List.of());
+        this(id, x, y, z, dimension, List.of(), UNKNOWN_HEALTH, null);
+    }
+
+    /** Whether this teammate is reporting health at all. */
+    public boolean hasHealth() {
+        return health >= 0.0f;
+    }
+
+    /**
+     * This teammate's ping colour as ARGB, or {@code fallback} when they report none — an older
+     * client, or one that has not sent a position since connecting.
+     */
+    public int nameColor(int fallback) {
+        return pingColor == null ? fallback : PingPalette.argb(pingColor);
     }
 }

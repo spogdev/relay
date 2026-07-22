@@ -6,7 +6,9 @@
   "client": [
     "client.MinimapElementWorldRendererHandlerMixin",
     "client.PlayerTrackerMinimapElementRendererMixin",
-    "client.PlayerTrackerMapElementRendererMixin"
+    "client.PlayerTrackerMapElementRendererMixin",
+    "client.ChatInterceptMixin",
+    "client.WaypointShareOptionMixin"
   ],
   "injectors": {
     "defaultRequire": 1

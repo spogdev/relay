@@ -33,6 +33,11 @@ public final class Session {
 
     // Last reported position, so a late-joining viewer can be sent an immediate snapshot.
     public volatile double x, y, z;
+    /**
+     * Last reported health in half-hearts, or -1 when the client has not sent any. Negative rather
+     * than 0 as the "unknown" marker, since 0 is a real value meaning a dead player.
+     */
+    public volatile float health = -1.0f;
     public volatile String dimension = "minecraft:overworld";
     public volatile boolean hasPosition;
 

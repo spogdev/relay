@@ -97,6 +97,12 @@ public final class Messages {
         public double y;
         public double z;
         public String dimension;
+        /**
+         * Health in half-hearts. Carried here rather than in its own message because it changes on
+         * the same cadence as position and is gated by the same sharing trust; a separate frame
+         * would double the chattiest path in the protocol for nothing. Absent from older clients.
+         */
+        public float health;
     }
 
     /** "I'm being attacked." The relay fans it out to mutual-trust peers who haven't blocked us. */
@@ -429,15 +435,22 @@ public final class Messages {
              * armor, currently wearing none" stay distinguishable on the wire.
              */
             public List<ArmorPiece> armor;
+            /**
+             * Health in half-hearts, or -1 when unknown — an older client that never reports it, or
+             * one that has not sent a position yet. Negative rather than 0 because 0 is a real
+             * value meaning dead, and a HUD that renders "unknown" as "dead" would be alarming.
+             */
+            public float health;
 
             public Entry(String id, double x, double y, double z, String dimension,
-                         List<ArmorPiece> armor) {
+                         List<ArmorPiece> armor, float health) {
                 this.id = id;
                 this.x = x;
                 this.y = y;
                 this.z = z;
                 this.dimension = dimension;
                 this.armor = armor;
+                this.health = health;
             }
         }
     }

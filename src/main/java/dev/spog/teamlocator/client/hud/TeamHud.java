@@ -165,7 +165,12 @@ public class TeamHud implements HudElement {
             List<ArmorPiece> armor = displayedArmor(e.armor());
             int armorWidth = armor.isEmpty()
                     ? 0 : ARMOR_GAP + ArmorRenderer.width(armor, ARMOR_ICON_SCALE);
-            int rowWidth = FACE_SIZE + 3 + textWidth + armorWidth;
+            // Health sits with the armor icons: same right-hand cluster, same alignment behaviour.
+            int healthWidth = config.hudShowHealth ? HealthRenderer.width(font, e) : 0;
+            if (healthWidth > 0) {
+                healthWidth += ARMOR_GAP;
+            }
+            int rowWidth = FACE_SIZE + 3 + textWidth + healthWidth + armorWidth;
             rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth, name, coords,
                     pri, sec));
             maxWidth = Math.max(maxWidth, rowWidth);
@@ -232,6 +237,11 @@ public class TeamHud implements HudElement {
                 graphics.text(mc.font, seg.text(), x, textY, seg.color(), true);
                 x += mc.font.width(seg.text());
             }
+            // Health draws whether or not armor does: a teammate may share one and not the other.
+            if (config.hudShowHealth && HealthRenderer.has(row.entry())) {
+                x += ARMOR_GAP + HealthRenderer.render(graphics, mc.font, row.entry(),
+                        x + ARMOR_GAP, y, contentHeight, row.sec());
+            }
             if (!row.armor().isEmpty()) {
                 // Centered on the same band as the head and text, nudged 1px up like the head —
                 // it reads better against the font baseline.
@@ -267,7 +277,9 @@ public class TeamHud implements HudElement {
             }
             if (!row.armor().isEmpty()) {
                 maxArmorW = Math.max(maxArmorW,
-                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE));
+                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE)
+                                + (config.hudShowHealth
+                                        ? ARMOR_GAP + HealthRenderer.width(font, row.entry()) : 0));
             }
         }
         int total = FACE_SIZE + 3 + nameColW;
@@ -317,6 +329,12 @@ public class TeamHud implements HudElement {
             end += font.width(c.dim());
             graphics.text(font, ")", end, textY, row.pri(), true);
             end += font.width(")");
+        }
+        // Health is drawn independently of armor: a teammate sharing health but no armor must
+        // still show it, so this sits outside the armor guard below.
+        if (config.hudShowHealth && HealthRenderer.has(row.entry())) {
+            end += ARMOR_GAP + HealthRenderer.render(graphics, font, row.entry(),
+                    end + ARMOR_GAP, y, contentHeight, row.sec());
         }
         if (!row.armor().isEmpty()) {
             ArmorRenderer.render(graphics, row.armor(), end + ARMOR_GAP,

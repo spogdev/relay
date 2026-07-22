@@ -15,13 +15,21 @@ import java.util.UUID;
  * check, and armor changing must count as a real change there.
  */
 public record TrackedPos(UUID id, double x, double y, double z, Identifier dimension,
-                         List<ArmorPiece> armor) {
+                         List<ArmorPiece> armor, float health) {
+    /** Health value meaning "not reported" — an older client, or one yet to send a position. */
+    public static final float UNKNOWN_HEALTH = -1.0f;
+
     public TrackedPos {
         armor = armor == null ? List.of() : List.copyOf(armor);
     }
 
-    /** Convenience for the common case of a position with no armor attached. */
+    /** Convenience for the common case of a position with no armor or health attached. */
     public TrackedPos(UUID id, double x, double y, double z, Identifier dimension) {
-        this(id, x, y, z, dimension, List.of());
+        this(id, x, y, z, dimension, List.of(), UNKNOWN_HEALTH);
+    }
+
+    /** Whether this teammate is reporting health at all. */
+    public boolean hasHealth() {
+        return health >= 0.0f;
     }
 }

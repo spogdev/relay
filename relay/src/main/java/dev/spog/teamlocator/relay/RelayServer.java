@@ -426,6 +426,11 @@ public final class RelayServer extends WebSocketServer {
         session.z = obj.get("z").getAsDouble();
         session.dimension = obj.has("dimension")
                 ? obj.get("dimension").getAsString() : "minecraft:overworld";
+        // Health rides the position update rather than a message of its own: it changes on the
+        // same cadence, is gated by the same sharing trust, and an extra frame per tick would
+        // double the chattiest path in the protocol for no benefit. Absent from older clients,
+        // which the -1 default leaves as "unknown".
+        session.health = obj.has("health") ? obj.get("health").getAsFloat() : -1.0f;
         session.hasPosition = true;
         router.broadcastPosition(session);
     }

@@ -309,9 +309,10 @@ public final class RelayClient {
         return arr;
     }
 
-    public void sendPosition(double x, double y, double z, String dimension) {
+    public void sendPosition(double x, double y, double z, String dimension, float health) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "position-update");
+        o.addProperty("health", health);
         o.addProperty("x", x);
         o.addProperty("y", y);
         o.addProperty("z", z);
@@ -822,7 +823,10 @@ public final class RelayClient {
                         e.get("y").getAsDouble(),
                         e.get("z").getAsDouble(),
                         dim != null ? dim : Identifier.parse("minecraft:overworld"),
-                        parseArmor(e)));
+                        parseArmor(e),
+                        // Absent from an older client, and from a relay that predates health.
+                        e.has("health") ? e.get("health").getAsFloat()
+                                : TrackedPos.UNKNOWN_HEALTH));
             } catch (RuntimeException ex) {
                 TeamLocatorConstants.LOGGER.debug("Bad snapshot entry: {}", ex.toString());
             }

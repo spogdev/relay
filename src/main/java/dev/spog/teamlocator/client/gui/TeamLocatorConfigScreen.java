@@ -409,6 +409,15 @@ public class TeamLocatorConfigScreen extends Screen {
                             config.save();
                         }));
 
+        // HUD row 5: teammate health.
+        addScrolled(sy(152), described(CycleButton.onOffBuilder(config.hudShowHealth)
+                .create(cx - 205, sy(152), 200, 20,
+                        Component.translatable("relay.config.hud_show_health"),
+                        (btn, value) -> {
+                            config.hudShowHealth = value;
+                            config.save();
+                        }), "relay.config.hud_show_health.desc"));
+
         // --- Alerts section ---
         // Row 1: the master switch first, since it gates everything below it, with the cross-server
         // toggle beside it. Stored inverted (hideAllAlerts) but shown as "Enable Alerts", so the
@@ -978,16 +987,20 @@ public class TeamLocatorConfigScreen extends Screen {
     /**
      * Scroll the current page. Only the area between the pinned bars scrolls.
      *
-     * <p>Sliders swallow the wheel to change their value, so this only sees notches not consumed by
-     * a widget under the cursor; that is vanilla's own convention.
+     * <p>The page takes the wheel <b>before</b> any widget under the cursor. Deferring to
+     * {@code super} first — vanilla's convention, and what this used to do — meant scrolling past a
+     * toggle or slider fed the notch to that widget instead: the cursor happened to be over a
+     * control, so scrolling the page silently changed a setting. On a page that is mostly controls
+     * there is nowhere safe to put the cursor, which makes the wheel actively dangerous.
+     *
+     * <p>Widgets still get the wheel when the page cannot use it (already at an end, or the cursor
+     * is outside the scrolling area), so a slider is still adjustable by wheel where that cannot be
+     * confused with scrolling.
      */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
-            return true;
-        }
         if (maxScroll() == 0 || mouseY < TAB_BAR_H || mouseY > viewportBottom()) {
-            return false;
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         int next = Math.max(0, Math.min(scroll - (int) Math.signum(scrollY) * SCROLL_STEP,
                 maxScroll()));

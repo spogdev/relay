@@ -191,6 +191,11 @@ public class TeamConfig {
     /** HUD text colors as "#RRGGBB": primary = names & punctuation, secondary = numbers & dimension. */
     public String hudPrimaryColor = "#FFFFFF";
     public String hudSecondaryColor = "#AAAAAA";
+    /**
+     * Show each teammate's health on their HUD row. Their client must be new enough to report it;
+     * an older one shows nothing rather than a wrong number.
+     */
+    public boolean hudShowHealth = true;
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */

@@ -276,7 +276,10 @@ public class TeamLocatorClient implements ClientModInitializer {
         }
         RELAY.sendPosition(
                 player.getX(), player.getY(), player.getZ(),
-                player.level().dimension().identifier().toString());
+                player.level().dimension().identifier().toString(),
+                // Health rides the position update; it is gated by the same sharing trust, so a
+                // player who shares no position shares no health either.
+                player.getHealth());
         // Same gate and cadence as the position, but the reporter only actually sends when a piece
         // changes, so a geared player standing still costs nothing.
         ARMOR_REPORTER.tick(player, CONFIG.shareArmor);

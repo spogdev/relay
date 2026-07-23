@@ -501,7 +501,7 @@ public final class RelayClient {
      * Shortest gap between two chimes from the same player. Purely an anti-spam floor: a teammate
      * placing pings faster than this is doing it deliberately, and one sound covers the burst.
      */
-    private static final long PING_SOUND_COOLDOWN_MILLIS = 1500L;
+    private static final long PING_SOUND_COOLDOWN_MILLIS = 750L;
 
     /** When each player last made us chime, so a burst of pings does not machine-gun the sound. */
     private final java.util.Map<UUID, Long> lastPingSoundAt =

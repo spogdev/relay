@@ -76,9 +76,23 @@ public class PingColorButton extends ButtonWidget {
 
     @Override
     protected void drawIcon(DrawContext graphics, int mouseX, int mouseY, float delta) {
-        // drawIcon is the per-frame hook layered over the button after PressableWidget has already
-        // drawn vanilla's own sprite and label, so this only has to add the swatch on top — no need
-        // to redraw the background or text as the 26.1 extractContents did.
+        // On 1.21.11, PressableWidget.renderWidget does NOTHING but call this method (plus setCursor):
+        // it does not draw the button sprite or the label itself — vanilla's own drawIcon is what
+        // paints them. So this override is responsible for the WHOLE button, not just a decoration
+        // layered on top. (On 26.1 renderWidget drew the sprite and label first and drawIcon only
+        // added extras; that assumption was carried over in the port and left the button blank.)
+        //
+        // Draw vanilla's background sprite (the correct hovered/disabled texture), then the label,
+        // then the colour swatch on top.
+        drawButton(graphics);
+
+        MinecraftClient mc = MinecraftClient.getInstance();
+        // Vanilla's own button-label colours: near-white when active, grey when disabled. Fully
+        // opaque — this screen never fades its widgets, so there is no alpha to thread through.
+        int labelColor = active ? 0xFFFFFFFF : 0xFFA0A0A0;
+        graphics.drawCenteredTextWithShadow(mc.textRenderer, getMessage(),
+                getX() + width / 2, getY() + (height - 8) / 2, labelColor);
+
         // Swatch at the right-hand end: white border, chosen colour inside — the same treatment the
         // HUD colour fields use, so the two read as the same kind of control.
         int x = getX() + width - SWATCH_MARGIN - SWATCH_SIZE;

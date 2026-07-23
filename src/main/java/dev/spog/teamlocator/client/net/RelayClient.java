@@ -280,7 +280,14 @@ public final class RelayClient {
             RelayToasts.connectionLost();
         }
         long delay = backoffMs;
-        backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+        // Escalate for next time, but never clamp BELOW the rate-limit window while we are inside it.
+        // MAX_BACKOFF_MS (15s) is smaller than RATE_LIMIT_BACKOFF_MS (20s), so the ordinary cap would
+        // pull a rate-limit backoff back down to 15s — still inside authlib's ~15s joinServer window —
+        // and the very next attempt would be refused again, re-arming the limiter forever. That loop
+        // is what kept the limiter drained and blocked vanilla's own joinServer. While rate-limited,
+        // hold the longer floor so the retry actually lands past the window.
+        long cap = rateLimitedRecently() ? RATE_LIMIT_BACKOFF_MS : MAX_BACKOFF_MS;
+        backoffMs = Math.min(Math.max(backoffMs * 2, delay), cap);
         executor.schedule(this::open, delay, TimeUnit.MILLISECONDS);
     }
 
@@ -748,6 +755,22 @@ public final class RelayClient {
         executor.execute(() -> {
             if (gen != attempt.get()) {
                 return; // superseded while queued; don't burn a Mojang call for a dead socket
+            }
+            // Don't even attempt the join while inside Mojang's rate-limit window. authlib shares ONE
+            // limiter between our joinServer and vanilla's — vanilla calls it to join a real server —
+            // so a join fired here that gets refused doesn't just fail our relay: it re-arms the
+            // limiter right when the player is trying to connect to a server, blocking THEM. Skipping
+            // the call and backing off keeps the relay entirely out of vanilla's way; the reconnect
+            // timer tries again once the window has passed.
+            if (rateLimitedRecently()) {
+                TeamLocatorConstants.LOGGER.debug(
+                        "Skipping relay joinServer: inside Mojang's rate-limit window, yielding to vanilla");
+                WebSocket ws = socket;
+                if (ws != null) {
+                    abortQuietly(ws);
+                }
+                scheduleReconnect(gen);
+                return;
             }
             try {
                 MinecraftClient mc = MinecraftClient.getInstance();

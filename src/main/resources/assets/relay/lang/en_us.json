@@ -22,7 +22,7 @@
   "relay.config.hud_durability.desc": "How each armor piece's remaining durability is shown on the HUD",
   "relay.config.hud_durability.bar": "Bar",
   "relay.config.hud_durability.number_only": "Number Only",
-  "relay.config.hud_durability.next_to": "Next To",
+  "relay.config.hud_durability.both": "Both",
   "relay.config.hud_show_health.desc": "Show each teammate's health on the HUD, if their client reports it",
   "relay.config.cross_server_pings": "Cross-Server Alerts",
   "relay.config.enable_alerts": "Enable Alerts",

@@ -35,7 +35,7 @@ final class ArmorRenderer {
     static final int ICON_SIZE = 16;
     /** Gap between adjacent armor icons. */
     static final int ICON_GAP = 1;
-    /** Gap between an icon and its number in {@link DurabilityDisplay#NEXT_TO}. */
+    /** Gap between an icon and its number in {@link DurabilityDisplay#BOTH}. */
     private static final int NUMBER_GAP = 2;
     /**
      * Gap between one piece and the next in the modes that end in a number.
@@ -105,7 +105,7 @@ final class ArmorRenderer {
             String label = durabilityText(piece);
             total += switch (mode) {
                 case NUMBER_ONLY -> font.getWidth(label) + NUMBER_PIECE_GAP;
-                case NEXT_TO -> drawn + (label.isEmpty() ? 0 : NUMBER_GAP + font.getWidth(label))
+                case BOTH -> drawn + (label.isEmpty() ? 0 : NUMBER_GAP + font.getWidth(label))
                         + NUMBER_PIECE_GAP;
                 default -> drawn + ICON_GAP;
             };
@@ -128,9 +128,11 @@ final class ArmorRenderer {
      * Draw the pieces left to right starting at {@code x}, vertically centered on {@code centerY},
      * showing durability in the requested style.
      *
-     * <p>Only {@link DurabilityDisplay#BAR} runs vanilla's decoration pass. The number modes
-     * deliberately suppress it: a bar and a figure saying the same thing in the same 16px square is
-     * noise, and the whole point of asking for a number is that the bar was not precise enough.
+     * <p>{@link DurabilityDisplay#BAR} and {@link DurabilityDisplay#BOTH} run vanilla's decoration
+     * pass. {@link DurabilityDisplay#NUMBER_ONLY} suppresses it — a bar and a figure in the same
+     * 16px square is noise when the whole point of the figure was that the bar wasn't precise enough
+     * — whereas BOTH is for players who explicitly want the bar's at-a-glance colour and the exact
+     * count side by side.
      *
      * @return the x just past the last piece
      */
@@ -161,14 +163,15 @@ final class ArmorRenderer {
             pose.translate(x, y);
             pose.scale(iconScale, iconScale);
             graphics.drawItem(stack, 0, 0);
-            if (style == DurabilityDisplay.BAR) {
+            if (style == DurabilityDisplay.BAR || style == DurabilityDisplay.BOTH) {
                 // The inventory's decoration pass: durability bar (and cooldown etc.), vanilla's own.
+                // BOTH keeps this bar and adds the figure beside the icon below.
                 graphics.drawStackOverlay(mc.textRenderer, stack, 0, 0);
             }
             pose.popMatrix();
             x += drawn;
 
-            if (style == DurabilityDisplay.NEXT_TO) {
+            if (style == DurabilityDisplay.BOTH) {
                 if (!label.isEmpty()) {
                     int textY = centerY - font.fontHeight / 2;
                     graphics.drawText(font, label, x + NUMBER_GAP, textY,

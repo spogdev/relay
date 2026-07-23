@@ -46,11 +46,12 @@ public class TeamConfig {
     /**
      * How a piece's remaining durability is shown.
      *
-     * <p>{@link #BAR} is vanilla's inventory bar under the icon. The other two trade that for a
-     * figure, which is precise where the bar is only approximate — at a glance a bar cannot tell
-     * you whether a chestplate has 40 hits left or 4.
+     * <p>{@link #BAR} is vanilla's inventory bar under the icon. {@link #NUMBER_ONLY} trades that for
+     * a figure, which is precise where the bar is only approximate — at a glance a bar cannot tell
+     * you whether a chestplate has 40 hits left or 4. {@link #BOTH} keeps the bar on the icon and
+     * adds the figure beside it, for players who want the at-a-glance colour and the exact count.
      */
-    public enum DurabilityDisplay { BAR, NUMBER_ONLY, NEXT_TO }
+    public enum DurabilityDisplay { BAR, NUMBER_ONLY, BOTH }
 
     /** A named trust list (a set of entries). */
     public static class TrustList {

@@ -466,7 +466,7 @@ public class TeamLocatorConfigScreen extends Screen {
                         config.hudDurabilityDisplay)
                 .values(TeamConfig.DurabilityDisplay.BAR,
                         TeamConfig.DurabilityDisplay.NUMBER_ONLY,
-                        TeamConfig.DurabilityDisplay.NEXT_TO)
+                        TeamConfig.DurabilityDisplay.BOTH)
                 .build(cx + 5, sy(HUD_ROW_5_Y), 200, 20,
                         Text.translatable("relay.config.hud_durability"),
                         (btn, value) -> {
@@ -1008,7 +1008,7 @@ public class TeamLocatorConfigScreen extends Screen {
         String key = switch (display) {
             case BAR -> "bar";
             case NUMBER_ONLY -> "number_only";
-            case NEXT_TO -> "next_to";
+            case BOTH -> "both";
         };
         return Text.translatable("relay.config.hud_durability." + key);
     }

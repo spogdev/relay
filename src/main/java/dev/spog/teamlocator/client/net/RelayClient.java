@@ -118,6 +118,12 @@ public final class RelayClient {
      */
     private volatile long lastRateLimitMs = 0L;
     /**
+     * When the player last joined a Minecraft server, so our first relay auth after a join yields
+     * the shared Mojang limiter to vanilla instead of racing it. 0 means "never". See
+     * {@link #noteServerJoin()} and the guard in {@link #onChallenge}.
+     */
+    private volatile long lastServerJoinMs = 0L;
+    /**
      * When each player's last accepted map ping arrived, for the local per-player ping cooldown.
      * Bounded by the number of players you have ever seen ping in a session, so it needs no eviction.
      */
@@ -280,13 +286,14 @@ public final class RelayClient {
             RelayToasts.connectionLost();
         }
         long delay = backoffMs;
-        // Escalate for next time, but never clamp BELOW the rate-limit window while we are inside it.
-        // MAX_BACKOFF_MS (15s) is smaller than RATE_LIMIT_BACKOFF_MS (20s), so the ordinary cap would
-        // pull a rate-limit backoff back down to 15s — still inside authlib's ~15s joinServer window —
-        // and the very next attempt would be refused again, re-arming the limiter forever. That loop
-        // is what kept the limiter drained and blocked vanilla's own joinServer. While rate-limited,
-        // hold the longer floor so the retry actually lands past the window.
-        long cap = rateLimitedRecently() ? RATE_LIMIT_BACKOFF_MS : MAX_BACKOFF_MS;
+        // Escalate for next time, but never clamp BELOW the shared-limiter window while we are inside
+        // it. MAX_BACKOFF_MS (15s) is smaller than RATE_LIMIT_BACKOFF_MS (20s), so the ordinary cap
+        // would pull a yield backoff back down to 15s — still inside authlib's ~15s joinServer window
+        // — and the very next attempt would be refused again, re-arming the limiter forever. That loop
+        // is what kept the limiter drained and blocked vanilla's own joinServer. While we are yielding
+        // to vanilla (recently rate-limited, or a server join just fired), hold the longer floor so
+        // the retry actually lands past the window.
+        long cap = shouldYieldJoinServer() ? RATE_LIMIT_BACKOFF_MS : MAX_BACKOFF_MS;
         backoffMs = Math.min(Math.max(backoffMs * 2, delay), cap);
         executor.schedule(this::open, delay, TimeUnit.MILLISECONDS);
     }
@@ -756,19 +763,26 @@ public final class RelayClient {
             if (gen != attempt.get()) {
                 return; // superseded while queued; don't burn a Mojang call for a dead socket
             }
-            // Don't even attempt the join while inside Mojang's rate-limit window. authlib shares ONE
-            // limiter between our joinServer and vanilla's — vanilla calls it to join a real server —
-            // so a join fired here that gets refused doesn't just fail our relay: it re-arms the
-            // limiter right when the player is trying to connect to a server, blocking THEM. Skipping
-            // the call and backing off keeps the relay entirely out of vanilla's way; the reconnect
-            // timer tries again once the window has passed.
-            if (rateLimitedRecently()) {
+            // Don't even attempt the join while vanilla may still hold Mojang's shared limiter.
+            // authlib shares ONE limiter between our joinServer and vanilla's — vanilla calls it to
+            // join a real server — so a join fired here that gets refused doesn't just fail our relay:
+            // it re-arms the limiter right when the player is trying to connect to a server, blocking
+            // THEM. That covers two cases: Mojang already refused us recently, AND the player just
+            // joined a server (our connect fires on the same tick as vanilla's join). Skipping the
+            // call and backing off keeps the relay entirely out of vanilla's way; the reconnect timer
+            // tries again once the window has passed.
+            if (shouldYieldJoinServer()) {
                 TeamLocatorConstants.LOGGER.debug(
-                        "Skipping relay joinServer: inside Mojang's rate-limit window, yielding to vanilla");
+                        "Skipping relay joinServer: yielding Mojang's shared limiter to vanilla");
                 WebSocket ws = socket;
                 if (ws != null) {
                     abortQuietly(ws);
                 }
+                // Schedule the retry PAST the window, not on the 1s starting backoff. Otherwise the
+                // next attempt fires while we are still yielding, re-connects, gets here again, and
+                // loops the WebSocket handshake every second for the whole 20s — harmless (no
+                // joinServer is called) but pointless churn. One retry once the window clears is enough.
+                backoffMs = Math.max(backoffMs, remainingYieldMs());
                 scheduleReconnect(gen);
                 return;
             }
@@ -815,6 +829,51 @@ public final class RelayClient {
     private boolean rateLimitedRecently() {
         long at = lastRateLimitMs;
         return at != 0L && System.currentTimeMillis() - at < RATE_LIMIT_BACKOFF_MS;
+    }
+
+    /**
+     * Record that the player just joined a Minecraft server. Vanilla calls Mojang's {@code joinServer}
+     * during that join, and authlib shares ONE rate limiter (~one call per 15s) between vanilla and
+     * us — so if our relay auth fires its own joinServer in the same window, one of the two is refused
+     * with "RateLimiter disallowed request". Whichever loses re-arms the limiter, and if it's vanilla
+     * that loses, the player's own server connection fails.
+     *
+     * <p>Called from the JOIN handler, which runs on the very tick the player enters the world —
+     * moments after vanilla's join call. Our first relay auth after this yields the limiter to vanilla
+     * (see {@link #onChallenge}); pings resume a few seconds later, and the player's join is never at
+     * risk.
+     */
+    public void noteServerJoin() {
+        lastServerJoinMs = System.currentTimeMillis();
+    }
+
+    /** Whether a server join happened recently enough that vanilla may still hold the shared limiter. */
+    private boolean serverJoinRecently() {
+        long at = lastServerJoinMs;
+        return at != 0L && System.currentTimeMillis() - at < RATE_LIMIT_BACKOFF_MS;
+    }
+
+    /**
+     * Whether we should skip our joinServer for now and let vanilla have the shared Mojang limiter:
+     * either Mojang already refused us recently, or the player just joined a server and vanilla's own
+     * join is likely still inside the limiter's window.
+     */
+    private boolean shouldYieldJoinServer() {
+        return rateLimitedRecently() || serverJoinRecently();
+    }
+
+    /**
+     * Milliseconds until the shared-limiter window clears for whichever reason we are yielding, plus
+     * a small margin. Used to schedule one retry just past the window rather than churning inside it.
+     * Never below {@link #MAX_BACKOFF_MS} so a stale clock or an already-expired timestamp still backs
+     * off sensibly rather than retrying immediately.
+     */
+    private long remainingYieldMs() {
+        long now = System.currentTimeMillis();
+        long newest = Math.max(lastRateLimitMs, lastServerJoinMs);
+        long elapsed = newest == 0L ? RATE_LIMIT_BACKOFF_MS : now - newest;
+        long remaining = RATE_LIMIT_BACKOFF_MS - elapsed + 1_000L; // +1s margin past the window
+        return Math.max(MAX_BACKOFF_MS, remaining);
     }
 
     private static boolean isRateLimited(Throwable e) {

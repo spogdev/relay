@@ -113,6 +113,11 @@ public class TeamLocatorClient implements ClientModInitializer {
             // Restore this server's remembered active list before connecting, so the very first
             // trust push already carries the right set.
             CONFIG.onScopeChanged();
+            // Vanilla just called Mojang's joinServer to enter this world, and authlib shares one
+            // rate limiter between that and our relay auth. Tell the relay so its first auth here
+            // yields the limiter to vanilla rather than racing it — otherwise one of the two gets
+            // "RateLimiter disallowed request", and if vanilla loses, this very join can fail.
+            RELAY.noteServerJoin();
             connectRelay();
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {

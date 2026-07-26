@@ -111,6 +111,14 @@ public final class RelayClient {
     private volatile boolean active;
     private volatile String url = "";
     private volatile String mcServerKey = "";
+    /**
+     * The account UUID the live socket authenticated as, or null when not authenticated. Lets a
+     * server transfer reuse the existing verified connection (a cheap {@code set-scope}) instead of a
+     * full re-auth — but only while the player is still that same account. If they swapped accounts
+     * from the menu (some mods allow this), this no longer matches and a full re-auth is forced, so
+     * the relay never keeps attributing the connection to an account the player no longer controls.
+     */
+    private volatile UUID authedUuid;
     private volatile long backoffMs = 1_000L;
     /**
      * When Mojang's rate limiter last refused a joinServer, so a successful auth immediately after
@@ -192,10 +200,63 @@ public final class RelayClient {
         executor.execute(this::open);
     }
 
+    /**
+     * Move to a new Minecraft-server scope, reusing the live authenticated socket when we can rather
+     * than tearing it down and re-authenticating.
+     *
+     * <p>This is the fix for the shared-limiter problem at its root: a client that transfers between
+     * servers on the same account keeps one verified connection and just tells the relay "I moved"
+     * ({@code set-scope}). It never calls Mojang's joinServer again, so it can no longer race
+     * vanilla's own join for authlib's single rate-limit token.
+     *
+     * <p>Falls back to a full {@link #connect} when reuse is not safe or not possible:
+     * <ul>
+     *   <li>the relay URL changed — a different relay must be handshaked from scratch;</li>
+     *   <li>we are not currently authenticated — there is no socket to re-scope;</li>
+     *   <li>the account changed since we authed (an account-switcher mod) — the relay must re-verify
+     *       the new identity with Mojang, and reusing the socket would keep us attributed to an
+     *       account the player no longer controls.</li>
+     * </ul>
+     * The account-change fallback does re-auth, and so does touch the limiter — but an account swap
+     * happens at the menu, not on a server join, so its joinServer does not collide with vanilla's.
+     */
+    public void setScope(String relayUrl, String serverKey) {
+        if (relayUrl == null || relayUrl.isBlank() || serverKey == null) {
+            disconnect();
+            return;
+        }
+        String trimmedUrl = relayUrl.trim();
+        UUID current = MinecraftClient.getInstance().getSession().getUuidOrNull();
+        boolean canReuse = isReady()
+                && trimmedUrl.equals(this.url)
+                && authedUuid != null && authedUuid.equals(current);
+        if (!canReuse) {
+            // No live same-account socket on the same relay: a full (re-)connect is the only option.
+            connect(relayUrl, serverKey);
+            return;
+        }
+        if (serverKey.equals(this.mcServerKey)) {
+            return; // already scoped here; nothing to do (e.g. a redundant JOIN for the same server)
+        }
+        this.mcServerKey = serverKey;
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "set-scope");
+        o.addProperty("mcServer", serverKey);
+        sendJson(o);
+        // Re-push the state the relay would otherwise only relearn on a fresh auth. The socket did
+        // not drop, so the relay still holds our trust and armor — but the client's active per-server
+        // sharing list is scoped and has just changed with the server, so trust must be re-sent for
+        // the new scope. Armor is only sent on change, so nudge the reporter to resend it too. The
+        // new scope's position snapshot comes back from the relay in response to set-scope.
+        sendTrust(sharingSet.get(), alertSet.get());
+        onReauthenticated.run();
+    }
+
     /** Drop the connection and stop reconnecting (player left the server or changed the URL). */
     public void disconnect() {
         active = false;
         authenticated = false;
+        authedUuid = null;
         relayAdmin = false;
         // Invalidate every in-flight attempt: a handshake completing after this must abort itself,
         // not install a socket the teardown could no longer see.
@@ -274,6 +335,7 @@ public final class RelayClient {
         }
         boolean wasAuthenticated = authenticated;
         authenticated = false;
+        authedUuid = null; // the socket is gone; a transfer now needs a full re-auth, not set-scope
         socket = null;
         if (!active) {
             return;
@@ -926,6 +988,10 @@ public final class RelayClient {
     private void onAuthOk(boolean admin) {
         authenticated = true;
         relayAdmin = admin;
+        // Remember which account this socket is verified as, so a later server transfer can reuse it
+        // (set-scope, no re-auth) only while the player is still that account. mc.getSession() is who
+        // we just called joinServer as, which is exactly what the relay verified.
+        authedUuid = MinecraftClient.getInstance().getSession().getUuidOrNull();
         // Remember it for next session's command tree, which is built before we get here. Only
         // write when it actually changed, so a normal connect doesn't touch the config file.
         TeamConfig config = TeamLocatorClient.CONFIG;

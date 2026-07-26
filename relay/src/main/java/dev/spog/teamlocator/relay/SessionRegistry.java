@@ -48,6 +48,23 @@ public final class SessionRegistry {
                 .put(uuid, session);
     }
 
+    /**
+     * Move an authenticated session to a new scope, re-filing it between the scope buckets so
+     * {@link #sessionsInScope} routes it with the right world's peers. Without this, mutating
+     * {@link Session#scope()} alone would leave the session indexed under its old scope and
+     * effectively invisible on the new one. No-op for an unauthenticated session (it is not in any
+     * scope bucket yet) or when the scope is unchanged.
+     */
+    public void rescope(Session session, String newScope) {
+        if (!session.authenticated() || newScope == null || newScope.equals(session.scope())) {
+            return;
+        }
+        removeFromScope(session);
+        session.setScope(newScope);
+        byScope.computeIfAbsent(newScope, k -> new ConcurrentHashMap<>())
+                .put(session.uuid(), session);
+    }
+
     public void close(WebSocket conn) {
         Session s = byConn.remove(conn);
         if (s == null) {

@@ -132,6 +132,7 @@ public final class RelayServer extends WebSocketServer {
             }
 
             switch (type) {
+                case "set-scope" -> handleSetScope(session, obj);
                 case "trust-update" -> handleTrustUpdate(session, obj);
                 case "block-update" -> router.setBlocked(session.uuid(), parseUuids(obj, "blocked"));
                 case "position-update" -> handlePosition(session, obj);
@@ -226,6 +227,33 @@ public final class RelayServer extends WebSocketServer {
                 session.conn().close();
             }
         });
+    }
+
+    /**
+     * Move an authenticated session to the scope of the server the client just transferred to,
+     * without a new Mojang handshake. This is the whole point of the message: a client that keeps its
+     * one verified socket across server transfers never calls joinServer again, so it can no longer
+     * race vanilla for authlib's shared rate limiter on join.
+     *
+     * <p>Re-files the session between scope buckets ({@link SessionRegistry#rescope}) so routing
+     * follows it, then sends a fresh snapshot for the new scope so the HUD repopulates with the new
+     * world's teammates immediately — the same courtesy a full reconnect got via
+     * {@link RelayRouter#sendInitialSnapshot}. The session's old-server position is cleared inside
+     * rescope, so stale coordinates never leak into the new scope; the client's next position update
+     * refills it. Identity is never touched.
+     */
+    private void handleSetScope(Session session, JsonObject obj) {
+        if (!obj.has("mcServer")) {
+            return; // nothing to move to; ignore rather than disturb the live session
+        }
+        String scope = normalizeScope(obj.get("mcServer").getAsString());
+        if (scope.equals(session.scope())) {
+            return; // already here (e.g. a reconnect that landed on the same server)
+        }
+        registry.rescope(session, scope);
+        router.sendInitialSnapshot(session);
+        LOG.info("{} ({}) re-scoped to '{}' without re-auth",
+                session.uuid(), session.profileName(), session.scope());
     }
 
     private void fail(Session session, String reason) {

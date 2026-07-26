@@ -244,6 +244,14 @@ class RelayRoutingTest {
             send(GSON.toJson(o));
         }
 
+        /** Transfer to a new server without re-authenticating (the set-scope fast path). */
+        void sendSetScope(String mcServer) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "set-scope");
+            o.addProperty("mcServer", mcServer);
+            send(GSON.toJson(o));
+        }
+
         /** Report armor; passing no pieces is the retraction an opted-out client sends. */
         void sendArmor(String... slotItemPairs) {
             JsonObject o = new JsonObject();
@@ -879,5 +887,119 @@ class RelayRoutingTest {
 
         assertFalse(bob.sawWaypointFrom(alice),
                 "a mute refuses everything from that player, waypoints included");
+    }
+
+    @Test
+    void setScopeMovesAPlayerToTheNewServersRouting() throws Exception {
+        // Alice starts on server A with Bob, then transfers to server B where Carol is — without
+        // re-authenticating. She must stop routing with Bob and start routing with Carol.
+        TestClient alice = connect("alice", "a.example.net");
+        TestClient bob = connect("bob", "a.example.net");
+        TestClient carol = connect("carol", "b.example.net");
+
+        // Full mutual trust all round, so only scope decides who sees whom.
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        carol.sendTrust("alice");
+        settle();
+
+        // On server A, Bob sees Alice and Carol (other server) does not.
+        CountDownLatch bobSees = bob.expect("snapshot");
+        alice.sendPosition(1, 2, 3, "minecraft:overworld");
+        assertTrue(bobSees.await(5, TimeUnit.SECONDS));
+        assertTrue(bob.sawPositionOf(alice), "precondition: Bob shares server A with Alice");
+        assertFalse(carol.sawPositionOf(alice), "precondition: Carol is on another server");
+
+        // Alice transfers to server B. No re-auth: same socket, just a set-scope frame.
+        alice.sendSetScope("b.example.net");
+        settle();
+
+        // Now her position must reach Carol (same server B) and no longer reach Bob (server A).
+        CountDownLatch carolSees = carol.expect("snapshot");
+        alice.sendPosition(4, 5, 6, "minecraft:overworld");
+        assertTrue(carolSees.await(5, TimeUnit.SECONDS),
+                "after re-scoping Alice must route with the new server's teammates");
+        assertTrue(carol.sawPositionOf(alice), "Carol shares server B with Alice now");
+
+        // Bob must not have received the post-transfer position (4,5,6). His only snapshot of Alice
+        // is the pre-transfer one.
+        synchronized (bob.snapshots) {
+            boolean sawPostTransfer = bob.snapshots.stream().anyMatch(s ->
+                    s.getAsJsonArray("entries").asList().stream().anyMatch(e -> {
+                        JsonObject entry = e.getAsJsonObject();
+                        return entry.get("id").getAsString().equals(alice.uuid.toString())
+                                && entry.get("x").getAsDouble() == 4.0;
+                    }));
+            assertFalse(sawPostTransfer,
+                    "after Alice left server A, Bob must not receive her new-server positions");
+        }
+    }
+
+    @Test
+    void setScopeReplaysTheNewScopesSnapshotImmediately() throws Exception {
+        // A player transferring in should get the new server's teammates right away, the same as a
+        // fresh connect would — not have to wait for each teammate's next position tick.
+        TestClient carol = connect("carol", "b.example.net");
+        carol.sendTrust("alice");
+        settle();
+        carol.sendPosition(7, 8, 9, "minecraft:overworld");
+        settle();
+
+        TestClient alice = connect("alice", "a.example.net");
+        alice.sendTrust("carol");
+        settle();
+
+        CountDownLatch snap = alice.expect("snapshot");
+        alice.sendSetScope("b.example.net");
+        assertTrue(snap.await(5, TimeUnit.SECONDS),
+                "re-scoping must replay the new scope's snapshot, like the initial connect does");
+        assertTrue(alice.sawPositionOf(carol),
+                "Alice must immediately see the teammate already on the server she joined");
+    }
+
+    @Test
+    void setScopeIsIgnoredFromAnUnauthenticatedSocket() throws Exception {
+        // set-scope only makes sense post-auth; before auth it must be dropped like any other frame,
+        // so it can never move a session that was never verified.
+        TestClient alice = connect("alice", "a.example.net");
+        alice.sendTrust("rogue");
+        settle();
+
+        var rogue = new WebSocketClient(new URI("ws://127.0.0.1:" + port)) {
+            final List<String> received = new ArrayList<>();
+
+            @Override
+            public void onOpen(ServerHandshake h) {
+                JsonObject o = new JsonObject();
+                o.addProperty("type", "set-scope");
+                o.addProperty("mcServer", "a.example.net");
+                send(GSON.toJson(o));
+            }
+
+            @Override
+            public void onMessage(String message) {
+                synchronized (received) {
+                    received.add(message);
+                }
+            }
+
+            @Override
+            public void onClose(int code, String reason, boolean remote) {
+            }
+
+            @Override
+            public void onError(Exception ex) {
+            }
+        };
+        assertTrue(rogue.connectBlocking(5, TimeUnit.SECONDS));
+        settle();
+        alice.sendPosition(1, 1, 1, "minecraft:overworld");
+        settle();
+
+        synchronized (rogue.received) {
+            assertTrue(rogue.received.stream().noneMatch(m -> m.contains("position-snapshot")),
+                    "an unauthenticated socket must not be scoped into anyone's routing");
+        }
+        rogue.closeBlocking();
     }
 }

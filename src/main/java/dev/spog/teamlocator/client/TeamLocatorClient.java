@@ -315,6 +315,12 @@ public class TeamLocatorClient implements ClientModInitializer {
      * the shared "menu"/"singleplayer" scopes otherwise (connected for pings, never sending
      * positions). Called at client start, on join/disconnect, and when the relay URL changes in
      * the config screen. Disconnects only when no relay URL is configured.
+     *
+     * <p>Goes through {@link RelayClient#setScope}, which reuses the live authenticated socket when
+     * the only thing that changed is the server — a transfer between servers on the same account then
+     * costs one small {@code set-scope} frame, not a fresh Mojang joinServer. It falls back to a full
+     * connect on the first connection, a relay URL change, or an account switch. This is what keeps
+     * the mod off authlib's shared rate limiter on every server join.
      */
     public static void connectRelay() {
         if (CONFIG.relayUrl.isBlank()) {
@@ -325,7 +331,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         String serverKey = TeamConfig.currentServerKey();
         String scope = serverKey != null ? serverKey : "menu";
         sharePositions = serverKey != null && !"singleplayer".equals(serverKey);
-        RELAY.connect(CONFIG.relayWebSocketUrl(), scope);
+        RELAY.setScope(CONFIG.relayWebSocketUrl(), scope);
     }
 
     /**

@@ -123,6 +123,27 @@ public final class Messages {
     }
 
     /**
+     * "I moved to a different Minecraft server; re-scope my existing connection." Sent instead of
+     * re-authenticating when a client transfers between servers on the same account, so it keeps its
+     * one verified socket rather than doing a fresh Mojang joinServer on every join — which shared a
+     * rate limiter with vanilla's own join and kept tripping it.
+     *
+     * <p>Only honoured on an already-authenticated session, and it never re-verifies identity: the
+     * UUID stays exactly what Mojang vouched for at handshake time. It only changes which world's
+     * peers this session routes with. Additive — an old relay ignores the unknown type, so a new
+     * client falls back to a full reconnect there (see the client's {@code setScope}).
+     */
+    public static final class SetScope {
+        public String type = "set-scope";
+        /** Normalized Minecraft server address the client is now on. */
+        public String mcServer;
+
+        public SetScope(String mcServer) {
+            this.mcServer = mcServer;
+        }
+    }
+
+    /**
      * The client's own equipped armor and its durability, for teammates' HUDs. Sent separately from
      * {@link PositionUpdate} — and far less often — because armor changes rarely while position
      * changes constantly; the client only sends this when a piece actually changes.

@@ -113,4 +113,21 @@ public final class Session {
         this.pendingServerId = null;
         this.pendingProfileName = null;
     }
+
+    /**
+     * Move this already-authenticated session to a new MC-server scope, in place, without a second
+     * Mojang handshake. Lets a client that transfers between servers keep one verified connection
+     * rather than re-authenticating — which is what kept tripping authlib's shared joinServer rate
+     * limiter on every join. The identity ({@link #uuid}) is untouched: only which world's peers this
+     * session routes with changes. The registry must re-file the session between its scope buckets
+     * around this call (see {@code SessionRegistry.rescope}); this only updates the field.
+     *
+     * <p>Position state is cleared: the coordinates held are from the old server and would otherwise
+     * be replayed into the new scope's snapshot as if the player were standing there. The client's
+     * next position update repopulates it.
+     */
+    public void setScope(String scope) {
+        this.scope = scope;
+        this.hasPosition = false;
+    }
 }

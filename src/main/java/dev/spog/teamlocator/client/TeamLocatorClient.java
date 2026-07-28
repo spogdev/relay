@@ -98,6 +98,9 @@ public class TeamLocatorClient implements ClientModInitializer {
         RelayAdminCommand.register();
         RelayWaypointCommand.register();
         PingRenderer.register();
+        // The mod's own in-world teammate icons; the default, so they work with no other mod. Steps
+        // aside per-frame when the player prefers Xaero's and Xaero is installed.
+        dev.spog.teamlocator.client.render.TeammateIconRenderer.register();
 
         // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.
         XaeroCompat.init();
@@ -276,14 +279,23 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /**
-     * Flip the Xaero in-world icon config option (keybind action). The trackers and the renderer
-     * mixin read the config live, so the icons appear/disappear on the next frame.
+     * Flip which renderer draws teammates' in-world icons: the mod's own (default) or Xaero's
+     * (keybind action). The renderer and the tracker mixin read the config live, so the swap takes
+     * effect on the next frame.
+     *
+     * <p>Xaero's icon exists only where Xaero's Minimap is installed. With it absent the setting has
+     * nothing to switch to, so the toggle is a no-op and says so rather than silently flipping a flag
+     * that changes nothing on screen.
      */
     private static void toggleInWorldIcons() {
-        CONFIG.xaeroInWorldIcons = !CONFIG.xaeroInWorldIcons;
+        if (!XaeroCompat.isMinimapInstalled()) {
+            RelayChat.send(Component.translatable("relay.in_world_icons.xaero_missing"));
+            return;
+        }
+        CONFIG.useXaeroInWorldIcons = !CONFIG.useXaeroInWorldIcons;
         CONFIG.save();
-        RelayChat.send(Component.translatable(
-                CONFIG.xaeroInWorldIcons ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
+        RelayChat.send(Component.translatable(CONFIG.useXaeroInWorldIcons
+                ? "relay.in_world_icons.using_xaero" : "relay.in_world_icons.using_builtin"));
     }
 
     /** The client now sources its own coordinates — they no longer come from a server mod. */

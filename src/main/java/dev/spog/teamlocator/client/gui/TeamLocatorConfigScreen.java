@@ -627,19 +627,21 @@ public class TeamLocatorConfigScreen extends Screen {
         }
         addScrolled(sy(INTEGRATIONS_ROW_Y), mapIcons);
 
-        var inWorldIcons = CycleButton.onOffBuilder(config.xaeroInWorldIcons)
+        // The mod draws teammates' in-world icons itself, so this is not an on/off for the feature —
+        // it is a preference to hand that job to Xaero's renderer instead, honoured only where Xaero
+        // is installed. Disabled (and explained) when it isn't, so it never reads as doing nothing.
+        var useXaeroIcons = CycleButton.onOffBuilder(config.useXaeroInWorldIcons)
                 .create(cx + 5, sy(INTEGRATIONS_ROW_Y), 200, 20,
-                        Component.translatable("relay.config.xaero_world_icons"),
+                        Component.translatable("relay.config.use_xaero_world_icons"),
                         (btn, value) -> {
-                            config.xaeroInWorldIcons = value;
+                            config.useXaeroInWorldIcons = value;
                             config.save();
                         });
-        inWorldIcons.active = minimap;
-        if (!inWorldIcons.active) {
-            inWorldIcons.setTooltip(Tooltip.create(
-                    Component.translatable("relay.config.integration.missing")));
-        }
-        addScrolled(sy(INTEGRATIONS_ROW_Y), inWorldIcons);
+        useXaeroIcons.active = minimap;
+        useXaeroIcons.setTooltip(Tooltip.create(Component.translatable(
+                minimap ? "relay.config.use_xaero_world_icons.desc"
+                        : "relay.config.integration.missing")));
+        addScrolled(sy(INTEGRATIONS_ROW_Y), useXaeroIcons);
 
         contentHeight = INTEGRATIONS_ROW_Y + 20 + 4;
     }

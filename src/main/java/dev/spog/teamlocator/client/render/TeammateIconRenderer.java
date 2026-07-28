@@ -18,6 +18,7 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
@@ -124,10 +125,12 @@ public final class TeammateIconRenderer {
                 return;
             }
             Camera camera = mc.gameRenderer.getMainCamera();
-            // The frame's partial tick, so a loaded teammate entity is drawn at its smoothly
-            // interpolated render position rather than its last whole-tick position — that is what
-            // makes the icon track a moving player without the stutter the relay's 5 Hz steps gave.
-            float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+            // The frame's partial tick for entity position, so a loaded teammate is drawn at its
+            // smoothly interpolated render position rather than its last whole-tick position. MUST be
+            // the paused variant (true): entity tick-positions freeze between ticks, so feeding the
+            // realtime partial (false) — which keeps advancing — extrapolated past the real position
+            // and snapped back every frame, which is the "bugs backwards and forwards" jitter.
+            float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
             // Skins are per-teammate textures, so each is its own render layer. Flushing a layer
             // mid-loop (the previous approach) dropped the face; instead every icon is queued and the
@@ -206,10 +209,12 @@ public final class TeammateIconRenderer {
         colorQuad(border, pose, -BORDER_HALF, -BORDER_HALF, BORDER_HALF, BORDER_HALF, 0.0f,
                 br, bg, bb, alpha);
 
-        // 2) The skin face and its hat overlay, both white-tinted like Xaero. Y is flipped in UV so
-        //    the face is upright (the quad's +Y is up in world space; skin V grows downward).
+        // 2) The skin face and its hat overlay. Drawn on the ENTITY layer, not the text layer: the
+        //    text pipeline samples a font/atlas texture and produced nothing from a player skin (the
+        //    "just a coloured box" bug). entityTranslucent is exactly what the player model uses to
+        //    draw a skin, so it samples correctly. V is flipped so the face is upright.
         Identifier skin = skinTexture(mc, teammate.id());
-        RenderType faceLayer = RenderTypes.textSeeThrough(skin);
+        RenderType faceLayer = RenderTypes.entityTranslucent(skin);
         skinLayers.add(faceLayer); // drained once at the end of the frame, not mid-loop
         texQuad(consumers.getBuffer(faceLayer), pose, -FACE_HALF, -FACE_HALF, FACE_HALF, FACE_HALF,
                 FACE_Z, FACE_U0, FACE_V1, FACE_U1, FACE_V0, alpha);
@@ -296,17 +301,22 @@ public final class TeammateIconRenderer {
         buffer.addVertex(pose, x0, y1, z).setColor(r, g, b, a).setLight(FULL_BRIGHT);
     }
 
-    /** A textured white-tinted quad on the see-through text layer (POSITION_COLOR_TEXCOORD_LIGHT). */
+    /**
+     * A textured white-tinted quad on the entity layer, whose format is
+     * POSITION_COLOR_TEXCOORD_OVERLAY_LIGHT_NORMAL — so this sets the overlay (NO_OVERLAY: no damage
+     * flash tint) as well, which the text layer did not need. Omitting it wrote a short vertex and was
+     * part of why the face never appeared.
+     */
     private static void texQuad(VertexConsumer buffer, PoseStack.Pose pose,
                                 float x0, float y0, float x1, float y1, float z,
                                 float u0, float v0, float u1, float v1, int a) {
         buffer.addVertex(pose, x0, y0, z).setColor(255, 255, 255, a).setUv(u0, v0)
-                .setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
+                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
         buffer.addVertex(pose, x1, y0, z).setColor(255, 255, 255, a).setUv(u1, v0)
-                .setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
+                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
         buffer.addVertex(pose, x1, y1, z).setColor(255, 255, 255, a).setUv(u1, v1)
-                .setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
+                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
         buffer.addVertex(pose, x0, y1, z).setColor(255, 255, 255, a).setUv(u0, v1)
-                .setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
+                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
     }
 }

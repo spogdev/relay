@@ -228,10 +228,15 @@ public class TeamConfig {
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */
     public boolean xaeroMapIcons = true;
     /**
-     * Show Xaero's floating in-world icon for relay teammates (enforced by the tracked-player
-     * renderer mixin). Minimap/world-map markers are unaffected.
+     * Draw teammates' floating in-world icons with Xaero's own renderer instead of the mod's
+     * built-in one. Only has any effect when Xaero's Minimap is installed (its in-world icon comes
+     * from a mixin into the minimap's renderer); with Xaero absent the mod always draws its own.
+     *
+     * <p>Default false: the built-in icon is the standard, so the feature works with no other mod
+     * installed. Turn this on only to prefer Xaero's look where Xaero is present. Exactly one of the
+     * two ever draws — see {@code TeammateIconRenderer} and {@code PlayerTrackerMinimapElementRendererMixin}.
      */
-    public boolean xaeroInWorldIcons = true;
+    public boolean useXaeroInWorldIcons = false;
     public TrustList global = new TrustList();
     public java.util.Map<String, TrustList> servers = new java.util.HashMap<>();
 

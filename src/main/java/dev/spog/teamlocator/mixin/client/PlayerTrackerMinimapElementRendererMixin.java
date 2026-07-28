@@ -60,7 +60,11 @@ public class PlayerTrackerMinimapElementRendererMixin {
             return;
         }
         if (renderInfo.location == MinimapElementRenderLocation.IN_WORLD) {
-            if (!TeamLocatorClient.CONFIG.xaeroInWorldIcons) {
+            // Xaero draws the in-world icon only when the player opted into Xaero's renderer. By
+            // default the mod draws its own built-in icon (see TeammateIconRenderer), so Xaero's is
+            // suppressed here to avoid two icons on one teammate. This mixin only loads with Xaero
+            // present, so the config flag alone is the whole condition.
+            if (!TeamLocatorClient.CONFIG.useXaeroInWorldIcons) {
                 cir.setReturnValue(false);
             }
             return;

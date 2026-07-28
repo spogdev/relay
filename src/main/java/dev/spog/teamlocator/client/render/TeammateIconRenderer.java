@@ -168,9 +168,15 @@ public final class TeammateIconRenderer {
         double pz;
         var entity = mc.level.getPlayerByUUID(teammate.id());
         if (entity != null) {
-            px = entity.getX(partial);
-            py = entity.getY(partial);
-            pz = entity.getZ(partial);
+            // getPosition(partial) lerps from the entity's PREVIOUS tick position. A player entity
+            // that just entered render range has not ticked yet (tickCount == 0), so its xOld/yOld/zOld
+            // are still zero — lerping through that yanked the icon toward world origin for a frame,
+            // which billboarded to a screen corner (the "glitching to the top left"). Only interpolate
+            // once the entity has a real previous position; before that, use its current position flat.
+            Vec3 p = entity.tickCount > 0 ? entity.getPosition(partial) : entity.position();
+            px = p.x;
+            py = p.y;
+            pz = p.z;
         } else {
             double[] pos = ClientState.interpolated(teammate.id());
             px = pos != null ? pos[0] : teammate.x();

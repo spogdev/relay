@@ -69,11 +69,16 @@ public final class TeammateIconRenderer {
     private static final float HAT_Z = -0.02f;
 
     /**
-     * World size of one icon pixel. Xaero's in-world icon renders on a quad scaled so the ~10px
-     * marker reads like a small waypoint; 1/32 of a block per pixel puts the 10px border at about a
-     * third of a block, which matches Xaero's apparent size at the same distance.
+     * On-screen size of one icon pixel as a fraction of the icon's distance — a <em>constant apparent
+     * size</em>, so the marker looks the same on screen however far the teammate is, exactly like
+     * Xaero's in-world icon (and the mod's own pings). A fixed world size instead made it shrink into
+     * the distance, which is what read as "doesn't scale". Multiplied by distance per-frame to get the
+     * world-space pixel size at that range. 0.0018 puts the 10px border at roughly Xaero's apparent
+     * size; it is the single knob for overall icon size.
      */
-    private static final float PIXEL = 1.0f / 32.0f;
+    private static final float APPARENT_PIXEL = 0.0018f;
+    /** Floor on the world pixel size, so a very near icon (right at the fade edge) can't collapse. */
+    private static final float MIN_PIXEL = 1.0f / 48.0f;
 
     /**
      * Feet-to-body-centre lift, so the icon floats at the teammate's chest like Xaero's does rather
@@ -121,32 +126,58 @@ public final class TeammateIconRenderer {
             return;
         }
         Camera camera = mc.gameRenderer.getCamera();
+        // The frame's partial tick, so a loaded teammate entity is drawn at its smoothly interpolated
+        // render position rather than its last whole-tick position — that is what makes the icon track
+        // a moving player without the stutter the relay's 5 Hz steps gave.
+        float partial = mc.getRenderTickCounter().getTickProgress(false);
 
+        // Skins are per-teammate textures, so each is its own render layer. Flushing a layer mid-loop
+        // (the previous approach) dropped the face; instead every icon is queued and the skin layers
+        // are all drained together at the end, alongside the shared Immediate draw.
+        java.util.Set<RenderLayer> skinLayers = new java.util.HashSet<>();
         for (TrackedPos teammate : teammates) {
             // Positions never cross dimensions, so an entry in another dimension is stale for this
             // view — skip it rather than draw a marker at coordinates in a different world.
             if (!teammate.dimension().equals(dimension)) {
                 continue;
             }
-            renderIcon(mc, matrices, consumers, camera, teammate);
+            renderIcon(mc, matrices, consumers, camera, teammate, partial, skinLayers);
         }
         // Drain the shared buffers this frame, since VertexConsumerProvider.Immediate defers until
         // flushed — same pattern PingRenderer documents.
         if (consumers instanceof VertexConsumerProvider.Immediate immediate) {
+            for (RenderLayer skinLayer : skinLayers) {
+                immediate.draw(skinLayer);
+            }
             immediate.draw();
         }
     }
 
     private static void renderIcon(MinecraftClient mc, MatrixStack matrices,
                                    VertexConsumerProvider consumers, Camera camera,
-                                   TrackedPos teammate) {
+                                   TrackedPos teammate, float partial,
+                                   java.util.Set<RenderLayer> skinLayers) {
         Vec3d cam = camera.getCameraPos();
-        // Interpolated so the icon glides with the smoothed position the HUD/minimap use, not the
-        // raw 5 Hz relay steps, which would make a moving teammate's icon jitter.
-        double[] pos = ClientState.interpolated(teammate.id());
-        double px = pos != null ? pos[0] : teammate.x();
-        double py = pos != null ? pos[1] : teammate.y();
-        double pz = pos != null ? pos[2] : teammate.z();
+
+        // Prefer the teammate's live entity when it is loaded locally: vanilla interpolates it every
+        // frame with the partial tick, so the icon locks onto a moving player smoothly. Xaero does the
+        // same. The relay position is only a fallback for teammates out of entity range, where the
+        // small ~200ms map lag is invisible anyway. Using the relay's interpolated (delayed) position
+        // for everyone was what made the icon trail behind and snap.
+        double px;
+        double py;
+        double pz;
+        var entity = mc.world.getPlayerByUuid(teammate.id());
+        if (entity != null) {
+            px = entity.getLerpedPos(partial).x;
+            py = entity.getLerpedPos(partial).y;
+            pz = entity.getLerpedPos(partial).z;
+        } else {
+            double[] pos = ClientState.interpolated(teammate.id());
+            px = pos != null ? pos[0] : teammate.x();
+            py = pos != null ? pos[1] : teammate.y();
+            pz = pos != null ? pos[2] : teammate.z();
+        }
 
         double dx = px - cam.x;
         double dy = py + BODY_CENTRE_OFFSET - cam.y;
@@ -158,10 +189,15 @@ public final class TeammateIconRenderer {
             return; // inside the near-fade: too close to be worth a locator, exactly like Xaero
         }
 
+        // Constant apparent size: the world-space pixel grows with distance so the icon stays the
+        // same size on screen, like Xaero's and the mod's pings. A fixed world size made it shrink
+        // away into the distance.
+        float pixel = Math.max(MIN_PIXEL, (float) (distance * APPARENT_PIXEL));
+
         matrices.push();
         matrices.translate(dx, dy, dz);
         matrices.multiply(camera.getRotation()); // billboard toward the camera
-        matrices.scale(PIXEL, PIXEL, PIXEL);      // work in icon pixels from here on
+        matrices.scale(pixel, pixel, pixel);      // work in icon pixels from here on
         MatrixStack.Entry pose = matrices.peek();
 
         // 1) The coloured border: a 10x10 quad behind the face, in the teammate's ping colour. This
@@ -178,13 +214,11 @@ public final class TeammateIconRenderer {
         //    face is upright (the quad's +Y is up in world space; skin V grows downward).
         Identifier skin = skinTexture(mc, teammate.id());
         RenderLayer faceLayer = RenderLayers.textSeeThrough(skin);
+        skinLayers.add(faceLayer); // drained once at the end of the frame, not mid-loop
         texQuad(consumers.getBuffer(faceLayer), pose, -FACE_HALF, -FACE_HALF, FACE_HALF, FACE_HALF,
                 FACE_Z, FACE_U0, FACE_V1, FACE_U1, FACE_V0, alpha);
         texQuad(consumers.getBuffer(faceLayer), pose, -FACE_HALF, -FACE_HALF, FACE_HALF, FACE_HALF,
                 HAT_Z, HAT_U0, HAT_V1, HAT_U1, HAT_V0, alpha);
-        if (consumers instanceof VertexConsumerProvider.Immediate immediate) {
-            immediate.draw(faceLayer); // one skin per teammate; flush before the next texture
-        }
 
         // 3) The name plate above the icon.
         drawName(mc, consumers, pose, teammate.id(), alpha);

@@ -225,6 +225,49 @@ public class TeamConfig {
     public DurabilityDisplay hudDurabilityDisplay = DurabilityDisplay.BAR;
     /** Master HUD visibility, flipped by the toggle-HUD keybind. */
     public boolean hudEnabled = true;
+    /**
+     * Abbreviate large HUD coordinates: {@code 3723, 50, 4282} becomes {@code 3.7k, 50, 4.3k}. Off by
+     * default because the exact figure is what you read out to a teammate; this is for players who
+     * care more about a compact row than the last three digits.
+     */
+    public boolean hudShortenCoords = false;
+
+    /** Whether teammates' in-world location markers are drawn at all, by either renderer. */
+    public boolean playerMarkersEnabled = true;
+    /**
+     * Size of the mod's own in-world marker, as the width of the player face in screen pixels. The
+     * frame adds a pixel on every side, and the hover name scales with this. Only affects the mod's
+     * renderer — Xaero's markers are sized by Xaero's own settings.
+     */
+    public int playerMarkerSize = 5;
+    /** Bounds for {@link #playerMarkerSize}, shared with the config slider. */
+    public static final int MARKER_SIZE_MIN = 2;
+    public static final int MARKER_SIZE_MAX = 24;
+
+    /**
+     * How opaque an in-world marker is while the crosshair is not on it, as a percentage. Looking at
+     * a marker always shows it at full opacity; this is only its resting state, so a screen full of
+     * teammates can be made as quiet or as prominent as the player likes.
+     */
+    public int playerMarkerIdleOpacity = 63;
+    public static final int MARKER_OPACITY_MIN = 10;
+    public static final int MARKER_OPACITY_MAX = 100;
+
+    /**
+     * How close a teammate must be, in blocks, for their marker to disappear. Inside this range you
+     * can see the player themselves, so the marker is redundant; it fades in over the following few
+     * blocks rather than popping.
+     */
+    public int playerMarkerHideDistance = 10;
+    public static final int MARKER_HIDE_MIN = 0;
+    public static final int MARKER_HIDE_MAX = 64;
+
+    /**
+     * Show how far away a teammate is, in blocks, beside their marker while it is hovered. On by
+     * default: the marker already tells you the direction, and the distance is what turns that into
+     * a decision about whether to go to them.
+     */
+    public boolean playerMarkerShowDistance = true;
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */
     public boolean xaeroMapIcons = true;
     /**
@@ -297,6 +340,14 @@ public class TeamConfig {
         // back to 15s on the next load.
         if (pingCooldownSeconds < 0 || pingCooldownSeconds > 600) pingCooldownSeconds = 15;
         if (pingColorIndex < 0 || pingColorIndex >= 5) pingColorIndex = 0;
+        // Clamp rather than reset: a hand-edited size outside the slider's range is still an
+        // expressed preference for "small" or "large", so honour the nearest legal value.
+        if (playerMarkerSize < MARKER_SIZE_MIN) playerMarkerSize = MARKER_SIZE_MIN;
+        if (playerMarkerSize > MARKER_SIZE_MAX) playerMarkerSize = MARKER_SIZE_MAX;
+        playerMarkerIdleOpacity =
+                Math.clamp(playerMarkerIdleOpacity, MARKER_OPACITY_MIN, MARKER_OPACITY_MAX);
+        playerMarkerHideDistance =
+                Math.clamp(playerMarkerHideDistance, MARKER_HIDE_MIN, MARKER_HIDE_MAX);
         // -1 (Infinite) is a valid setting, so only reject values outside the range that are not it.
         if (pingDisplaySeconds != SecondsSlider.INFINITE
                 && (pingDisplaySeconds < 1 || pingDisplaySeconds > 600)) {

@@ -111,7 +111,7 @@ public class TeamHud implements HudElement {
     public void render(DrawContext graphics, RenderTickCounter delta) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (!config.hudEnabled || mc.player == null || mc.getNetworkHandler() == null
-                || mc.options.hudHidden) {
+                || mc.options.hudHidden || debugScreenOpen(mc)) {
             return;
         }
         List<TrackedPos> entries = ClientState.latest();
@@ -152,9 +152,10 @@ public class TeamHud implements HudElement {
             Coords coords = null;
             segments.add(new Segment(showCoords ? name + "  " : name, nameColor));
             if (showCoords) {
-                String xs = Integer.toString((int) Math.floor(e.x()));
-                String ys = Integer.toString((int) Math.floor(e.y()));
-                String zs = Integer.toString((int) Math.floor(e.z()));
+                boolean shorten = config.hudShortenCoords;
+                String xs = coord(e.x(), shorten);
+                String ys = coord(e.y(), shorten);
+                String zs = coord(e.z(), shorten);
                 String dim = e.dimension().equals(viewerDim) ? null : prettyDimension(e.dimension());
                 coords = new Coords(xs, ys, zs, dim);
                 segments.add(new Segment(xs, sec));
@@ -355,6 +356,37 @@ public class TeamHud implements HudElement {
                     y + contentHeight / 2 - 1, ARMOR_ICON_SCALE,
                     config.hudDurabilityDisplay, font, row.sec());
         }
+    }
+
+    /**
+     * Whether the F3 debug overlay is up. The HUD hides while it is: the debug screen's own text
+     * starts in the same top-left corner and the two overlap into an unreadable mess, and F3 is a
+     * deliberate "show me the diagnostics" mode where a teammate list is not what you are reading.
+     *
+     * <p>Guarded rather than assumed reachable: {@code mc.gui} is null early in startup, and this runs
+     * from a render hook that can fire before it is built.
+     */
+    private static boolean debugScreenOpen(MinecraftClient mc) {
+        return mc.inGameHud != null && mc.inGameHud.getDebugHud() != null
+                && mc.inGameHud.getDebugHud().shouldShowDebugHud();
+    }
+
+    /**
+     * One coordinate as the HUD shows it: the plain floored figure, or — when Shorten Coords is on —
+     * abbreviated to thousands past &plusmn;1000, so {@code 3723} reads {@code 3.7k}.
+     *
+     * <p>Only values of 1000 or more are abbreviated: a Y of 50 has nothing to shorten, and rendering
+     * it as {@code 0.1k} would be both longer and less precise. The tenth is truncated rather than
+     * rounded so the abbreviation never overstates how far out a teammate is.
+     */
+    static String coord(double value, boolean shorten) {
+        int whole = (int) Math.floor(value);
+        if (!shorten || Math.abs(whole) < 1000) {
+            return Integer.toString(whole);
+        }
+        int tenths = Math.abs(whole) / 100;          // e.g. 3723 -> 37
+        String sign = whole < 0 ? "-" : "";
+        return sign + (tenths / 10) + "." + (tenths % 10) + "k";
     }
 
     /** {@code minecraft:the_nether} -> "Nether"; unknown ids get their path title-cased. */

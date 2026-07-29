@@ -100,7 +100,14 @@ public class TeamLocatorClient implements ClientModInitializer {
         PingRenderer.register();
         // The mod's own in-world teammate icons; the default, so they work with no other mod. Steps
         // aside per-frame when the player prefers Xaero's and Xaero is installed.
-        dev.spog.teamlocator.client.render.TeammateIconRenderer.register();
+        // Registered as a HUD element, not a world-render hook: the icons are drawn in screen space
+        // (world position projected to pixels, fixed pixel size) the way Xaero draws its markers.
+        // Attached BEFORE the crosshair so the crosshair paints over a marker rather than under it —
+        // the crosshair must stay readable when it is sitting on the very icon it is selecting.
+        HudElementRegistry.attachElementBefore(
+                net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements.CROSSHAIR,
+                dev.spog.teamlocator.client.render.TeammateIconRenderer.ID,
+                new dev.spog.teamlocator.client.render.TeammateIconRenderer());
 
         // Optional: show tracked teammates on Xaero's Minimap / World Map when installed.
         XaeroCompat.init();

@@ -68,6 +68,20 @@ public class TeamLocatorConfigScreen extends Screen {
     private int trustScroll;
     /** Total content height, measured during the last {@link #init()}; drives the scroll clamp. */
     private int contentHeight;
+    /**
+     * The widgets pinned to the bars (tab buttons, Done) rather than scrolling with the page. Held
+     * separately because the scrolled widgets are drawn inside a scissor clipped to the viewport, and
+     * these sit outside it — so they are drawn again, unclipped, in a second pass.
+     */
+    private final List<net.minecraft.client.gui.components.AbstractWidget> pinnedWidgets =
+            new java.util.ArrayList<>();
+    /** True while the scrollbar thumb is being dragged with the mouse held down. */
+    private boolean draggingScrollbar;
+    /**
+     * Where inside the thumb the drag began, in pixels from its top. Kept so the thumb follows the
+     * cursor from wherever it was grabbed rather than snapping its top edge to the pointer.
+     */
+    private int scrollbarGrabOffset;
     private EditBox nameInput;
     private EditBox relayUrlInput;
     private EditBox chatPrefixInput;
@@ -134,16 +148,25 @@ public class TeamLocatorConfigScreen extends Screen {
     private static final int SHARING_ROW_Y = SHARING_HEADER_Y + HEADER_GAP;
     private static final int SHARING_ROW_2_Y = SHARING_ROW_Y + ROW_STRIDE;
 
-    /** HUD: five rows — position, size/colour, alignment, contents, health. */
+    /** HUD: six rows — position, size/colour, alignment, contents, health, shorten coords. */
     private static final int HUD_HEADER_Y = SHARING_ROW_2_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
     private static final int HUD_ROW_1_Y = HUD_HEADER_Y + HEADER_GAP;
     private static final int HUD_ROW_2_Y = HUD_ROW_1_Y + ROW_STRIDE;
     private static final int HUD_ROW_3_Y = HUD_ROW_2_Y + ROW_STRIDE;
     private static final int HUD_ROW_4_Y = HUD_ROW_3_Y + ROW_STRIDE;
     private static final int HUD_ROW_5_Y = HUD_ROW_4_Y + ROW_STRIDE;
+    private static final int HUD_ROW_6_Y = HUD_ROW_5_Y + ROW_STRIDE;
+
+    /**
+     * Player Marker: three rows — enable + size, idle opacity + hide distance, then show-distance.
+     */
+    private static final int MARKER_HEADER_Y = HUD_ROW_6_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int MARKER_ROW_Y = MARKER_HEADER_Y + HEADER_GAP;
+    private static final int MARKER_ROW_2_Y = MARKER_ROW_Y + ROW_STRIDE;
+    private static final int MARKER_ROW_3_Y = MARKER_ROW_2_Y + ROW_STRIDE;
 
     /** Alerts: two rows. */
-    private static final int ALERTS_HEADER_Y = HUD_ROW_5_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
+    private static final int ALERTS_HEADER_Y = MARKER_ROW_3_Y + BUTTON_H + SECTION_GAP - HEADER_GAP;
     private static final int ALERTS_ROW_1_Y = ALERTS_HEADER_Y + HEADER_GAP;
     private static final int ALERTS_ROW_2_Y = ALERTS_ROW_1_Y + ROW_STRIDE;
 
@@ -228,10 +251,12 @@ public class TeamLocatorConfigScreen extends Screen {
     }
 
     /**
-     * Add a scrolled widget, unless it would cross a pinned bar. Culling rather than clipping:
-     * widgets draw themselves after this screen's own rendering, so no backdrop can cover one — a
-     * widget overlapping a bar would paint across it and still take clicks there. So a row is kept
-     * only while it is *entirely* between the bars, and rows appear and disappear whole.
+     * Add a scrolled widget if any part of it falls inside the scrolling viewport.
+     *
+     * <p>Kept while it is <em>partially</em> visible, so a row entering or leaving the viewport is
+     * clipped at the bar's edge rather than vanishing whole — the widget drawing in
+     * {@link #extractRenderState} is wrapped in a scissor for exactly that. Only rows completely
+     * outside the viewport are dropped.
      *
      * @param screenY the widget's screen-space Y, i.e. already through {@link #sy(int)}
      */
@@ -244,9 +269,34 @@ public class TeamLocatorConfigScreen extends Screen {
         addRenderableWidget(widget);
     }
 
-    /** True if a 20px-tall row at this screen Y fits entirely between the pinned bars. */
+    /**
+     * Add a widget pinned to one of the bars. Recorded in {@link #pinnedWidgets} so it can be drawn
+     * unclipped after the scissored pass that clips the scrolling page.
+     */
+    private <T extends net.minecraft.client.gui.components.AbstractWidget> T addPinned(T widget) {
+        pinnedWidgets.add(widget);
+        return addRenderableWidget(widget);
+    }
+
+    /**
+     * Draw the bar-pinned widgets again with no scissor active. They were already drawn (clipped to
+     * nothing) by the scissored pass, so this is what actually makes them visible.
+     */
+    private void renderPinnedWidgets(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+                                     float delta) {
+        for (var widget : pinnedWidgets) {
+            widget.extractRenderState(graphics, mouseX, mouseY, delta);
+        }
+    }
+
+    /**
+     * True if any part of a 20px-tall row at this screen Y falls between the pinned bars. Partial
+     * overlap counts: the scissor clips the drawing, and {@link #mouseClicked} rejects clicks landing
+     * on the part outside the viewport, so a half-shown row can neither paint nor be clicked through
+     * a bar.
+     */
     private boolean visible(int screenY) {
-        return screenY >= TAB_BAR_H && screenY + 20 <= viewportBottom();
+        return screenY + 20 > TAB_BAR_H && screenY < viewportBottom();
     }
 
     /**
@@ -274,6 +324,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // only some pages create, so a stale widget from the previous tab can't be drawn or focused.
         relayUrlInput = null;
         chatPrefixInput = null;
+        pinnedWidgets.clear();
 
         // --- Tab bar: pinned above the scrolling area, so switching pages is always reachable.
         // The tabs abut and together span the page's full width, so the strip reads as one unit
@@ -282,13 +333,13 @@ public class TeamLocatorConfigScreen extends Screen {
         // rather than a pixel or two short.
         int tabW = 410 / 3;
         int lastTabX = cx - 205 + tabW * 2;
-        addRenderableWidget(new TabButton(cx - 205, TAB_BUTTON_Y, tabW, BUTTON_H,
+        addPinned(new TabButton(cx - 205, TAB_BUTTON_Y, tabW, BUTTON_H,
                 Component.translatable("relay.config.tab.general"),
                 tab == Tab.GENERAL, () -> switchTab(Tab.GENERAL)));
-        addRenderableWidget(new TabButton(cx - 205 + tabW, TAB_BUTTON_Y, tabW, BUTTON_H,
+        addPinned(new TabButton(cx - 205 + tabW, TAB_BUTTON_Y, tabW, BUTTON_H,
                 Component.translatable("relay.config.tab.integrations"),
                 tab == Tab.INTEGRATIONS, () -> switchTab(Tab.INTEGRATIONS)));
-        addRenderableWidget(new TabButton(lastTabX, TAB_BUTTON_Y, cx + 205 - lastTabX, BUTTON_H,
+        addPinned(new TabButton(lastTabX, TAB_BUTTON_Y, cx + 205 - lastTabX, BUTTON_H,
                 Component.translatable("relay.config.tab.trust"),
                 tab == Tab.TRUST, () -> switchTab(Tab.TRUST)));
 
@@ -474,6 +525,81 @@ public class TeamLocatorConfigScreen extends Screen {
                             config.save();
                         }), "relay.config.hud_durability.desc"));
 
+        // HUD row 6: abbreviate long coordinates.
+        addScrolled(sy(HUD_ROW_6_Y), described(CycleButton.onOffBuilder(config.hudShortenCoords)
+                .create(cx - 205, sy(HUD_ROW_6_Y), 200, 20,
+                        Component.translatable("relay.config.hud_shorten_coords"),
+                        (btn, value) -> {
+                            config.hudShortenCoords = value;
+                            config.save();
+                        }), "relay.config.hud_shorten_coords.desc"));
+
+        // --- Player Marker section ---
+        // The master switch for the in-world markers, whichever renderer draws them, beside the size
+        // slider for the mod's own. The slider is greyed out when the markers are off entirely, and
+        // also when Xaero is drawing them, since it only sizes the mod's renderer.
+        addScrolled(sy(MARKER_ROW_Y), described(CycleButton.onOffBuilder(config.playerMarkersEnabled)
+                .create(cx - 205, sy(MARKER_ROW_Y), 200, 20,
+                        Component.translatable("relay.config.player_markers_enabled"),
+                        (btn, value) -> {
+                            config.playerMarkersEnabled = value;
+                            config.save();
+                        }), "relay.config.player_markers_enabled.desc"));
+
+        var markerSize = new MarkerSizeSlider(cx + 5, sy(MARKER_ROW_Y), 200, 20,
+                "Marker Size", TeamConfig.MARKER_SIZE_MIN, TeamConfig.MARKER_SIZE_MAX,
+                config.playerMarkerSize,
+                value -> {
+                    config.playerMarkerSize = value;
+                    config.save();
+                });
+        boolean xaeroDrawsMarkers = config.useXaeroInWorldIcons && XaeroCompat.isMinimapInstalled();
+        boolean ownMarkers = config.playerMarkersEnabled && !xaeroDrawsMarkers;
+        markerSize.active = ownMarkers;
+        markerSize.setTooltip(Tooltip.create(Component.translatable(xaeroDrawsMarkers
+                ? "relay.config.player_marker_size.xaero"
+                : "relay.config.player_marker_size.desc")));
+        addScrolled(sy(MARKER_ROW_Y), markerSize);
+
+        // Row 2: how faint a marker rests at, and how close a teammate must be for it to vanish.
+        // Both shape the mod's own renderer only, so they follow the size slider's enablement.
+        var markerOpacity = new MarkerSizeSlider(cx - 205, sy(MARKER_ROW_2_Y), 200, 20,
+                "Idle Opacity", "%", TeamConfig.MARKER_OPACITY_MIN, TeamConfig.MARKER_OPACITY_MAX,
+                config.playerMarkerIdleOpacity,
+                value -> {
+                    config.playerMarkerIdleOpacity = value;
+                    config.save();
+                });
+        markerOpacity.active = ownMarkers;
+        markerOpacity.setTooltip(Tooltip.create(Component.translatable(xaeroDrawsMarkers
+                ? "relay.config.player_marker_size.xaero"
+                : "relay.config.player_marker_opacity.desc")));
+        addScrolled(sy(MARKER_ROW_2_Y), markerOpacity);
+
+        var markerHide = new MarkerSizeSlider(cx + 5, sy(MARKER_ROW_2_Y), 200, 20,
+                "Hide Within", "m", TeamConfig.MARKER_HIDE_MIN, TeamConfig.MARKER_HIDE_MAX,
+                config.playerMarkerHideDistance,
+                value -> {
+                    config.playerMarkerHideDistance = value;
+                    config.save();
+                });
+        markerHide.active = ownMarkers;
+        markerHide.setTooltip(Tooltip.create(Component.translatable(xaeroDrawsMarkers
+                ? "relay.config.player_marker_size.xaero"
+                : "relay.config.player_marker_hide.desc")));
+        addScrolled(sy(MARKER_ROW_2_Y), markerHide);
+
+        // Row 3: whether the hovered marker also reports how far away the teammate is.
+        var showDistance = described(CycleButton.onOffBuilder(config.playerMarkerShowDistance)
+                .create(cx - 205, sy(MARKER_ROW_3_Y), 200, 20,
+                        Component.translatable("relay.config.player_marker_show_distance"),
+                        (btn, value) -> {
+                            config.playerMarkerShowDistance = value;
+                            config.save();
+                        }), "relay.config.player_marker_show_distance.desc");
+        showDistance.active = ownMarkers;
+        addScrolled(sy(MARKER_ROW_3_Y), showDistance);
+
         // --- Alerts section ---
         // Row 1: the master switch first, since it gates everything below it, with the cross-server
         // toggle beside it. Stored inverted (hideAllAlerts) but shown as "Enable Alerts", so the
@@ -632,14 +758,14 @@ public class TeamLocatorConfigScreen extends Screen {
         // is installed. Disabled (and explained) when it isn't, so it never reads as doing nothing.
         var useXaeroIcons = CycleButton.onOffBuilder(config.useXaeroInWorldIcons)
                 .create(cx + 5, sy(INTEGRATIONS_ROW_Y), 200, 20,
-                        Component.translatable("relay.config.use_xaero_world_icons"),
+                        Component.translatable("relay.config.xaero_markers"),
                         (btn, value) -> {
                             config.useXaeroInWorldIcons = value;
                             config.save();
                         });
         useXaeroIcons.active = minimap;
         useXaeroIcons.setTooltip(Tooltip.create(Component.translatable(
-                minimap ? "relay.config.use_xaero_world_icons.desc"
+                minimap ? "relay.config.xaero_markers.desc"
                         : "relay.config.integration.missing")));
         addScrolled(sy(INTEGRATIONS_ROW_Y), useXaeroIcons);
 
@@ -697,7 +823,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // --- Done, centred ---
         // The relay address used to share this bar; with it moved to General > Advanced, Done is the
         // bar's only occupant and sits centred rather than stranded against the right edge.
-        addRenderableWidget(Button.builder(Component.translatable("relay.config.done"),
+        addPinned(Button.builder(Component.translatable("relay.config.done"),
                 b -> onClose()).bounds(cx - 100, this.height - 28, 200, 20).build());
     }
 
@@ -745,14 +871,30 @@ public class TeamLocatorConfigScreen extends Screen {
         // Scrolling labels first, then the bars' backdrops over them, then super's widgets on top:
         // that ordering lets the backdrops hide a label that has scrolled into a bar, while the tab
         // buttons and the borderless address EditBox still land above their own backdrop.
+        // The scrolling labels (section headers, swatches, the address frame) are clipped to the
+        // viewport just like the widgets, so anything scrolling into a bar is cut off at its edge
+        // rather than either drawing over it or vanishing whole.
+        graphics.enableScissor(0, TAB_BAR_H, this.width, viewportBottom());
         switch (tab) {
             case GENERAL -> drawSettingsLabels(graphics, cx);
             case INTEGRATIONS -> drawIntegrationsLabels(graphics, cx);
             case TRUST -> drawTrustLabels(graphics, cx);
         }
+        graphics.disableScissor();
+
         drawBarBackdrops(graphics, cx);
 
+        // Widgets are clipped to the scrolling viewport, so a row entering or leaving it is cut off at
+        // the bar's edge and shows the part that should still be visible, instead of being culled and
+        // popping in and out whole. The scissor is what makes keeping partially-visible rows safe:
+        // widgets draw after this screen, so without it an overlapping row would paint over a bar.
+        graphics.enableScissor(0, TAB_BAR_H, this.width, viewportBottom());
         super.extractRenderState(graphics, mouseX, mouseY, delta);
+        graphics.disableScissor();
+
+        // The bars' own widgets (tab buttons, Done, the address field) live outside the viewport, so
+        // they are drawn unclipped in a second pass.
+        renderPinnedWidgets(graphics, mouseX, mouseY, delta);
 
         graphics.centeredText(this.font, this.title, cx, TITLE_Y, 0xFFFFFFFF);
         drawScrollbar(graphics);
@@ -776,14 +918,15 @@ public class TeamLocatorConfigScreen extends Screen {
 
     /**
      * The relay-address frame and its fixed {@code wss://} label, which the borderless EditBox sits
-     * inside. Part of the General page's Advanced section, so it scrolls with the rest — and is
-     * skipped entirely when scrolled behind a bar, matching how {@link #addScrolled} culls widgets.
+     * inside. Part of the General page's Advanced section, so it scrolls with the rest.
+     *
+     * <p>No all-or-nothing cull here: the label pass is scissored to the viewport like the widgets,
+     * so the frame clips at a bar's edge instead of disappearing whole. It used to cull to match the
+     * old widget behaviour, which left the frame vanishing while the EditBox inside it clipped — the
+     * two halves of one control behaving differently.
      */
     private void drawRelayFrame(GuiGraphicsExtractor graphics, int cx) {
         int y = sy(ADVANCED_ROW_Y);
-        if (y < TAB_BAR_H || y + BUTTON_H > viewportBottom()) {
-            return;
-        }
         int x = cx - 205;
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED,
                 relayUrlInput != null && relayUrlInput.isFocused()
@@ -802,6 +945,8 @@ public class TeamLocatorConfigScreen extends Screen {
                 cx - 205, sy(SHARING_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.hud"),
                 cx - 205, sy(HUD_HEADER_Y), 0xFFFFFFFF, false);
+        graphics.text(this.font, Component.translatable("relay.config.section.player_marker"),
+                cx - 205, sy(MARKER_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.pings"),
                 cx - 205, sy(ALERTS_HEADER_Y), 0xFFFFFFFF, false);
         graphics.text(this.font, Component.translatable("relay.config.section.map_pings"),
@@ -832,9 +977,10 @@ public class TeamLocatorConfigScreen extends Screen {
 
         // Column headers, naming each toggle once for the whole table instead of on every row.
         // Each is centered over its column so it reads as a heading for the buttons beneath it.
+        // No all-or-nothing visibility test: the label pass is scissored to the viewport, so a header
+        // scrolling into a bar is clipped at its edge like everything else rather than vanishing whole.
         int headerY = sy(LIST_TOP - COL_HEADER_OFFSET);
-        boolean headerVisible = headerY >= TAB_BAR_H && headerY + this.font.lineHeight <= viewportBottom();
-        if (headerVisible) {
+        {
             graphics.text(this.font, Component.translatable("relay.config.column.player"),
                     cx - 205, headerY, 0xFFFFFFFF, false);
             drawColumnHeader(graphics, "relay.config.column.alerts",
@@ -875,18 +1021,59 @@ public class TeamLocatorConfigScreen extends Screen {
         graphics.text(this.font, label, x, y, 0xFFFFFFFF, false);
     }
 
-    /** A slim scrollbar down the right edge, so the page's length and position are visible. */
-    private void drawScrollbar(GuiGraphicsExtractor graphics) {
+    /** Left edge of the scrollbar track. Shared by the draw and the hit test so they cannot drift. */
+    private int scrollbarX() {
+        return this.width / 2 + 209;
+    }
+
+    /** Width of the scrollbar track, in pixels. */
+    private static final int SCROLLBAR_W = 4;
+
+    /** Height of the draggable thumb, sized to the fraction of the content that is visible. */
+    private int thumbHeight() {
+        int viewport = viewportHeight();
+        return Math.max(16, viewport * viewport / Math.max(1, scrollableHeight()));
+    }
+
+    /** Top of the thumb for the current scroll offset. */
+    private int thumbY() {
         int max = maxScroll();
         if (max == 0) {
+            return TAB_BAR_H;
+        }
+        return TAB_BAR_H + (viewportHeight() - thumbHeight()) * scroll / max;
+    }
+
+    /**
+     * Set the scroll offset from a mouse Y, treating {@code grabOffset} as where inside the thumb the
+     * drag started — so the thumb tracks the cursor instead of jumping its top to it.
+     */
+    private void scrollToThumb(double mouseY, int grabOffset) {
+        int max = maxScroll();
+        int travel = viewportHeight() - thumbHeight();
+        if (max == 0 || travel <= 0) {
+            return;
+        }
+        int top = (int) Math.round(mouseY) - TAB_BAR_H - grabOffset;
+        int next = Math.clamp((int) Math.round((double) top * max / travel), 0, max);
+        if (next != scroll) {
+            scroll = next;
+            rebuild();
+        }
+    }
+
+    /** A slim scrollbar down the right edge, so the page's length and position are visible. */
+    private void drawScrollbar(GuiGraphicsExtractor graphics) {
+        if (maxScroll() == 0) {
             return; // everything fits; nothing to indicate
         }
-        int viewport = viewportHeight();
-        int x = this.width / 2 + 209;
-        int thumbH = Math.max(16, viewport * viewport / scrollableHeight());
-        int thumbY = TAB_BAR_H + (viewport - thumbH) * scroll / max;
-        graphics.fill(x, TAB_BAR_H, x + 4, viewportBottom(), 0xFF101010);
-        graphics.fill(x, thumbY, x + 4, thumbY + thumbH, 0xFF808080);
+        int x = scrollbarX();
+        int thumbH = thumbHeight();
+        int thumbY = thumbY();
+        graphics.fill(x, TAB_BAR_H, x + SCROLLBAR_W, viewportBottom(), 0xFF101010);
+        // Lit while being dragged, so the bar reads as a control rather than a passive indicator.
+        graphics.fill(x, thumbY, x + SCROLLBAR_W, thumbY + thumbH,
+                draggingScrollbar ? 0xFFC0C0C0 : 0xFF808080);
     }
 
     /** 20x20 color preview: a white 1px border around the configured color. */
@@ -1036,19 +1223,52 @@ public class TeamLocatorConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        // The scrollbar is claimed before the widgets get a look: it lives outside their columns, so
+        // nothing legitimately overlaps it, and a grab must never be swallowed by something else.
+        if (maxScroll() > 0 && event.x() >= scrollbarX()
+                && event.x() < scrollbarX() + SCROLLBAR_W
+                && event.y() >= TAB_BAR_H && event.y() < viewportBottom()) {
+            int thumbTop = thumbY();
+            int thumbH = thumbHeight();
+            if (event.y() >= thumbTop && event.y() < thumbTop + thumbH) {
+                // On the thumb: remember where it was grabbed so it tracks the cursor from there.
+                scrollbarGrabOffset = (int) Math.round(event.y()) - thumbTop;
+            } else {
+                // On the track: jump so the thumb centres on the click, then drag from its middle.
+                scrollbarGrabOffset = thumbH / 2;
+                scrollToThumb(event.y(), scrollbarGrabOffset);
+            }
+            draggingScrollbar = true;
+            return true;
+        }
+        // A click landing on a bar must never reach a scrolled widget clipped underneath it. Rows are
+        // now kept while only partially visible, so the hidden part is still hit-testable as far as
+        // the widget is concerned — this is what stops it being clickable through a bar. Pinned
+        // widgets live on the bars and are dispatched first so they keep working.
+        if (event.y() < TAB_BAR_H || event.y() >= viewportBottom()) {
+            for (var widget : pinnedWidgets) {
+                if (widget.mouseClicked(event, doubled)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         if (super.mouseClicked(event, doubled)) {
             return true;
         }
         // Clicking the wss:// prefix (inside the frame but left of the borderless EditBox) should
-        // still focus the address field — the whole frame reads as one text box. The frame now
-        // scrolls with the General page's Advanced section, so the hit test follows it, and only
-        // counts while it is actually within the scrolling viewport.
+        // still focus the address field — the whole frame reads as one text box. The frame scrolls
+        // with the General page's Advanced section, so the hit test follows it.
         if (tab != Tab.GENERAL || relayUrlInput == null) {
             return false;
         }
         int cx = this.width / 2;
         int frameY = sy(ADVANCED_ROW_Y);
-        if (frameY < TAB_BAR_H || frameY + BUTTON_H > viewportBottom()) {
+        // Partial overlap is enough, matching the clipped drawing: a click on the visible half of the
+        // frame should focus the field. Requiring the frame to be ENTIRELY inside the viewport (the old
+        // test) made its visible part dead once it started clipping. The caller has already rejected
+        // clicks landing outside the viewport, so this cannot fire on the hidden half.
+        if (frameY + BUTTON_H <= TAB_BAR_H || frameY >= viewportBottom()) {
             return false;
         }
         if (event.x() >= cx - 205 && event.x() < cx - 205 + RELAY_BOX_W
@@ -1057,6 +1277,28 @@ public class TeamLocatorConfigScreen extends Screen {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Drag the scrollbar thumb. Takes precedence over widget dragging while a grab is active, so
+     * sweeping the cursor across sliders mid-drag cannot hand the drag to one of them.
+     */
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (draggingScrollbar) {
+            scrollToThumb(event.y(), scrollbarGrabOffset);
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (draggingScrollbar) {
+            draggingScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     /**

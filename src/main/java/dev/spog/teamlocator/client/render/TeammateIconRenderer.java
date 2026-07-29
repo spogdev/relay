@@ -1,7 +1,5 @@
 package dev.spog.teamlocator.client.render;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
 import dev.spog.teamlocator.client.TeamLocatorClient;
@@ -9,170 +7,208 @@ import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.Camera;
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.PlayerFaceExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.PlayerSkin;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Draws teammates' floating in-world icons with the mod's own renderer, so they show whether or not
- * Xaero's Minimap is installed. This is the default; a player can hand the job to Xaero's renderer
- * instead ({@link dev.spog.teamlocator.client.config.TeamConfig#useXaeroInWorldIcons}), in which case
- * this steps aside so a teammate never carries two icons.
+ * Draws teammates' in-world icons with the mod's own renderer, so they show whether or not Xaero's
+ * Minimap is installed. This is the default; a player can hand the job to Xaero's renderer instead
+ * ({@link dev.spog.teamlocator.client.config.TeamConfig#useXaeroInWorldIcons}), in which case this
+ * steps aside so a teammate never carries two icons.
  *
- * <p><b>Faithful to Xaero's tracked-player in-world icon</b>, whose geometry was read from Xaero's
- * own {@code PlayerTrackerIconRenderer}/{@code PlayerTrackerMinimapElementRenderer} so this is a
- * match rather than an approximation: the player's 8&times;8 skin face (plus the hat overlay) inside
- * a 1px border, a translucent-black name plate above it, billboarded to the camera, drawn at a fixed
- * world size that fades in with distance. The one deliberate difference is the ask: Xaero's border is
- * white, here it is the teammate's ping colour, so the marker is colour-coded to match their pings
- * and HUD row.
+ * <p><b>Screen-space, exactly like Xaero.</b> Xaero's marker is not a quad floating in the 3D scene:
+ * its {@code MinimapElementWorldRendererHandler} takes the marker's world position, multiplies it by
+ * the camera and projection matrices to find where it lands on screen, converts that to pixels, and
+ * draws the icon flat at a fixed <em>pixel</em> size. This renderer does the same, as a HUD element.
  *
- * <p>Drawn see-through, like the mod's pings and Xaero's own in-world icons — a teammate marker is a
- * locator, so a wall between you should not hide it.
+ * <p>That is what produces the zoom behaviour: because the icon's size is in screen pixels and never
+ * passes through the projection, zooming in magnifies the world <em>past</em> a marker that stays the
+ * same pixel size — so markers read as getting smaller relative to everything around them. Drawing
+ * the icon as a world-space billboard cannot reproduce this, whether it is given a fixed world size
+ * (zoom magnifies it too) or a distance-compensated one (zoom does nothing to it at all).
+ *
+ * <p>Drawing in screen space also disposes of every depth and layer problem a world-space billboard
+ * has: the icon is composited over the finished 3D frame, so nothing can punch through it, and the
+ * face is drawn with vanilla's own {@link PlayerFaceExtractor} rather than hand-built skin quads.
+ *
+ * <p>The marker idles slightly transparent and, when the crosshair lands on it, snaps to full opacity
+ * with the teammate's name popped out beside it — Xaero's hover behaviour. The one deliberate
+ * difference is the ask: Xaero's border is white, here it is the teammate's ping colour, so the
+ * marker is colour-coded to match their pings and HUD row.
  */
 @Environment(EnvType.CLIENT)
-public final class TeammateIconRenderer {
-    // ---- geometry, measured from Xaero's renderer (pixels on the icon's local quad) ----
-    /** The skin face is an 8&times;8 quad centred on the origin: x,y run -4..+4. */
-    private static final float FACE_HALF = 4.0f;
-    /** UV of the face region on a 64&times;64 skin: the head front is the 8&times;8 block at (8,8). */
-    private static final float FACE_U0 = 8.0f / 64.0f;
-    private static final float FACE_V0 = 8.0f / 64.0f;
-    private static final float FACE_U1 = 16.0f / 64.0f;
-    private static final float FACE_V1 = 16.0f / 64.0f;
-    /** UV of the hat/overlay region: the 8&times;8 block at (40,8). */
-    private static final float HAT_U0 = 40.0f / 64.0f;
-    private static final float HAT_V0 = 8.0f / 64.0f;
-    private static final float HAT_U1 = 48.0f / 64.0f;
-    private static final float HAT_V1 = 16.0f / 64.0f;
-    /** The border is a 10&times;10 quad behind the face: 1px proud on every side (-5..+5). */
-    private static final float BORDER_HALF = 5.0f;
-    /** A hair toward the viewer so the coloured border sits behind the face, not z-fighting it. */
-    private static final float FACE_Z = -0.01f;
-    private static final float HAT_Z = -0.02f;
+public final class TeammateIconRenderer implements HudElement {
+    public static final Identifier ID = Identifier.fromNamespaceAndPath(
+            dev.spog.teamlocator.TeamLocatorConstants.MOD_ID, "teammate_icons");
 
     /**
-     * On-screen size of one icon pixel as a fraction of the icon's distance — a <em>constant apparent
-     * size</em>, so the marker looks the same on screen however far the teammate is, exactly like
-     * Xaero's in-world icon (and the mod's own pings). A fixed world size instead made it shrink into
-     * the distance, which is what read as "doesn't scale". Multiplied by distance per-frame to get the
-     * world-space pixel size at that range. 0.0018 puts the 10px border at roughly Xaero's apparent
-     * size; it is the single knob for overall icon size.
+     * Fallback face size in screen pixels, used only if the configured value is somehow unusable.
+     * The real size comes from {@code playerMarkerSize}, driven by the Player Marker slider.
      */
-    private static final float APPARENT_PIXEL = 0.0018f;
-    /** Floor on the world pixel size, so a very near icon (right at the fade edge) can't collapse. */
-    private static final float MIN_PIXEL = 1.0f / 48.0f;
+    private static final int DEFAULT_FACE_SIZE = 5;
+    /** Thickness of the ping-colour frame around the face, in screen pixels. */
+    private static final int BORDER = 1;
 
     /**
-     * Feet-to-body-centre lift, so the icon floats at the teammate's chest like Xaero's does rather
-     * than at their feet. This is the same 0.9 the Xaero-path mixin applies to Xaero's own icon.
+     * Feet-to-body-centre lift, so the icon floats at the teammate's chest rather than at their feet.
+     * This is the same 0.9 the Xaero-path mixin applies to Xaero's own icon.
      */
     private static final double BODY_CENTRE_OFFSET = 0.9;
 
-    // ---- distance fade, measured from Xaero (WORLD_MINIMUM_DISTANCE / WORLD_FADING_LENGTH = 10) ----
-    /** Nearer than this the icon is hidden: standing next to a teammate you don't need a locator. */
-    private static final double FADE_MIN_DISTANCE = 10.0;
-    /** Over this band past the minimum the icon fades from invisible to fully opaque. */
+    /**
+     * How far past the hide distance the marker takes to reach full opacity. Fixed rather than
+     * configurable: it exists so a marker fades in instead of popping, which is a rendering nicety
+     * rather than a preference. The hide distance itself is the Hide Within slider.
+     */
     private static final double FADE_LENGTH = 10.0;
 
-    /** Name plate: black background, ~90/255 alpha, exactly as Xaero draws it. */
+    /** Name plate background: black at ~90/255 alpha, as Xaero draws it. */
     private static final int NAME_BG_ALPHA = 90;
-    /** The name text sits one icon-pixel above the border's top edge. */
-    private static final float NAME_GAP = 1.0f;
-    /** Font is 8px tall (ascent+descent ≈ lineHeight-1); the plate is that plus 1px top and bottom. */
-    private static final int FULL_BRIGHT = 0xF000F0;
+    /**
+     * Overlap, in unscaled pixels, between the icon's edge and a hover label's plate. Small and
+     * negative-facing: the plate stays touching the marker rather than floating away from it, and the
+     * icon is drawn afterwards so it covers the tucked-under sliver.
+     */
+    private static final int NAME_GAP = 2;
+    /**
+     * Padding inside a label plate on the side FACING the icon, in scaled pixels. Larger than
+     * {@link #NAME_PAD_OUTER} so the text is pushed clear of the marker while the plate itself stays
+     * attached to it — the box grows to absorb the offset rather than the box moving away.
+     */
+    private static final int NAME_PAD_INNER = 6;
+    /** Padding on the label's outer side, away from the icon. */
+    private static final int NAME_PAD_OUTER = 2;
+    /**
+     * The hover name's size relative to the icon. The font is 8px tall at scale 1, so tying the text
+     * to the marker's size keeps the two proportional at any slider setting; the divisor makes the
+     * name a little smaller than the icon rather than matching it.
+     */
+    private static final float NAME_SCALE_PER_PIXEL = 1.0f / 9.0f;
+    /** Never shrink the name past this, or it stops being legible at the smallest marker sizes. */
+    private static final float NAME_SCALE_MIN = 0.5f;
 
-    private TeammateIconRenderer() {
+    /**
+     * How close to the crosshair an icon must be to count as "looked at", as the cosine of the angle
+     * between the look vector and the direction to the icon: 1&deg; to highlight, releasing at
+     * ~1.4&deg;. The two thresholds give hysteresis, so an icon at the edge of the cone doesn't
+     * strobe between dim and highlighted.
+     */
+    private static final double SHOW_COS = Math.cos(Math.toRadians(1.0));
+    private static final double HIDE_COS = Math.cos(Math.toRadians(1.4));
+
+    /**
+     * Per-teammate "currently looked at" latch backing the hysteresis. Pruned each frame against the
+     * live teammate list, so it cannot grow unbounded.
+     */
+    private static final java.util.Map<UUID, Boolean> shown =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Scratch vector for the world→clip projection; reused so the render loop allocates nothing. */
+    private final Vector4f projected = new Vector4f();
+
+    public TeammateIconRenderer() {
     }
 
-    public static void register() {
-        // Same hook and reasoning as PingRenderer: after every translucent terrain layer (water
-        // included) is down, so a see-through icon composites over it rather than being covered.
-        LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(context -> {
-            // Off entirely when the player handed in-world icons to Xaero AND Xaero is present to
-            // take them; otherwise the mod always draws its own. Exactly one renderer ever runs.
-            if (TeamLocatorClient.CONFIG.useXaeroInWorldIcons && XaeroCompat.isMinimapInstalled()) {
-                return;
-            }
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player == null || mc.level == null) {
-                return;
-            }
-            Identifier dimension = mc.player.level().dimension().identifier();
-            List<TrackedPos> teammates = ClientState.latest();
-            if (teammates.isEmpty()) {
-                return;
-            }
-            PoseStack matrices = context.poseStack();
-            MultiBufferSource.BufferSource consumers = context.bufferSource();
-            if (matrices == null || consumers == null) {
-                return;
-            }
-            Camera camera = mc.gameRenderer.getMainCamera();
-            // The frame's partial tick for entity position, so a loaded teammate is drawn at its
-            // smoothly interpolated render position rather than its last whole-tick position. MUST be
-            // the paused variant (true): entity tick-positions freeze between ticks, so feeding the
-            // realtime partial (false) — which keeps advancing — extrapolated past the real position
-            // and snapped back every frame, which is the "bugs backwards and forwards" jitter.
-            float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
+        // The master switch turns markers off entirely, whichever renderer would draw them.
+        if (!TeamLocatorClient.CONFIG.playerMarkersEnabled) {
+            return;
+        }
+        // Off entirely when the player handed in-world icons to Xaero AND Xaero is present to take
+        // them; otherwise the mod always draws its own. Exactly one renderer ever runs.
+        if (TeamLocatorClient.CONFIG.useXaeroInWorldIcons && XaeroCompat.isMinimapInstalled()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.options.hideGui) {
+            return;
+        }
+        Identifier dimension = mc.player.level().dimension().identifier();
+        List<TrackedPos> teammates = ClientState.latest();
+        if (teammates.isEmpty()) {
+            return;
+        }
 
-            // Skins are per-teammate textures, so each is its own render layer. Flushing a layer
-            // mid-loop (the previous approach) dropped the face; instead every icon is queued and the
-            // skin layers are all drained together at the end, exactly as PingRenderer flushes once.
-            java.util.Set<RenderType> skinLayers = new java.util.HashSet<>();
-            for (TrackedPos teammate : teammates) {
-                // Positions never cross dimensions, so an entry in another dimension is stale for
-                // this view — skip it rather than draw a marker at coordinates in a different world.
-                if (!teammate.dimension().equals(dimension)) {
-                    continue;
-                }
-                renderIcon(mc, matrices, consumers, camera, teammate, partial, skinLayers);
-            }
-            for (RenderType skinLayer : skinLayers) {
-                consumers.endBatch(skinLayer);
-            }
-            consumers.endBatch(RenderTypes.textBackgroundSeeThrough());
-            consumers.endLastBatch(); // the font's glyph layer
-        });
-    }
-
-    private static void renderIcon(Minecraft mc, PoseStack matrices,
-                                   MultiBufferSource.BufferSource consumers,
-                                   Camera camera, TrackedPos teammate, float partial,
-                                   java.util.Set<RenderType> skinLayers) {
+        Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 cam = camera.position();
+        // The partial tick the CAMERA was placed at — not the raw frame partial. The icon's screen
+        // position is the difference between the teammate's interpolated position and the camera's,
+        // so both must be sampled at the same instant; mixing two different sub-tick moments made the
+        // marker oscillate by a fraction of a block every frame, which is the jitter under movement.
+        float partial = camera.getCameraEntityPartialTicks(delta);
 
+        // The camera+projection transform for this frame, so a world point can be projected to the
+        // screen exactly where the 3D scene put it.
+        Matrix4f worldToClip = worldToClip(camera);
+        if (worldToClip == null) {
+            return;
+        }
+
+        org.joml.Vector3fc fwd = camera.forwardVector();
+        Vec3 look = new Vec3(fwd.x(), fwd.y(), fwd.z());
+
+        // Forget latch state for teammates no longer tracked, so the map can't grow unbounded.
+        java.util.Set<UUID> live = new java.util.HashSet<>();
+        for (TrackedPos teammate : teammates) {
+            live.add(teammate.id());
+        }
+        shown.keySet().retainAll(live);
+
+        for (TrackedPos teammate : teammates) {
+            // Positions never cross dimensions, so an entry in another dimension is stale for this
+            // view — skip it rather than draw a marker at coordinates in a different world.
+            if (!teammate.dimension().equals(dimension)) {
+                continue;
+            }
+            renderIcon(mc, graphics, camera, cam, worldToClip, look, teammate, partial);
+        }
+    }
+
+    /**
+     * The frame's world→clip matrix, straight from the camera: the perspective projection times the
+     * view rotation. A world point made relative to the camera and multiplied by this lands in clip
+     * space, which divides down to normalised device coordinates and then to pixels — the same chain
+     * Xaero's handler runs.
+     *
+     * <p>Taking it from the camera rather than rebuilding it from an FOV value means it is the real
+     * matrix the scene was drawn with, so a zoom (spyglass, a zoom mod) is picked up automatically:
+     * the marker's projected POSITION tracks the zoomed world exactly, while its pixel SIZE does not.
+     */
+    private static Matrix4f worldToClip(Camera camera) {
+        return camera.getViewRotationProjectionMatrix(new Matrix4f());
+    }
+
+    private void renderIcon(Minecraft mc, GuiGraphicsExtractor graphics, Camera camera, Vec3 cam,
+                            Matrix4f worldToClip, Vec3 look, TrackedPos teammate, float partial) {
         // Prefer the teammate's live entity when it is loaded locally: vanilla interpolates it every
-        // frame with the partial tick, so the icon locks onto a moving player smoothly. Xaero does the
-        // same. The relay position is only a fallback for teammates out of entity range, where the
-        // small ~200ms map lag is invisible anyway. Using the relay's interpolated (delayed) position
-        // for everyone was what made the icon trail behind and snap.
+        // frame with the partial tick, so the icon locks onto a moving player smoothly. The relay
+        // position is only a fallback for teammates out of entity range, where its ~200ms lag is
+        // invisible anyway.
         double px;
         double py;
         double pz;
         var entity = mc.level.getPlayerByUUID(teammate.id());
         if (entity != null) {
-            // getPosition(partial) lerps from the entity's PREVIOUS tick position. A player entity
-            // that just entered render range has not ticked yet (tickCount == 0), so its xOld/yOld/zOld
-            // are still zero — lerping through that yanked the icon toward world origin for a frame,
-            // which billboarded to a screen corner (the "glitching to the top left"). Only interpolate
-            // once the entity has a real previous position; before that, use its current position flat.
+            // A player entity that just entered render range has not ticked yet (tickCount == 0), so
+            // its xOld/yOld/zOld are still zero; interpolating through that would fling the icon
+            // toward world origin for a frame. Use the flat position until it has ticked.
             Vec3 p = entity.tickCount > 0 ? entity.getPosition(partial) : entity.position();
             px = p.x;
             py = p.y;
@@ -189,60 +225,103 @@ public final class TeammateIconRenderer {
         double dz = pz - cam.z;
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-        int alpha = fadeAlpha(distance);
-        if (alpha <= 0) {
+        int fade = fadeAlpha(distance);
+        if (fade <= 0) {
             return; // inside the near-fade: too close to be worth a locator, exactly like Xaero
         }
 
-        // Constant apparent size: the world-space pixel grows with distance so the icon stays the
-        // same size on screen, like Xaero's and the mod's pings. A fixed world size made it shrink
-        // away into the distance.
-        float pixel = Math.max(MIN_PIXEL, (float) (distance * APPARENT_PIXEL));
+        // Behind the camera: project() would wrap it round to a bogus on-screen point, so cull it
+        // the way Xaero does — on the dot product of the look vector with the direction to the icon.
+        if (look.x * dx + look.y * dy + look.z * dz <= 0.0) {
+            return;
+        }
 
-        matrices.pushPose();
-        matrices.translate(dx, dy, dz);
-        matrices.mulPose(camera.rotation());      // billboard toward the camera
-        matrices.scale(pixel, pixel, pixel);       // work in icon pixels from here on
-        PoseStack.Pose pose = matrices.last();
+        // World → clip → normalised device coords → pixels. This is the whole trick: the icon's
+        // POSITION comes through the projection (so it tracks the world, and a zoom moves it exactly
+        // as it moves the scene), while its SIZE below is in fixed screen pixels and never touches
+        // the projection — which is why zoom makes markers read as smaller against the world.
+        projected.set((float) dx, (float) dy, (float) dz, 1.0f);
+        projected.mul(worldToClip);
+        if (projected.w() <= 0.0f) {
+            return;
+        }
+        float ndcX = projected.x() / projected.w();
+        float ndcY = projected.y() / projected.w();
+        // Kept as floats: the true, fractional screen position. The draw calls below take ints, so
+        // the whole part positions them and the fraction is applied as a sub-pixel translate on the
+        // pose — without that, Math.round snapped the marker to whole pixels and smooth world motion
+        // came out as a visible stair-step (the residual jitter).
+        float exactX = (1.0f + ndcX) / 2.0f * graphics.guiWidth();
+        float exactY = (1.0f - ndcY) / 2.0f * graphics.guiHeight();
+        int screenX = (int) Math.floor(exactX);
+        int screenY = (int) Math.floor(exactY);
+        float subX = exactX - screenX;
+        float subY = exactY - screenY;
 
-        // 1) The coloured border: a 10x10 quad behind the face, in the teammate's ping colour. This
-        //    is the one change from Xaero, whose border is white.
+        // Xaero-style hover: an icon idles slightly transparent; putting the crosshair on it snaps it
+        // to full opacity and pops the name out beside it. Hysteresis stops edge-of-cone flicker.
+        boolean looked = passesCrosshairGate(teammate.id(), look, dx, dy, dz, distance);
+        int idleAlpha = Math.clamp(
+                Math.round(TeamLocatorClient.CONFIG.playerMarkerIdleOpacity * 255 / 100.0f), 0, 255);
+        int alpha = looked ? fade : fade * idleAlpha / 255;
+        if (alpha <= 0) {
+            return;
+        }
+
+        int faceSize = Math.max(1, TeamLocatorClient.CONFIG.playerMarkerSize > 0
+                ? TeamLocatorClient.CONFIG.playerMarkerSize : DEFAULT_FACE_SIZE);
+        int half = faceSize / 2;
+        int faceX = screenX - half;
+        int faceY = screenY - half;
+
+        // Everything for this marker is drawn inside a pose carrying the sub-pixel remainder, so the
+        // icon sits at its true fractional position and slides smoothly instead of snapping.
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(subX, subY);
+
+        // 1) The labels FIRST, so the icon paints over them: each plate is tucked under the marker's
+        //    edge, and drawing them before the frame and face is what puts them behind. The name goes
+        //    on the left, the distance (when enabled) on the right. Only shown while looked at.
+        if (looked) {
+            drawSideLabel(mc, graphics, PingHandler.displayName(mc, teammate.id()),
+                    faceX - BORDER, screenY, fade, faceSize, true);
+            if (TeamLocatorClient.CONFIG.playerMarkerShowDistance) {
+                drawSideLabel(mc, graphics, Math.round(distance) + "m",
+                        faceX + faceSize + BORDER, screenY, fade, faceSize, false);
+            }
+        }
+
+        // 2) The ping-colour frame: a filled rect one border wider than the face on every side. The
+        //    face is painted over its middle, leaving the 1px ring Xaero draws (white; here the ping
+        //    colour).
         int rgb = teammate.nameColor(0xFFFFFFFF) & 0xFFFFFF;
-        int br = (rgb >> 16) & 0xFF;
-        int bg = (rgb >> 8) & 0xFF;
-        int bb = rgb & 0xFF;
-        VertexConsumer border = consumers.getBuffer(RenderTypes.textBackgroundSeeThrough());
-        colorQuad(border, pose, -BORDER_HALF, -BORDER_HALF, BORDER_HALF, BORDER_HALF, 0.0f,
-                br, bg, bb, alpha);
+        graphics.fill(faceX - BORDER, faceY - BORDER,
+                faceX + faceSize + BORDER, faceY + faceSize + BORDER, (alpha << 24) | rgb);
 
-        // 2) The skin face and its hat overlay. Drawn on the ENTITY layer, not the text layer: the
-        //    text pipeline samples a font/atlas texture and produced nothing from a player skin (the
-        //    "just a coloured box" bug). entityTranslucent is exactly what the player model uses to
-        //    draw a skin, so it samples correctly. V is flipped so the face is upright.
-        Identifier skin = skinTexture(mc, teammate.id());
-        RenderType faceLayer = RenderTypes.entityTranslucent(skin);
-        skinLayers.add(faceLayer); // drained once at the end of the frame, not mid-loop
-        texQuad(consumers.getBuffer(faceLayer), pose, -FACE_HALF, -FACE_HALF, FACE_HALF, FACE_HALF,
-                FACE_Z, FACE_U0, FACE_V1, FACE_U1, FACE_V0, alpha);
-        texQuad(consumers.getBuffer(faceLayer), pose, -FACE_HALF, -FACE_HALF, FACE_HALF, FACE_HALF,
-                HAT_Z, HAT_U0, HAT_V1, HAT_U1, HAT_V0, alpha);
+        // 3) The face, drawn by vanilla's own player-face helper — the same one the mod's HUD rows
+        //    use — so the skin is sampled correctly with no hand-built quads or render layers. The
+        //    trailing ARGB tint is what fades it: the no-tint overload hardcodes opaque white, which
+        //    left the face solid while only the frame dimmed.
+        PlayerFaceExtractor.extractRenderState(graphics, skin(mc, teammate.id()),
+                faceX, faceY, faceSize, (alpha << 24) | 0xFFFFFF);
 
-        // 3) The name plate above the icon.
-        drawName(mc, consumers, pose, teammate.id(), alpha);
-
-        matrices.popPose();
+        graphics.pose().popMatrix();
     }
 
     /**
-     * Full-opaque past {@link #FADE_MIN_DISTANCE} + {@link #FADE_LENGTH}, fading to nothing across
-     * the band below that, and gone under the minimum. Mirrors Xaero's own distance fade so a
-     * teammate's icon appears and disappears at the same ranges whichever renderer is drawing it.
+     * Hidden inside the configured hide distance — where the teammate is close enough to simply look
+     * at — then fading in over {@link #FADE_LENGTH} blocks so it appears rather than pops. A hide
+     * distance of 0 disables the near-cull entirely and the marker is always drawn.
      */
     private static int fadeAlpha(double distance) {
-        if (distance <= FADE_MIN_DISTANCE) {
+        double hideWithin = TeamLocatorClient.CONFIG.playerMarkerHideDistance;
+        if (hideWithin <= 0.0) {
+            return 255;
+        }
+        if (distance <= hideWithin) {
             return 0;
         }
-        double over = distance - FADE_MIN_DISTANCE;
+        double over = distance - hideWithin;
         if (over >= FADE_LENGTH) {
             return 255;
         }
@@ -250,79 +329,80 @@ public final class TeammateIconRenderer {
     }
 
     /**
+     * True while the crosshair is over the icon. Dot-product gate with hysteresis: separate show and
+     * hide angles latch the state so an icon sitting right at the edge of the cone doesn't strobe.
+     */
+    private static boolean passesCrosshairGate(UUID owner, Vec3 look,
+                                               double dx, double dy, double dz, double distance) {
+        if (look == null || distance < 1.0e-4) {
+            return true; // no look vector (shouldn't happen) or icon on top of us: treat as looked at
+        }
+        double dot = (look.x * dx + look.y * dy + look.z * dz) / distance;
+        boolean currentlyShown = shown.getOrDefault(owner, false);
+        boolean nowShown = currentlyShown ? dot >= HIDE_COS : dot >= SHOW_COS;
+        shown.put(owner, nowShown);
+        return nowShown;
+    }
+
+    /**
+     * One hover label: a translucent-black plate clear of the icon and vertically centred on it, with
+     * the text on top — the Xaero-style popup shown only while the icon is looked at. {@code toLeft}
+     * places it off the marker's left edge (the name) or its right (the distance); {@code anchorX} is
+     * the corresponding icon edge in screen pixels.
+     */
+    private static void drawSideLabel(Minecraft mc, GuiGraphicsExtractor graphics, String text,
+                                      int anchorX, int centreY, int alpha, int faceSize,
+                                      boolean toLeft) {
+        Font font = mc.font;
+        float scale = Math.max(NAME_SCALE_MIN, faceSize * NAME_SCALE_PER_PIXEL);
+        // Asymmetric padding: wider on the side facing the icon. That offset is what moves the TEXT
+        // away from the marker, and the plate is widened by the same amount so it still reaches back
+        // to touch the icon — rather than the whole label detaching and floating off.
+        int plateW = font.width(text) + NAME_PAD_INNER + NAME_PAD_OUTER;
+        int plateH = font.lineHeight;
+
+        // CLAMPED TO THE MARKER. The pose is translated to the marker's edge in UNSCALED pixels and
+        // only then scaled, so the label is rigidly attached to the icon and every coordinate below
+        // is relative to that anchor. The previous version placed the label by dividing the screen
+        // anchor by the scale and rounding inside scaled space — an independent rounding that flipped
+        // back and forth as the marker slid sub-pixel, which is what made the text shake against the
+        // icon under mouse movement.
+        graphics.pose().pushMatrix();
+        // The plate is anchored ON the icon's edge, overlapping it slightly so the two stay joined.
+        graphics.pose().translate(anchorX + (toLeft ? NAME_GAP : -NAME_GAP), centreY);
+        graphics.pose().scale(scale, scale);
+
+        // Laid out around the origin: growing left of it for the name, right of it for the distance,
+        // and vertically centred either way.
+        int left = toLeft ? -plateW : 0;
+        int top = -plateH / 2;
+        int bgAlpha = Math.min(alpha, NAME_BG_ALPHA);
+        graphics.fill(left, top, left + plateW, top + plateH, bgAlpha << 24);
+        // Inset by the inner padding measured from whichever plate edge faces the icon, so the text
+        // sits away from the marker on both sides.
+        int textX = toLeft ? left + NAME_PAD_OUTER : left + NAME_PAD_INNER;
+        graphics.text(font, text, textX, top, (alpha << 24) | 0xFFFFFF, false);
+        graphics.pose().popMatrix();
+    }
+
+    /**
      * The teammate's skin: the live entity's if it is loaded (so it matches what you see in the
      * world), else the one their {@link PlayerInfo} carries on the connection, else the default skin
-     * derived from their UUID while a real one loads. Same resolution order Xaero uses.
+     * derived from their UUID while a real one loads.
      */
-    private static Identifier skinTexture(Minecraft mc, UUID id) {
+    private static PlayerSkin skin(Minecraft mc, UUID id) {
         if (mc.level != null) {
             Player entity = mc.level.getPlayerByUUID(id);
             if (entity instanceof AbstractClientPlayer clientPlayer) {
-                return clientPlayer.getSkin().body().texturePath();
+                return clientPlayer.getSkin();
             }
         }
         if (mc.getConnection() != null) {
             PlayerInfo info = mc.getConnection().getPlayerInfo(id);
-            if (info != null) {
-                PlayerSkin skin = info.getSkin();
-                if (skin != null) {
-                    return skin.body().texturePath();
-                }
+            if (info != null && info.getSkin() != null) {
+                return info.getSkin();
             }
         }
-        return DefaultPlayerSkin.get(id).body().texturePath();
-    }
-
-    /** The name plate: a translucent-black bar sized to the name, then the name centred on it. */
-    private static void drawName(Minecraft mc, MultiBufferSource consumers, PoseStack.Pose pose,
-                                 UUID id, int alpha) {
-        Font font = mc.font;
-        String name = PingHandler.displayName(mc, id);
-        int textWidth = font.width(name);
-        // Plate spans the text plus a 1px margin each side; its bottom sits NAME_GAP above the border.
-        float half = textWidth / 2.0f + 1.0f;
-        float bottom = BORDER_HALF + NAME_GAP;
-        float top = bottom + font.lineHeight;
-        int bgAlpha = Math.min(alpha, NAME_BG_ALPHA);
-        VertexConsumer plate = consumers.getBuffer(RenderTypes.textBackgroundSeeThrough());
-        colorQuad(plate, pose, -half, bottom, half, top, 0.0f, 0, 0, 0, bgAlpha);
-
-        // Text drawn at the plate's inner-top, growing downward. Y is flipped so the glyphs read
-        // upright on the upward-Y billboard, exactly as the face UV is flipped above.
-        Matrix4f mat = new Matrix4f(pose.pose());
-        mat.translate(-textWidth / 2.0f, top - 1.0f, 0.0f);
-        mat.scale(1.0f, -1.0f, 1.0f);
-        int textArgb = (alpha << 24) | 0xFFFFFF;
-        font.drawInBatch(name, 0.0f, 0.0f, textArgb, false, mat, consumers,
-                Font.DisplayMode.SEE_THROUGH, 0, FULL_BRIGHT);
-    }
-
-    /** A flat coloured quad on the see-through nametag-background layer (POSITION_COLOR_LIGHTMAP). */
-    private static void colorQuad(VertexConsumer buffer, PoseStack.Pose pose,
-                                  float x0, float y0, float x1, float y1, float z,
-                                  int r, int g, int b, int a) {
-        buffer.addVertex(pose, x0, y0, z).setColor(r, g, b, a).setLight(FULL_BRIGHT);
-        buffer.addVertex(pose, x1, y0, z).setColor(r, g, b, a).setLight(FULL_BRIGHT);
-        buffer.addVertex(pose, x1, y1, z).setColor(r, g, b, a).setLight(FULL_BRIGHT);
-        buffer.addVertex(pose, x0, y1, z).setColor(r, g, b, a).setLight(FULL_BRIGHT);
-    }
-
-    /**
-     * A textured white-tinted quad on the entity layer, whose format is
-     * POSITION_COLOR_TEXCOORD_OVERLAY_LIGHT_NORMAL — so this sets the overlay (NO_OVERLAY: no damage
-     * flash tint) as well, which the text layer did not need. Omitting it wrote a short vertex and was
-     * part of why the face never appeared.
-     */
-    private static void texQuad(VertexConsumer buffer, PoseStack.Pose pose,
-                                float x0, float y0, float x1, float y1, float z,
-                                float u0, float v0, float u1, float v1, int a) {
-        buffer.addVertex(pose, x0, y0, z).setColor(255, 255, 255, a).setUv(u0, v0)
-                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
-        buffer.addVertex(pose, x1, y0, z).setColor(255, 255, 255, a).setUv(u1, v0)
-                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
-        buffer.addVertex(pose, x1, y1, z).setColor(255, 255, 255, a).setUv(u1, v1)
-                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
-        buffer.addVertex(pose, x0, y1, z).setColor(255, 255, 255, a).setUv(u0, v1)
-                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULL_BRIGHT).setNormal(pose, 0.0f, 0.0f, -1.0f);
+        return net.minecraft.client.resources.DefaultPlayerSkin.get(id);
     }
 }

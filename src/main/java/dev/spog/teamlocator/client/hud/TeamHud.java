@@ -2,6 +2,7 @@ package dev.spog.teamlocator.client.hud;
 
 import dev.spog.teamlocator.client.ArmorPiece;
 import dev.spog.teamlocator.client.ClientState;
+import dev.spog.teamlocator.client.PingHandler;
 import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
@@ -13,6 +14,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerSkin;
 
@@ -130,10 +132,11 @@ public class TeamHud implements HudElement {
         int primary = config.hudPrimaryArgb();
         int secondary = config.hudSecondaryArgb();
         for (TrackedPos e : entries) {
+            // Absent PlayerInfo means the teammate is not in OUR tab list — which on a proxy network
+            // routinely means "on a different backend", not "gone". Dropping the row here was why the
+            // HUD could sit empty while the in-world marker drew the same teammate perfectly well:
+            // the marker falls back to a default skin and a stored name, and the HUD now does too.
             PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
-            if (info == null) {
-                continue;
-            }
             boolean attacked = ClientState.isUnderAttack(e.id());
             int pri = attacked ? COLOR_ATTACKED : primary;
             int sec = attacked ? COLOR_ATTACKED : secondary;
@@ -148,7 +151,10 @@ public class TeamHud implements HudElement {
             // Trailing spaces only pad toward what follows; without coords the name would
             // otherwise carry a dangling gap before the armor icons.
             boolean showCoords = config.hudShowCoords;
-            String name = info.getProfile().name();
+            // Same resolution order the in-world marker uses: the name stored against this player in
+            // the trust list (always present for someone you trust), then the tab list, then a short
+            // UUID so a row is never nameless.
+            String name = PingHandler.displayName(mc, e.id());
             Coords coords = null;
             segments.add(new Segment(showCoords ? name + "  " : name, nameColor));
             if (showCoords) {
@@ -184,7 +190,9 @@ public class TeamHud implements HudElement {
                 healthWidth += ARMOR_GAP;
             }
             int rowWidth = FACE_SIZE + 3 + textWidth + healthWidth + armorWidth;
-            rows.add(new Row(e, info.getSkin(), segments, rowWidth, armor, textWidth, name, coords,
+            // Default skin when the teammate is not in our tab list, rather than dropping the row.
+            PlayerSkin skin = info != null ? info.getSkin() : DefaultPlayerSkin.get(e.id());
+            rows.add(new Row(e, skin, segments, rowWidth, armor, textWidth, name, coords,
                     pri, sec, nameColor));
             maxWidth = Math.max(maxWidth, rowWidth);
         }

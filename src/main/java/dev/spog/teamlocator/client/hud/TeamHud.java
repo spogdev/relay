@@ -370,12 +370,15 @@ public class TeamHud implements HudElement {
      * starts in the same top-left corner and the two overlap into an unreadable mess, and F3 is a
      * deliberate "show me the diagnostics" mode where a teammate list is not what you are reading.
      *
-     * <p>Guarded rather than assumed reachable: {@code mc.gui} is null early in startup, and this runs
-     * from a render hook that can fire before it is built.
+     * <p>Reads {@code isF3Enabled()} rather than the tempting
+     * {@link net.minecraft.client.gui.hud.DebugHud#shouldShowDebugHud()}. Since the debug HUD was
+     * split into individually-toggleable entries, {@code shouldShowDebugHud()} is an OR: F3 enabled
+     * <em>or</em> any entry visible at all. Visible entries persist across sessions independently of
+     * F3, so a player who has ever switched one on would have this return true forever and lose the
+     * HUD entirely. Only F3's own state means "F3 is up".
      */
     private static boolean debugScreenOpen(MinecraftClient mc) {
-        return mc.inGameHud != null && mc.inGameHud.getDebugHud() != null
-                && mc.inGameHud.getDebugHud().shouldShowDebugHud();
+        return mc.debugHudEntryList != null && mc.debugHudEntryList.isF3Enabled();
     }
 
     /**

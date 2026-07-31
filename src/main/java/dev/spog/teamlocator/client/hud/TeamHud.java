@@ -371,12 +371,15 @@ public class TeamHud implements HudElement {
      * starts in the same top-left corner and the two overlap into an unreadable mess, and F3 is a
      * deliberate "show me the diagnostics" mode where a teammate list is not what you are reading.
      *
-     * <p>Guarded rather than assumed reachable: {@code mc.gui} is null early in startup, and this runs
-     * from a render hook that can fire before it is built.
+     * <p>Reads {@code isOverlayVisible()} rather than the tempting
+     * {@link net.minecraft.client.gui.components.DebugScreenOverlay#showDebugScreen()}. Since the
+     * debug HUD was split into individually-toggleable entries, {@code showDebugScreen()} is an OR:
+     * overlay visible <em>or</em> any entry enabled at all. Enabled entries persist across sessions
+     * independently of F3, so a player who has ever switched one on would have this return true
+     * forever and lose the HUD entirely. Only the overlay's own visibility means "F3 is up".
      */
     private static boolean debugScreenOpen(Minecraft mc) {
-        return mc.gui != null && mc.gui.getDebugOverlay() != null
-                && mc.gui.getDebugOverlay().showDebugScreen();
+        return mc.debugEntries != null && mc.debugEntries.isOverlayVisible();
     }
 
     /**

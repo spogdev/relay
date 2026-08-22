@@ -6,6 +6,8 @@ import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.config.TrustEntry;
 import dev.spog.teamlocator.client.net.NameLookup;
+import com.mojang.blaze3d.platform.cursor.CursorType;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
@@ -47,7 +49,6 @@ public class TeamLocatorConfigScreen extends Screen {
     private enum Tab {
         GENERAL("relay.config.tab.general"),
         HUD("relay.config.tab.hud"),
-        MARKERS("relay.config.tab.markers"),
         INTEGRATIONS("relay.config.tab.integrations"),
         TRUST("relay.config.tab.trust");
 
@@ -76,6 +77,8 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Height reserved under the bottom bar for the Done button. */
     private static final int BOTTOM_BAR = 40;
     private static final int SCROLL_STEP = 12;
+    private static final int TOOLTIP_PADDING = 6;
+    private static final int TOOLTIP_MAX_W = 220;
 
     private static final String SCHEME_LABEL = "wss://";
     private static final int RELAY_BOX_W = 200;
@@ -91,6 +94,9 @@ public class TeamLocatorConfigScreen extends Screen {
 
     private int scroll;
     private int contentHeight;
+    /** The scrolling area's bounds this frame, so field rows can clip themselves to it. */
+    private int viewTop;
+    private int viewBottom;
     /** Largest valid scroll offset, refreshed each frame for the input handler. */
     private int maxScroll;
 
@@ -106,6 +112,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private EditBox chatPrefixInput;
     private EditBox primaryColorInput;
     private EditBox secondaryColorInput;
+    private PanelButton doneButton;
     private PanelButton addButton;
 
     /** URL as it was when the screen opened, to detect a change on close and reconnect. */
@@ -129,7 +136,7 @@ public class TeamLocatorConfigScreen extends Screen {
         int right = this.width - MARGIN;
         int bottom = this.height - MARGIN;
 
-        addRenderableWidget(new PanelButton(
+        doneButton = addRenderableWidget(new PanelButton(
                 right - CARD_PADDING - 90, bottom - CARD_PADDING - 20, 90, 20,
                 Component.translatable("relay.config.done"), b -> onClose()));
 
@@ -149,6 +156,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         chatPrefixInput = new EditBox(this.font, 0, -100, 60, 20,
                 Component.translatable("relay.config.chat_prefix"));
+        chatPrefixInput.setBordered(false);
         chatPrefixInput.setMaxLength(1);
         chatPrefixInput.setValue(config.chatPrefix);
         chatPrefixInput.setResponder(value -> {
@@ -171,6 +179,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         nameInput = new EditBox(this.font, 0, -100, 130, 20,
                 Component.translatable("relay.config.add_player"));
+        nameInput.setBordered(false);
         nameInput.setHint(Component.translatable("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
@@ -181,6 +190,9 @@ public class TeamLocatorConfigScreen extends Screen {
 
     private EditBox colorField(String initial, String key, Consumer<String> onChange) {
         EditBox box = new EditBox(this.font, 0, -100, 70, 20, Component.translatable(key));
+        // Borderless: the frame is drawn by fieldFrame() inside the scissored pass, so it matches
+        // the panel and cannot escape the card while scrolling.
+        box.setBordered(false);
         box.setMaxLength(7);
         box.setValue(initial);
         box.setTooltip(Tooltip.create(Component.translatable(key)));
@@ -255,12 +267,13 @@ public class TeamLocatorConfigScreen extends Screen {
         // Scroll the body, then clamp so a short page cannot drift off.
         int viewHeight = bottom - bodyTop - BOTTOM_BAR;
         int originY = bodyTop - scroll;
+        viewTop = bodyTop + 1;
+        viewBottom = bodyTop + viewHeight;
 
         graphics.enableScissor(left + 1, bodyTop + 1, right - 1, bodyTop + viewHeight);
         contentHeight = switch (active) {
             case GENERAL -> drawGeneral(graphics, left, originY, right, mouseX, mouseY);
             case HUD -> drawHud(graphics, left, originY, right, mouseX, mouseY);
-            case MARKERS -> drawMarkers(graphics, left, originY, right, mouseX, mouseY);
             case INTEGRATIONS -> drawIntegrations(graphics, left, originY, right, mouseX, mouseY);
             case TRUST -> drawTrust(graphics, left, originY, right, mouseX, mouseY);
         };
@@ -275,14 +288,31 @@ public class TeamLocatorConfigScreen extends Screen {
             drawScrollbar(graphics, right - 5, bodyTop + 4, viewHeight, contentHeight);
         }
 
+        // The text fields are real widgets, so vanilla paints them here -- after the rows' scissor
+        // was released. Without re-clipping, a field scrolled past the card kept drawing over the tab
+        // bar and the Done button. The bottom bar's own widgets are drawn outside this pass, below.
+        // Done sits on the bottom bar, outside the scrolling area, so it is held out of the clipped
+        // pass and drawn on its own afterwards rather than being painted twice.
+        if (doneButton != null) {
+            doneButton.visible = false;
+        }
+        graphics.enableScissor(left + 1, viewTop, right - 1, viewBottom);
         super.extractRenderState(graphics, mouseX, mouseY, delta);
+        graphics.disableScissor();
+        if (doneButton != null) {
+            doneButton.visible = true;
+            doneButton.extractRenderState(graphics, mouseX, mouseY, delta);
+        }
 
         // Open dropdowns paint last so they overlap the rows beneath them.
         drawOpenDropdowns(graphics, mouseX, mouseY);
 
+        // Zones are rebuilt by the page draw above, so the hovered one is known by now. Dropdowns
+        // take precedence: an open list covers the rows beneath it.
+        applyCursor(graphics, mouseX, mouseY);
+
         if (hoverTooltip != null) {
-            graphics.setTooltipForNextFrame(this.font, this.font.split(hoverTooltip, 200),
-                    mouseX, mouseY);
+            drawPanelTooltip(graphics, hoverTooltip, mouseX, mouseY);
         }
     }
 
@@ -296,11 +326,35 @@ public class TeamLocatorConfigScreen extends Screen {
                 relayUrlInput, nameInput}) {
             if (box != null) {
                 box.setY(-100);
+                // Hidden until the page that owns it places it. A field left visible on another tab
+                // would still take the caret and swallow typing.
+                box.visible = false;
             }
         }
         if (addButton != null) {
             addButton.setY(-100);
+            addButton.visible = false;
         }
+    }
+
+    /**
+     * Show a field only while its row is inside the scrolling viewport, and drop focus when it
+     * leaves. The scissor stops a scrolled-away field being drawn over the bars, but on its own it
+     * would leave an invisible field holding the caret.
+     */
+    private void placeField(EditBox box, int x, int y, int width) {
+        boolean onScreen = y + 20 > viewTop && y < viewBottom;
+        box.visible = onScreen;
+        if (!onScreen) {
+            box.setY(-100);
+            if (getFocused() == box) {
+                setFocused(null);
+            }
+            return;
+        }
+        box.setX(x);
+        box.setY(y);
+        box.setWidth(width);
     }
 
     private void drawOpenDropdowns(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -319,6 +373,81 @@ public class TeamLocatorConfigScreen extends Screen {
             default -> {
             }
         }
+    }
+
+
+    /**
+     * The cursor for whatever is under the pointer, requested once per frame.
+     *
+     * <p>Widgets do this themselves in {@code AbstractWidget.handleCursor}, but the rows here are
+     * painted rather than built, so the zone list stands in for that. Checked back-to-front so the
+     * most recently drawn zone -- the one painted on top -- wins an overlap.
+     */
+    private void applyCursor(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        for (Dropdown<?> dropdown : visibleDropdowns()) {
+            if (dropdown.isOpen()) {
+                // An open list covers the rows under it; the whole control area is clickable.
+                graphics.requestCursor(CursorTypes.POINTING_HAND);
+                return;
+            }
+            if (dropdown.isActive() && dropdown.isHovered(this.font, mouseX, mouseY)) {
+                graphics.requestCursor(CursorTypes.POINTING_HAND);
+                return;
+            }
+        }
+        // Only the scrolling area and the tab strip carry zones; a pointer over the card background
+        // keeps the plain arrow.
+        for (int i = zones.size() - 1; i >= 0; i--) {
+            Zone zone = zones.get(i);
+            if (zone.contains(mouseX, mouseY)) {
+                graphics.requestCursor(zone.cursor());
+                return;
+            }
+        }
+    }
+
+    /**
+     * A tooltip in the panel's own style rather than vanilla's purple-bordered box, so hover text
+     * reads as part of this screen. Same treatment as the tier menu: card frame, near-opaque fill,
+     * and clamped to stay on screen instead of running off an edge.
+     */
+    private void drawPanelTooltip(GuiGraphicsExtractor graphics, Component text, int mouseX, int mouseY) {
+        List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(text, TOOLTIP_MAX_W);
+        if (lines.isEmpty()) {
+            return;
+        }
+        int textWidth = 0;
+        for (var line : lines) {
+            textWidth = Math.max(textWidth, this.font.width(line));
+        }
+        int boxWidth = textWidth + TOOLTIP_PADDING * 2;
+        int boxHeight = TOOLTIP_PADDING * 2 + lines.size() * (this.font.lineHeight + 2) - 2;
+
+        int boxX = Math.min(mouseX + 12, this.width - boxWidth - 4);
+        int boxY = Math.clamp(mouseY - 8, 4, this.height - boxHeight - 4);
+
+        drawFrame(graphics, boxX, boxY, boxX + boxWidth, boxY + boxHeight);
+        graphics.fill(boxX + 1, boxY + 1, boxX + boxWidth - 1, boxY + boxHeight - 1, 0xE00E1219);
+
+        int lineY = boxY + TOOLTIP_PADDING;
+        for (var line : lines) {
+            graphics.text(this.font, line, boxX + TOOLTIP_PADDING, lineY, 0xFFE4EAF2, false);
+            lineY += this.font.lineHeight + 2;
+        }
+    }
+
+    /**
+     * The frame a borderless text field sits inside, drawn in the scrolled pass so it clips with its
+     * row. Lit while focused, the way the dropdowns light while open.
+     */
+    private void fieldFrame(GuiGraphicsExtractor graphics, EditBox box, int x, int y, int w) {
+        boolean focused = box.isFocused();
+        graphics.fill(x, y, x + w, y + 20, focused ? 0xF00E1219 : 0x50161B22);
+        int border = focused ? 0xA05B6B7D : CARD_BORDER;
+        graphics.fill(x, y, x + w, y + 1, border);
+        graphics.fill(x, y + 19, x + w, y + 20, border);
+        graphics.fill(x, y, x + 1, y + 20, border);
+        graphics.fill(x + w - 1, y, x + w, y + 20, border);
     }
 
     private void drawScrollbar(GuiGraphicsExtractor graphics, int x, int top, int viewHeight, int total) {
@@ -463,19 +592,15 @@ public class TeamLocatorConfigScreen extends Screen {
         // Ping colour: the five the account's UUID produces, each shown by name with a swatch.
         List<String> palette = pingPalette();
         if (!palette.isEmpty()) {
+            // The colours have no names, so each row is the colour itself rather than an index --
+            // the old "2 / 5" told you nothing about what you were picking.
             List<Dropdown.Entry<Integer>> colors = new ArrayList<>();
             for (int i = 0; i < palette.size(); i++) {
-                colors.add(new Dropdown.Entry<>(i, (i + 1) + " / " + palette.size()));
+                colors.add(new Dropdown.Entry<>(i, "", PingPalette.argb(palette.get(i))));
             }
             y = dropdownRow(graphics, "relay.config.ping_color", "relay.config.ping_color.desc",
                     pingColor, colors, Math.floorMod(config.pingColorIndex, palette.size()),
                     x, y, mouseX, mouseY);
-            // Swatch beside the control, so the number has something to mean.
-            int swatchX = x + CONTROL_X + CONTROL_W + 8;
-            int swatchY = y - ROW_HEIGHT + 1;
-            graphics.fill(swatchX, swatchY, swatchX + 14, swatchY + 14, 0xFFFFFFFF);
-            graphics.fill(swatchX + 1, swatchY + 1, swatchX + 13, swatchY + 13,
-                    PingPalette.argb(palette.get(Math.floorMod(config.pingColorIndex, palette.size()))));
         }
 
         y += 10;
@@ -487,6 +612,9 @@ public class TeamLocatorConfigScreen extends Screen {
                 });
         y = fieldRow(graphics, "relay.config.chat_prefix", "relay.config.chat_prefix.desc",
                 chatPrefixInput, 60, x, y, mouseX, mouseY);
+
+        y += 10;
+        y = drawMarkerSection(graphics, x, y, mouseX, mouseY);
 
         y += 10;
         y = header(graphics, "relay.config.section.advanced", null, x, y);
@@ -576,12 +704,12 @@ public class TeamLocatorConfigScreen extends Screen {
         return y + CARD_PADDING - top;
     }
 
-    /** The in-world teammate markers. */
-    private int drawMarkers(GuiGraphicsExtractor graphics, int left, int top, int right,
-                            int mouseX, int mouseY) {
-        int x = left + CARD_PADDING;
-        int y = top + CARD_PADDING;
-
+    /**
+     * The in-world teammate markers. A section of the General page rather than a tab of its own:
+     * five rows is not enough to justify one, and they sit naturally under the sharing settings that
+     * decide whether there is anything to mark.
+     */
+    private int drawMarkerSection(GuiGraphicsExtractor graphics, int x, int y, int mouseX, int mouseY) {
         y = header(graphics, "relay.config.section.player_marker",
                 "relay.config.section.player_marker.desc", x, y);
         y = toggle(graphics, "relay.config.player_markers_enabled",
@@ -626,7 +754,7 @@ public class TeamLocatorConfigScreen extends Screen {
                     config.save();
                 });
 
-        return y + CARD_PADDING - top;
+        return y;
     }
 
     /** Settings for other mods this one talks to. */
@@ -687,10 +815,14 @@ public class TeamLocatorConfigScreen extends Screen {
         // --- Add a player: name field then the Add button ---
         graphics.text(this.font, Component.translatable("relay.config.add_player"),
                 x, y + 6, LABEL_COLOR, false);
-        nameInput.setX(x + CONTROL_X);
-        nameInput.setY(y);
+        fieldFrame(graphics, nameInput, x + CONTROL_X, y, 130);
+        placeField(nameInput, x + CONTROL_X + 5, y + 6, 120);
+        zones.add(new Zone(x + CONTROL_X, y, x + CONTROL_X + 130, y + 20,
+                () -> setFocused(nameInput), null, CursorTypes.IBEAM));
+        boolean addOnScreen = y + 20 > viewTop && y < viewBottom;
+        addButton.visible = addOnScreen;
         addButton.setX(x + CONTROL_X + 135);
-        addButton.setY(y);
+        addButton.setY(addOnScreen ? y : -100);
         if (addStatus != null) {
             graphics.text(this.font, addStatus, x + CONTROL_X + 205, y + 6, addStatusColor, false);
         }
@@ -900,9 +1032,10 @@ public class TeamLocatorConfigScreen extends Screen {
     private int fieldRow(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                          EditBox box, int fieldWidth, int x, int y, int mouseX, int mouseY) {
         graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
-        box.setX(x + CONTROL_X);
-        box.setY(y);
-        box.setWidth(fieldWidth);
+        fieldFrame(graphics, box, x + CONTROL_X, y, fieldWidth);
+        placeField(box, x + CONTROL_X + 5, y + 6, fieldWidth - 10);
+        zones.add(new Zone(x + CONTROL_X, y, x + CONTROL_X + fieldWidth, y + 20,
+                () -> setFocused(box), null, CursorTypes.IBEAM));
         noteTooltip(descKey, x, y, mouseX, mouseY);
         return y + ROW_HEIGHT;
     }
@@ -911,9 +1044,10 @@ public class TeamLocatorConfigScreen extends Screen {
     private int colorRow(GuiGraphicsExtractor graphics, String labelKey, EditBox box, int argb,
                          int x, int y, int mouseX, int mouseY) {
         graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
-        box.setX(x + CONTROL_X);
-        box.setY(y);
-        box.setWidth(70);
+        fieldFrame(graphics, box, x + CONTROL_X, y, 70);
+        placeField(box, x + CONTROL_X + 5, y + 6, 60);
+        zones.add(new Zone(x + CONTROL_X, y, x + CONTROL_X + 70, y + 20,
+                () -> setFocused(box), null, CursorTypes.IBEAM));
         int swatchX = x + CONTROL_X + 78;
         graphics.fill(swatchX, y, swatchX + 20, y + 20, 0xFFFFFFFF);
         graphics.fill(swatchX + 1, y + 1, swatchX + 19, y + 19, argb);
@@ -928,14 +1062,14 @@ public class TeamLocatorConfigScreen extends Screen {
         graphics.text(this.font, Component.translatable("relay.config.relay_url"),
                 x, y + 6, LABEL_COLOR, false);
         int boxX = x + CONTROL_X;
-        frameBox(graphics, boxX, y, boxX + RELAY_BOX_W, y + 20);
-        graphics.text(this.font, SCHEME_LABEL, boxX + 4, y + 6, MUTED_COLOR, false);
-        relayUrlInput.setX(boxX + 4 + this.font.width(SCHEME_LABEL));
-        relayUrlInput.setY(y + 6);
+        fieldFrame(graphics, relayUrlInput, boxX, y, RELAY_BOX_W);
+        graphics.text(this.font, SCHEME_LABEL, boxX + 5, y + 6, MUTED_COLOR, false);
+        placeField(relayUrlInput, boxX + 5 + this.font.width(SCHEME_LABEL), y + 6,
+                RELAY_BOX_W - 10 - this.font.width(SCHEME_LABEL));
         // Clicking the prefix (inside the frame, left of the borderless field) still focuses it —
         // the whole frame reads as one text box.
         zones.add(new Zone(boxX, y, boxX + RELAY_BOX_W, y + 20,
-                () -> setFocused(relayUrlInput)));
+                () -> setFocused(relayUrlInput), null, CursorTypes.IBEAM));
         noteTooltip("relay.config.relay_url.desc", x, y, mouseX, mouseY);
         return y + ROW_HEIGHT + 4;
     }
@@ -1205,24 +1339,37 @@ public class TeamLocatorConfigScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
         // Dropdowns first: an open list sits above everything else, including the zones it covers.
+        // An open list may legitimately hang below the viewport, so it is not clipped here.
         for (Dropdown<?> dropdown : visibleDropdowns()) {
             if (dropdown.isOpen() && dropdown.click(this.font, event.x(), event.y())) {
                 return true;
             }
         }
-        for (Dropdown<?> dropdown : visibleDropdowns()) {
-            if (dropdown.click(this.font, event.x(), event.y())) {
-                click();
+        // A click on a bar must never reach a scrolled control clipped underneath it. Everything
+        // below is inside the scrolling area, which the drawing already clips; without the same test
+        // here a field scrolled out of sight stayed clickable through the tab bar and the Done row.
+        boolean inView = event.y() >= viewTop && event.y() < viewBottom;
+        if (inView) {
+            for (Dropdown<?> dropdown : visibleDropdowns()) {
+                if (dropdown.click(this.font, event.x(), event.y())) {
+                    click();
+                    return true;
+                }
+            }
+            if (super.mouseClicked(event, doubled)) {
                 return true;
             }
-        }
-
-        if (super.mouseClicked(event, doubled)) {
+        } else if (doneButton != null && doneButton.mouseClicked(event, doubled)) {
+            // Done sits on the bottom bar, outside the scrolling area, and is dispatched on its own.
             return true;
         }
 
         for (Zone zone : zones) {
-            if (zone.contains(event.x(), event.y())) {
+            // Tab-strip zones live above the viewport, so they are exempt from the clip test.
+            if (!zone.contains(event.x(), event.y())) {
+                continue;
+            }
+            if (inView || zone.top() < viewTop) {
                 zone.press((int) Math.round(event.x()));
                 return true;
             }
@@ -1265,11 +1412,20 @@ public class TeamLocatorConfigScreen extends Screen {
     /**
      * One click target. {@code drag} is set for sliders, which also respond to the cursor moving
      * with the button held; plain rows leave it null and only fire on press.
+     *
+     * <p>Rows are painted rather than being widgets, so they get none of {@code AbstractWidget}'s
+     * cursor handling for free -- the zone carries the cursor to request while hovered, which is
+     * what gives toggles and tabs the pointing hand and sliders the horizontal resize arrows.
      */
     private record Zone(int left, int top, int right, int bottom, Runnable action,
-                        java.util.function.IntConsumer drag) {
+                        java.util.function.IntConsumer drag, CursorType cursor) {
         Zone(int left, int top, int right, int bottom, Runnable action) {
-            this(left, top, right, bottom, action, null);
+            this(left, top, right, bottom, action, null, CursorTypes.POINTING_HAND);
+        }
+
+        Zone(int left, int top, int right, int bottom, Runnable action,
+             java.util.function.IntConsumer drag) {
+            this(left, top, right, bottom, action, drag, CursorTypes.RESIZE_EW);
         }
 
         boolean contains(double x, double y) {

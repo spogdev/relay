@@ -122,10 +122,15 @@ public class Dropdown<T> {
 
 		Entry<T> entry = find(current);
 		int textX = x + 6;
-		String label = entry == null ? "-" : entry.label();
-		int color = !active ? TEXT_DISABLED : (hovered || open ? TEXT_HOVER : TEXT);
-		graphics.drawTextWithShadow(textRenderer, Text.literal(trim(textRenderer, label, width - (textX - x) - 16)),
-				textX, y + 4, color);
+		if (entry != null && entry.swatch() != null) {
+			drawSwatch(graphics, textX, y + 4, width - (textX - x) - 16, textRenderer.fontHeight,
+					entry.swatch());
+		} else {
+			String label = entry == null ? "-" : entry.label();
+			int color = !active ? TEXT_DISABLED : (hovered || open ? TEXT_HOVER : TEXT);
+			graphics.drawTextWithShadow(textRenderer, Text.literal(trim(textRenderer, label, width - (textX - x) - 16)),
+					textX, y + 4, color);
+		}
 
 		// Caret, pointing the way the list will open.
 		int caretX = x + width - 10;
@@ -162,9 +167,14 @@ public class Dropdown<T> {
 			}
 
 			int textX = x + 6;
-			graphics.drawTextWithShadow(textRenderer, Text.literal(
-							trim(textRenderer, entry.label(), width - (textX - x) - 8)),
-					textX, rowY + 4, hovered ? TEXT_HOVER : TEXT);
+			if (entry.swatch() != null) {
+				drawSwatch(graphics, textX, rowY + 4, width - (textX - x) - 8, textRenderer.fontHeight,
+						entry.swatch());
+			} else {
+				graphics.drawTextWithShadow(textRenderer, Text.literal(
+								trim(textRenderer, entry.label(), width - (textX - x) - 8)),
+						textX, rowY + 4, hovered ? TEXT_HOVER : TEXT);
+			}
 		}
 
 		// Scrollbar, only when the list is longer than the window.
@@ -250,6 +260,12 @@ public class Dropdown<T> {
 		return out;
 	}
 
+	/** A colour box filling the row, bordered so a dark colour still reads against the panel. */
+	private static void drawSwatch(DrawContext graphics, int x, int y, int w, int h, int argb) {
+		graphics.fill(x, y, x + w, y + h, 0xFF000000);
+		graphics.fill(x + 1, y + 1, x + w - 1, y + h - 1, argb);
+	}
+
 	private static boolean contains(int mouseX, int mouseY, int left, int top, int w, int h) {
 		return mouseX >= left && mouseX <= left + w && mouseY >= top && mouseY <= top + h;
 	}
@@ -263,7 +279,14 @@ public class Dropdown<T> {
 		graphics.fill(right - 1, top, right, bottom, border);
 	}
 
-	/** One row: a value and its label. */
-	public record Entry<T>(T value, String label) {
+	/**
+	 * One row: a value and its label, or -- when {@code swatch} is set -- a colour box drawn in
+	 * place of the text. Ping colours have no meaningful names, so a numbered list said nothing a
+	 * swatch does not say better.
+	 */
+	public record Entry<T>(T value, String label, Integer swatch) {
+		public Entry(T value, String label) {
+			this(value, label, null);
+		}
 	}
 }

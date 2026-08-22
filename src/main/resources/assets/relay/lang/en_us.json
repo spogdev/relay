@@ -119,7 +119,6 @@
   "relay.command.not_connected": "Not connected to the relay",
   "relay.command.sent": "Sending to relay...",
   "relay.config.tab.hud": "HUD",
-  "relay.config.tab.markers": "Markers",
   "relay.config.section.sharing.desc": "What relay shares about you with your trusted players.",
   "relay.config.section.hud.desc": "The on-screen list of where your teammates are.",
   "relay.config.section.hud_colors": "Colors",

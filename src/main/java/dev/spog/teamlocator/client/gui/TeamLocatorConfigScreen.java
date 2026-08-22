@@ -14,7 +14,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -91,6 +90,15 @@ public class TeamLocatorConfigScreen extends Screen {
     private final List<Zone> zones = new ArrayList<>();
     /** Hover text for the row under the cursor this frame, or null. */
     private Component hoverTooltip;
+    /**
+     * The slider being dragged, held from press to release.
+     *
+     * <p>Tracking it is what lets a drag run past the bar's ends: testing {@code contains} on every
+     * drag event (the old behaviour) dropped the drag the moment the cursor left the bar, so the
+     * last few pixels at either end were unreachable -- the pointer slipped off before the value
+     * could get there. The zone keeps receiving the cursor's x and clamps it itself.
+     */
+    private java.util.function.IntConsumer draggingSlider;
 
     private int scroll;
     private int contentHeight;
@@ -195,7 +203,6 @@ public class TeamLocatorConfigScreen extends Screen {
         box.setBordered(false);
         box.setMaxLength(7);
         box.setValue(initial);
-        box.setTooltip(Tooltip.create(Component.translatable(key)));
         box.setResponder(onChange);
         addRenderableWidget(box);
         return box;
@@ -629,7 +636,7 @@ public class TeamLocatorConfigScreen extends Screen {
         int x = left + CARD_PADDING;
         int y = top + CARD_PADDING;
 
-        y = header(graphics, "relay.config.section.hud", "relay.config.section.hud.desc", x, y);
+        y = header(graphics, "relay.config.section.hud", null, x, y);
         y = toggle(graphics, "relay.config.hud_enabled", "relay.config.hud_enabled.desc",
                 config.hudEnabled, x, y, mouseX, mouseY, () -> {
                     config.hudEnabled = !config.hudEnabled;
@@ -857,7 +864,7 @@ public class TeamLocatorConfigScreen extends Screen {
             drawFaceAndName(graphics, x, y - 3, entry);
 
             boolean muted = entry.mutePings;
-            drawToggle(graphics, muteX, y - 3, TOGGLE_W, muted ? "MUTED" : "ON", !muted);
+            drawToggle(graphics, muteX, y - 3, TOGGLE_W, muted ? "MUTED" : "UNMUTED", !muted);
             zones.add(new Zone(muteX, y - 3, muteX + TOGGLE_W, y + 13, () -> {
                 entry.mutePings = !entry.mutePings;
                 config.save();
@@ -1043,6 +1050,9 @@ public class TeamLocatorConfigScreen extends Screen {
     /** A hex colour field with a live swatch beside it. */
     private int colorRow(GuiGraphicsExtractor graphics, String labelKey, EditBox box, int argb,
                          int x, int y, int mouseX, int mouseY) {
+        // Short label, with what the colour actually covers in the tooltip. Spelling it out on the
+        // row ("Primary color: player names & punctuation") overran the control column and ran the
+        // text into the field beside it.
         graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
         fieldFrame(graphics, box, x + CONTROL_X, y, 70);
         placeField(box, x + CONTROL_X + 5, y + 6, 60);
@@ -1051,6 +1061,7 @@ public class TeamLocatorConfigScreen extends Screen {
         int swatchX = x + CONTROL_X + 78;
         graphics.fill(swatchX, y, swatchX + 20, y + 20, 0xFFFFFFFF);
         graphics.fill(swatchX + 1, y + 1, swatchX + 19, y + 19, argb);
+        noteTooltip(labelKey + ".desc", x, y, mouseX, mouseY);
         return y + ROW_HEIGHT;
     }
 
@@ -1371,22 +1382,35 @@ public class TeamLocatorConfigScreen extends Screen {
             }
             if (inView || zone.top() < viewTop) {
                 zone.press((int) Math.round(event.x()));
+                // Latch sliders so the drag survives the cursor leaving the bar.
+                draggingSlider = zone.drag();
                 return true;
             }
         }
         return false;
     }
 
-    /** Dragging inside a slider zone keeps updating it, so bars behave like sliders. */
+    /**
+     * Feed the latched slider until the button comes up, wherever the cursor goes. Each slider
+     * clamps the x it is handed, so dragging past either end pins the value at that end instead of
+     * stopping short of it.
+     */
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        for (Zone zone : zones) {
-            if (zone.drag() != null && zone.contains(event.x(), event.y())) {
-                zone.drag().accept((int) Math.round(event.x()));
-                return true;
-            }
+        if (draggingSlider != null) {
+            draggingSlider.accept((int) Math.round(event.x()));
+            return true;
         }
         return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (draggingSlider != null) {
+            draggingSlider = null;
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     @Override

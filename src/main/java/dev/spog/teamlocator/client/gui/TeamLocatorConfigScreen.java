@@ -72,7 +72,25 @@ public class TeamLocatorConfigScreen extends Screen {
     /** Left edge of every control column, measured from the card's inner left edge. */
     private static final int CONTROL_X = 150;
     private static final int CONTROL_W = 130;
-    private static final int TOGGLE_W = 52;
+    /**
+     * Width of a switch column on the trust table. Wider than the switch itself: the header is
+     * centred over this span and so is the switch, and the whole column stays clickable rather than
+     * only the 22px control.
+     */
+    private static final int SWITCH_COL_W = 52;
+    /**
+     * The sliding switch, matching SpogTiers: a coloured track with the knob at the end it is set
+     * to. Replaces the lettered ON/OFF boxes -- the position reads at a glance, where a word has to
+     * be read, and a column of them shows its pattern without scanning each row.
+     */
+    private static final int SWITCH_W = 22;
+    private static final int SWITCH_H = 12;
+    private static final int SWITCH_ON = 0xFF4CAF50;
+    private static final int SWITCH_OFF = 0xFFC1443C;
+    private static final int SWITCH_ON_DISABLED = 0x804CAF50;
+    private static final int SWITCH_OFF_DISABLED = 0x80C1443C;
+    private static final int SWITCH_KNOB = 0xFFFFFFFF;
+    private static final int SWITCH_KNOB_DISABLED = 0xFF9AA3AE;
     /** Height reserved under the bottom bar for the Done button. */
     private static final int BOTTOM_BAR = 40;
     private static final int SCROLL_STEP = 12;
@@ -843,14 +861,14 @@ public class TeamLocatorConfigScreen extends Screen {
             return y + this.font.lineHeight + CARD_PADDING - top;
         }
 
-        int muteX = right - CARD_PADDING - 50 - 10 - TOGGLE_W - 10 - TOGGLE_W;
-        int shareX = muteX + TOGGLE_W + 10;
-        int removeX = shareX + TOGGLE_W + 10;
+        int muteX = right - CARD_PADDING - 50 - 10 - SWITCH_COL_W - 10 - SWITCH_COL_W;
+        int shareX = muteX + SWITCH_COL_W + 10;
+        int removeX = shareX + SWITCH_COL_W + 10;
 
         graphics.text(this.font, Component.translatable("relay.config.column.player"),
                 x, y, MUTED_COLOR, false);
-        centered(graphics, Component.translatable("relay.config.column.alerts"), muteX, TOGGLE_W, y);
-        centered(graphics, Component.translatable("relay.config.column.visibility"), shareX, TOGGLE_W, y);
+        centered(graphics, Component.translatable("relay.config.column.alerts"), muteX, SWITCH_COL_W, y);
+        centered(graphics, Component.translatable("relay.config.column.visibility"), shareX, SWITCH_COL_W, y);
         y += this.font.lineHeight + 6;
 
         for (TrustEntry entry : entries) {
@@ -863,25 +881,27 @@ public class TeamLocatorConfigScreen extends Screen {
 
             drawFaceAndName(graphics, x, y - 3, entry);
 
+            // The switch reads as "alerts on": knob right/green means this player can alert you,
+            // which is the unmuted state. Muting is the opt-in, so the default sits on.
             boolean muted = entry.mutePings;
-            drawToggle(graphics, muteX, y - 3, TOGGLE_W, muted ? "MUTED" : "UNMUTED", !muted);
-            zones.add(new Zone(muteX, y - 3, muteX + TOGGLE_W, y + 13, () -> {
+            drawSwitch(graphics, muteX + (SWITCH_COL_W - SWITCH_W) / 2, y + 1, !muted, true);
+            zones.add(new Zone(muteX, y - 3, muteX + SWITCH_COL_W, y + 13, () -> {
                 entry.mutePings = !entry.mutePings;
                 config.save();
                 click();
             }));
 
             boolean shared = !entry.hidden;
-            drawToggle(graphics, shareX, y - 3, TOGGLE_W, shared ? "ON" : "OFF", shared);
-            zones.add(new Zone(shareX, y - 3, shareX + TOGGLE_W, y + 13, () -> {
+            drawSwitch(graphics, shareX + (SWITCH_COL_W - SWITCH_W) / 2, y + 1, shared, true);
+            zones.add(new Zone(shareX, y - 3, shareX + SWITCH_COL_W, y + 13, () -> {
                 entry.hidden = !entry.hidden;
                 config.save();
                 TeamLocatorClient.syncToServer();
                 click();
             }));
 
-            drawToggle(graphics, removeX, y - 3, 50,
-                    Component.translatable("relay.config.remove").getString(), false);
+            drawDangerButton(graphics, removeX, y - 3, 50,
+                    Component.translatable("relay.config.remove").getString());
             zones.add(new Zone(removeX, y - 3, removeX + 50, y + 13, () -> {
                 entries.remove(entry);
                 config.save();
@@ -922,9 +942,12 @@ public class TeamLocatorConfigScreen extends Screen {
         graphics.text(this.font, Component.translatable(labelKey), x, y + 6,
                 enabled ? LABEL_COLOR : MUTED_COLOR, false);
         int toggleX = x + CONTROL_X;
-        drawToggle(graphics, toggleX, y, TOGGLE_W, on ? "ON" : "OFF", on && enabled);
+        // Centred on the row the boxed toggle used to fill, so switching the control did not shift
+        // the column: every row's control still starts at CONTROL_X.
+        int switchY = y + (ROW_HEIGHT - 6 - SWITCH_H) / 2;
+        drawSwitch(graphics, toggleX, switchY, on, enabled);
         if (enabled) {
-            zones.add(new Zone(toggleX, y, toggleX + TOGGLE_W, y + ROW_HEIGHT - 6, () -> {
+            zones.add(new Zone(toggleX, y, toggleX + SWITCH_W, y + ROW_HEIGHT - 6, () -> {
                 onClick.run();
                 click();
             }));
@@ -1158,20 +1181,39 @@ public class TeamLocatorConfigScreen extends Screen {
                 y + (h - this.font.lineHeight) / 2, hovered ? 0xFFFFFFFF : 0xFFE4EAF2, false);
     }
 
-    private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, int boxWidth,
-                            String text, boolean on) {
-        int boxHeight = this.font.lineHeight + 8;
-        int fill = on ? 0x5023351F : 0x50241A1D;
-        int border = on ? 0xA05F9A56 : 0xA0955A5A;
+    /**
+     * A sliding switch: green when on, red when off, with the knob at the end it is set to.
+     *
+     * <p>{@code enabled} is separate from {@code on}: a switch that cannot be changed right now is
+     * drawn faded rather than hidden, so the row keeps its shape and the reason stays visible.
+     */
+    private void drawSwitch(GuiGraphicsExtractor graphics, int x, int y, boolean on, boolean enabled) {
+        int track = enabled ? (on ? SWITCH_ON : SWITCH_OFF)
+                : (on ? SWITCH_ON_DISABLED : SWITCH_OFF_DISABLED);
+        graphics.fill(x, y, x + SWITCH_W, y + SWITCH_H, track);
+        int knob = on ? x + SWITCH_W - 10 : x + 2;
+        graphics.fill(knob, y + 2, knob + 8, y + SWITCH_H - 2,
+                enabled ? SWITCH_KNOB : SWITCH_KNOB_DISABLED);
+    }
 
-        graphics.fill(x, y, x + boxWidth, y + boxHeight, fill);
-        graphics.fill(x, y, x + boxWidth, y + 1, border);
-        graphics.fill(x, y + boxHeight - 1, x + boxWidth, y + boxHeight, border);
-        graphics.fill(x, y, x + 1, y + boxHeight, border);
-        graphics.fill(x + boxWidth - 1, y, x + boxWidth, y + boxHeight, border);
+    /**
+     * A red boxed button for a destructive action -- Remove, on a trust row.
+     *
+     * <p>Deliberately still a box now that the on/off controls are switches: a switch says "this is
+     * a state you can set and unset", which Remove is not. Keeping it lettered and framed is what
+     * stops it reading as a third toggle in the row.
+     */
+    private void drawDangerButton(GuiGraphicsExtractor graphics, int x, int y, int boxWidth,
+                                  String text) {
+        int boxHeight = this.font.lineHeight + 8;
+        graphics.fill(x, y, x + boxWidth, y + boxHeight, 0x50241A1D);
+        graphics.fill(x, y, x + boxWidth, y + 1, 0xA0955A5A);
+        graphics.fill(x, y + boxHeight - 1, x + boxWidth, y + boxHeight, 0xA0955A5A);
+        graphics.fill(x, y, x + 1, y + boxHeight, 0xA0955A5A);
+        graphics.fill(x + boxWidth - 1, y, x + boxWidth, y + boxHeight, 0xA0955A5A);
 
         graphics.text(this.font, text, x + (boxWidth - this.font.width(text)) / 2, y + 4,
-                on ? 0xFFA8E39B : 0xFFE0A0A0, false);
+                0xFFE0A0A0, false);
     }
 
     private static void frameBox(GuiGraphicsExtractor graphics, int left, int top, int right, int bottom) {

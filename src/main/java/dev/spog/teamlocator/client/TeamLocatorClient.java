@@ -286,23 +286,22 @@ public class TeamLocatorClient implements ClientModInitializer {
     }
 
     /**
-     * Flip which renderer draws teammates' in-world icons: the mod's own (default) or Xaero's
-     * (keybind action). The renderer and the tracker mixin read the config live, so the swap takes
-     * effect on the next frame.
+     * Show or hide teammates' in-world markers (keybind action). Both renderers gate on
+     * {@code playerMarkersEnabled}, so this turns the markers off whichever one is drawing them, and
+     * it reads the config live -- the change takes effect on the next frame.
      *
-     * <p>Xaero's icon exists only where Xaero's Minimap is installed. With it absent the setting has
-     * nothing to switch to, so the toggle is a no-op and says so rather than silently flipping a flag
-     * that changes nothing on screen.
+     * <p>Deliberately not {@code useXaeroInWorldIcons}: that flag picks which renderer draws, so
+     * toggling it swapped Xaero's markers for the mod's own and back while the markers stayed on
+     * screen the whole time. A key named "Toggle Markers" has to be able to turn them off. Which
+     * renderer to use stays a config setting, where it is a preference rather than something to
+     * cycle through mid-game -- and this now works with or without Xaero installed, since hiding
+     * markers never depended on it.
      */
     private static void toggleInWorldIcons() {
-        if (!XaeroCompat.isMinimapInstalled()) {
-            RelayChat.send(Component.translatable("relay.in_world_icons.xaero_missing"));
-            return;
-        }
-        CONFIG.useXaeroInWorldIcons = !CONFIG.useXaeroInWorldIcons;
+        CONFIG.playerMarkersEnabled = !CONFIG.playerMarkersEnabled;
         CONFIG.save();
-        RelayChat.send(Component.translatable(CONFIG.useXaeroInWorldIcons
-                ? "relay.in_world_icons.using_xaero" : "relay.in_world_icons.using_builtin"));
+        RelayChat.send(Component.translatable(CONFIG.playerMarkersEnabled
+                ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
     }
 
     /** The client now sources its own coordinates — they no longer come from a server mod. */

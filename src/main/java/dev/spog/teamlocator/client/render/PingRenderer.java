@@ -163,11 +163,6 @@ public final class PingRenderer {
         return throughWalls ? RenderTypes.textSeeThrough(texture) : RenderTypes.text(texture);
     }
 
-    /** The untextured layer for label boxes, matching {@link #markerLayer}'s depth behaviour. */
-    private static net.minecraft.client.renderer.rendertype.RenderType boxLayer() {
-        return throughWalls ? RenderTypes.textBackgroundSeeThrough() : RenderTypes.textBackground();
-    }
-
     /** Glyph display mode, matching {@link #markerLayer}'s depth behaviour. */
     private static Font.DisplayMode glyphMode() {
         return throughWalls ? Font.DisplayMode.SEE_THROUGH : Font.DisplayMode.NORMAL;
@@ -263,7 +258,7 @@ public final class PingRenderer {
 
         matrices.pushPose();
         matrices.translate(dx, dy, dz);
-        matrices.mulPose(camera.rotation()); // billboard toward the camera
+        matrices.rotate(camera.rotation()); // billboard toward the camera
         matrices.scale(scale, scale, scale);
         return matrices.last();
     }
@@ -439,40 +434,17 @@ public final class PingRenderer {
     }
 
     /**
-     * An untextured translucent quad on the see-through nametag-background layer, ARGB colour.
-     * Seated at {@link #TAG_Z}, behind both the glyphs and the pin.
+     * The translucent nametag-style box behind a label, ARGB colour. Drawn through the pipeline's
+     * own background submission, which matches the glyphs' depth behaviour via {@link #glyphMode()}.
      */
     private static void fillQuad(OrderedSubmitNodeCollector collector, PoseStack matrices,
                                  float x0, float y0, float x1, float y1, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >> 16) & 0xFF;
-        int g = (argb >> 8) & 0xFF;
-        int b = argb & 0xFF;
-        collector.submitCustomGeometry(matrices, boxLayer(), (pose, buffer) -> {
-            // Wind BL -> BR -> TR -> TL to match the pin quad, so the box faces the camera and isn't
-            // culled by the background pipeline's back-face culling (the earlier order was reversed,
-            // which is why the box didn't render at all).
-            colorVertex(buffer, pose, x0, y0, r, g, b, a);
-            colorVertex(buffer, pose, x1, y0, r, g, b, a);
-            colorVertex(buffer, pose, x1, y1, r, g, b, a);
-            colorVertex(buffer, pose, x0, y1, r, g, b, a);
-        });
+        // 26.3 dropped the text-background render types in favour of submitting a background
+        // directly, so the hand-wound quad (and its position-colour-lightmap vertex helper) is gone:
+        // the pipeline owns the geometry and the winding now.
+        collector.submitTextBackground(matrices, x0, y0, x1, y1, argb, glyphMode(), FULL_BRIGHT);
     }
 
-    /**
-     * Position-colour-lightmap vertex for the nametag-background layer. That layer's format is
-     * POSITION_COLOR_LIGHTMAP — position, colour and light, with no normal — so this deliberately
-     * omits setNormal (calling it would write into an element the format doesn't have).
-     *
-     * <p>Seated at {@link #TAG_Z}, a small step away from the camera, so the glyphs at z=0 paint in
-     * front of the box no matter what order the shared buffer flushes its layers in.
-     */
-    private static void colorVertex(VertexConsumer buffer, PoseStack.Pose pose, float x, float y,
-                                    int r, int g, int b, int a) {
-        buffer.addVertex(pose, x, y, TAG_Z)
-                .setColor(r, g, b, a)
-                .setLight(FULL_BRIGHT);
-    }
 
     /** A one-shot expanding ring, only in the first {@link #RIPPLE_MS} of the ping's life. */
     private static void renderRipple(OrderedSubmitNodeCollector collector, PoseStack matrices,

@@ -1,7 +1,7 @@
 package dev.spog.teamlocator.mixin.client;
 
 import dev.spog.teamlocator.client.compat.xaero.XaeroWorldMapTracker;
-import net.minecraft.client.renderer.MultiBufferSource;
+import xaero.lib.client.graphics.XaeroBufferProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -51,14 +51,14 @@ public class PlayerTrackerMapElementRendererMixin {
             method = "renderElement(Lxaero/map/radar/tracker/PlayerTrackerMapElement;ZDFDD"
                     + "Lxaero/map/element/render/ElementRenderInfo;"
                     + "Lxaero/map/element/MapElementGraphics;"
-                    + "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;"
+                    + "Lxaero/lib/client/graphics/XaeroBufferProvider;"
                     + "Lxaero/map/graphics/renderer/multitexture/MultiTextureRenderTypeRendererProvider;)Z",
             at = @At("HEAD"))
     private void relay$alwaysRenderRelayWorldMapElement(PlayerTrackerMapElement<?> element, boolean highlighted,
                                                         double optionalDepth, float partialTicks,
                                                         double cameraX, double cameraZ,
                                                         ElementRenderInfo renderInfo, MapElementGraphics graphics,
-                                                        MultiBufferSource.BufferSource bufferSource,
+                                                        XaeroBufferProvider bufferSource,
                                                         MultiTextureRenderTypeRendererProvider rendererProvider,
                                                         CallbackInfoReturnable<Boolean> cir) {
         if (!(element.getSystem() instanceof XaeroWorldMapTracker)) {

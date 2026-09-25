@@ -43,7 +43,7 @@ public class MinimapElementWorldRendererHandlerMixin {
             method = "transformAndRenderForRenderer(Ljava/lang/Object;DDD"
                     + "Lxaero/hud/minimap/element/render/MinimapElementRenderer;Ljava/lang/Object;ID"
                     + "Lxaero/hud/minimap/element/render/MinimapElementRenderInfo;"
-                    + "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;)Z",
+                    + "Lxaero/lib/client/graphics/XaeroBufferProvider;)Z",
             at = @At(value = "INVOKE",
                     target = "Lxaero/hud/minimap/element/render/MinimapElementReader;"
                             + "getRenderY(Ljava/lang/Object;Ljava/lang/Object;F)D"))

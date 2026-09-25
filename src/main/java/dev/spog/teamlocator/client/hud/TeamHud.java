@@ -113,7 +113,7 @@ public class TeamHud implements HudElement {
     public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
         if (!config.hudEnabled || mc.player == null || mc.getConnection() == null
-                || mc.options.hideGui || debugScreenOpen(mc)) {
+                || mc.gui.hud.isHidden() || debugScreenOpen(mc)) {
             return;
         }
         List<TrackedPos> entries = ClientState.latest();

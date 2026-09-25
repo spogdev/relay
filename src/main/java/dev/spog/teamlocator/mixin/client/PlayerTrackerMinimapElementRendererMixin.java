@@ -4,7 +4,7 @@ import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.compat.xaero.XaeroMinimapTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.MultiBufferSource;
+import xaero.lib.client.graphics.XaeroBufferProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -47,14 +47,14 @@ public class PlayerTrackerMinimapElementRendererMixin {
             method = "renderElement(Lxaero/hud/minimap/player/tracker/PlayerTrackerMinimapElement;ZZDFDD"
                     + "Lxaero/hud/minimap/element/render/MinimapElementRenderInfo;"
                     + "Lxaero/hud/minimap/element/render/MinimapElementGraphics;"
-                    + "Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;)Z",
+                    + "Lxaero/lib/client/graphics/XaeroBufferProvider;)Z",
             at = @At("HEAD"),
             cancellable = true)
     private void relay$filterRelayElement(PlayerTrackerMinimapElement<?> element, boolean highlighted,
                                           boolean outOfBounds, double optionalDepth, float partialTicks,
                                           double cameraX, double cameraZ, MinimapElementRenderInfo renderInfo,
                                           MinimapElementGraphics graphics,
-                                          MultiBufferSource.BufferSource bufferSource,
+                                          XaeroBufferProvider bufferSource,
                                           CallbackInfoReturnable<Boolean> cir) {
         if (!(element.getSystem() instanceof XaeroMinimapTracker)) {
             return;

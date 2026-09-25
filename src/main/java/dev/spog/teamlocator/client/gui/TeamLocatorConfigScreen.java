@@ -1430,7 +1430,7 @@ public class TeamLocatorConfigScreen extends Screen {
         if (!config.relayUrl.equals(initialRelayUrl)) {
             TeamLocatorClient.connectRelay();
         }
-        this.minecraft.setScreen(parent);
+        this.minecraft.setScreenAndShow(parent);
     }
 
     /**

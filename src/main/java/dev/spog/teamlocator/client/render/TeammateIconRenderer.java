@@ -137,7 +137,7 @@ public final class TeammateIconRenderer implements HudElement {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null || mc.options.hideGui) {
+        if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
             return;
         }
         Identifier dimension = mc.player.level().dimension().identifier();
@@ -146,7 +146,7 @@ public final class TeammateIconRenderer implements HudElement {
             return;
         }
 
-        Camera camera = mc.gameRenderer.getMainCamera();
+        Camera camera = mc.gameRenderer.mainCamera();
         Vec3 cam = camera.position();
         // The partial tick the CAMERA was placed at — not the raw frame partial. The icon's screen
         // position is the difference between the teammate's interpolated position and the camera's,

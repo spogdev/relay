@@ -153,7 +153,7 @@ public class TeamLocatorClient implements ClientModInitializer {
                 placeMapPing(client);
             }
             while (configKey.consumeClick()) {
-                client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
+                client.setScreenAndShow(new TeamLocatorConfigScreen(null, CONFIG));
             }
             while (hudToggleKey.consumeClick()) {
                 toggleHud();

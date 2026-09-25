@@ -29,6 +29,29 @@ repositories {
     }
 }
 
+/**
+ * XaeroLib, extracted from the minimap's META-INF/jars.
+ *
+ * <p>It is fetched through its own configuration rather than read off compileClasspath: that
+ * configuration is where the extracted jar is then added, so resolving it here to produce that jar
+ * is circular. A provider keeps the download lazy -- it only runs when compilation asks for the file.
+ */
+configurations { xaeroLibSource }
+
+dependencies {
+    xaeroLibSource "maven.modrinth:xaeros-minimap:${project.xaero_minimap_version}"
+}
+
+def xaeroLibJar = provider {
+    def out = layout.buildDirectory.file("xaerolib/xaerolib.jar").get().asFile
+    if (!out.exists()) {
+        def minimap = configurations.xaeroLibSource.files.find { it.name.startsWith('xaeros-minimap') }
+        out.parentFile.mkdirs()
+        out.bytes = zipTree(minimap).matching { include 'META-INF/jars/xaerolib-*.jar' }.singleFile.bytes
+    }
+    out
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -42,7 +65,14 @@ dependencies {
     // runs fine without them; all xaero.* references live behind a mod-loaded guard.
     compileOnly "maven.modrinth:xaeros-minimap:${project.xaero_minimap_version}"
     compileOnly "maven.modrinth:xaeros-world-map:${project.xaero_worldmap_version}"
+
+    // XaeroLib carries the types Xaero's own renderer signatures now name (XaeroBufferProvider),
+    // so the mixins need it at compile time. It ships only as a jar-in-jar inside the two mods
+    // above and is not published to Modrinth on its own, so it is unpacked from one of them rather
+    // than declared as a coordinate. compileOnly like its parents: at runtime Xaero loads it.
+    compileOnly files(xaeroLibJar)
 }
+
 
 processResources {
     inputs.property 'version', project.version

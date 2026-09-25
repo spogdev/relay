@@ -53,6 +53,6 @@ public final class RelayToasts {
      */
     private static void show(Component title, Component detail) {
         Minecraft mc = Minecraft.getInstance();
-        mc.execute(() -> SystemToast.addOrUpdate(mc.getToastManager(), CONNECTION_TOAST, title, detail));
+        mc.execute(() -> SystemToast.addOrUpdate(mc.gui.toastManager(), CONNECTION_TOAST, title, detail));
     }
 }

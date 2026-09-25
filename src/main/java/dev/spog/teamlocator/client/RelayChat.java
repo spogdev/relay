@@ -32,7 +32,7 @@ public final class RelayChat {
         if (mc.gui == null) {
             return;
         }
-        mc.gui.getChat().addClientSystemMessage(primary(message));
+        mc.gui.hud.getChat().addClientSystemMessage(primary(message));
     }
 
     /** {@code message} in the HUD's primary color; call {@link #value(String)} for the parts inside. */

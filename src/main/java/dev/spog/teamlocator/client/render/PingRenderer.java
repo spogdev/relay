@@ -12,7 +12,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import dev.spog.teamlocator.client.gui.SecondsSlider;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.resources.Identifier;
@@ -149,14 +150,17 @@ public final class PingRenderer {
      */
     private static boolean throughWalls = true;
 
+    /**
+     * Submission order. Everything at {@link #ORDER_LABELS} draws before anything at
+     * {@link #ORDER_PINS}, which is how the pin ends up over the label box that tucks under it --
+     * these layers are see-through, so draw order decides, not depth.
+     */
+    private static final int ORDER_LABELS = 0;
+    private static final int ORDER_PINS = 1;
+
     /** The textured layer for markers: see-through, or depth-tested when the option is off. */
     private static net.minecraft.client.renderer.rendertype.RenderType markerLayer(Identifier texture) {
         return throughWalls ? RenderTypes.textSeeThrough(texture) : RenderTypes.text(texture);
-    }
-
-    /** The untextured layer for label boxes, matching {@link #markerLayer}'s depth behaviour. */
-    private static net.minecraft.client.renderer.rendertype.RenderType boxLayer() {
-        return throughWalls ? RenderTypes.textBackgroundSeeThrough() : RenderTypes.textBackground();
     }
 
     /** Glyph display mode, matching {@link #markerLayer}'s depth behaviour. */
@@ -201,11 +205,11 @@ public final class PingRenderer {
                 return;
             }
             PoseStack matrices = context.poseStack();
-            MultiBufferSource.BufferSource consumers = context.bufferSource();
-            if (matrices == null || consumers == null) {
+            SubmitNodeCollector collector = context.submitNodeCollector();
+            if (matrices == null || collector == null) {
                 return;
             }
-            Camera camera = mc.gameRenderer.getMainCamera();
+            Camera camera = mc.gameRenderer.mainCamera();
             org.joml.Vector3fc fwd = camera.forwardVector();
             Vec3 look = new Vec3(fwd.x(), fwd.y(), fwd.z());
             // Two passes, because the label boxes overlap the pin and the pin must win there.
@@ -218,17 +222,17 @@ public final class PingRenderer {
             //
             // So: queue every ping's labels and flush them completely, then queue the pins. Nothing
             // else is open by then, so the pins genuinely paint last.
+            // Labels first, pins second -- the pin must paint over the pixel of label box that
+            // tucks under it. Under the submission pipeline that is expressed with order() rather
+            // than by flushing batches by hand: everything submitted at ORDER_LABELS draws before
+            // anything at ORDER_PINS, which is exactly the guarantee the old endBatch pair was
+            // reaching for (and got wrong once, letting the boxes show through the icon).
             for (PingState.Ping ping : pings) {
-                renderLabels(mc, matrices, consumers, camera, look, ping);
+                renderLabels(mc, matrices, collector.order(ORDER_LABELS), camera, look, ping);
             }
-            consumers.endBatch(boxLayer());
-            consumers.endLastBatch(); // drains the font's glyph layer
-
             for (PingState.Ping ping : pings) {
-                renderMarker(mc, matrices, consumers, camera, ping);
+                renderMarker(mc, matrices, collector.order(ORDER_PINS), camera, ping);
             }
-            consumers.endBatch(markerLayer(RING));
-            consumers.endBatch(markerLayer(TEXTURE));
         });
     }
 
@@ -254,7 +258,7 @@ public final class PingRenderer {
 
         matrices.pushPose();
         matrices.translate(dx, dy, dz);
-        matrices.mulPose(camera.rotation()); // billboard toward the camera
+        matrices.rotate(camera.rotation()); // billboard toward the camera
         matrices.scale(scale, scale, scale);
         return matrices.last();
     }
@@ -269,7 +273,7 @@ public final class PingRenderer {
      * First pass: the name/distance labels and their boxes, drawn only while the crosshair is over
      * the pin. Queued before the markers so the pin paints over the pixel of box that tucks under it.
      */
-    private static void renderLabels(Minecraft mc, PoseStack matrices, MultiBufferSource consumers,
+    private static void renderLabels(Minecraft mc, PoseStack matrices, OrderedSubmitNodeCollector collector,
                                      Camera camera, Vec3 look, PingState.Ping ping) {
         int alpha = 255;
         Vec3 d = offsetTo(camera, ping);
@@ -280,12 +284,12 @@ public final class PingRenderer {
             return;
         }
 
-        PoseStack.Pose pose = pushBillboard(matrices, camera, ping, trueDistance, d.x, d.y, d.z);
+        pushBillboard(matrices, camera, ping, trueDistance, d.x, d.y, d.z);
         // The distance is the true straight-line distance, not the clamped draw distance, so it
         // always tells the truth about how far the spot is.
         String name = PingHandler.displayName(mc, ping.owner());
         String dist = Math.round(trueDistance) + "m";
-        drawLabels(mc.font, consumers, pose, name, dist, alpha, ping.argb());
+        drawLabels(mc.font, collector, matrices, name, dist, alpha, ping.argb());
         matrices.popPose();
     }
 
@@ -293,7 +297,7 @@ public final class PingRenderer {
      * Second pass: the pin and its placement ripple. Queued after every label so the icon paints on
      * top of the boxes overlapping it.
      */
-    private static void renderMarker(Minecraft mc, PoseStack matrices, MultiBufferSource consumers,
+    private static void renderMarker(Minecraft mc, PoseStack matrices, OrderedSubmitNodeCollector collector,
                                      Camera camera, PingState.Ping ping) {
         // No fade: a ping is fully opaque for its whole life and then is simply gone. PingState
         // already drops it once expired, so anything reaching here should be drawn at full alpha.
@@ -306,18 +310,21 @@ public final class PingRenderer {
         int g = (argb >> 8) & 0xFF;
         int b = argb & 0xFF;
 
-        PoseStack.Pose pose = pushBillboard(matrices, camera, ping, trueDistance, d.x, d.y, d.z);
+        pushBillboard(matrices, camera, ping, trueDistance, d.x, d.y, d.z);
 
         // Placement ripple: a ring in the ping's colour that expands once and fades, then is gone.
-        renderRipple(consumers, pose, ping, r, g, b, alpha);
+        renderRipple(collector, matrices, ping, r, g, b, alpha);
 
         // The pin itself, pulled toward the camera (PIN_Z is negative; the billboard faces down -Z).
-        VertexConsumer pin = consumers.getBuffer(markerLayer(TEXTURE));
+        // submitCustomGeometry hands back a VertexConsumer, so the vertices are unchanged -- only
+        // how the buffer is obtained differs from the immediate-mode path.
         float half = 0.5f;
-        vertex(pin, pose, -half, -half, PIN_Z, 0.0f, 1.0f, r, g, b, alpha);
-        vertex(pin, pose, half, -half, PIN_Z, 1.0f, 1.0f, r, g, b, alpha);
-        vertex(pin, pose, half, half, PIN_Z, 1.0f, 0.0f, r, g, b, alpha);
-        vertex(pin, pose, -half, half, PIN_Z, 0.0f, 0.0f, r, g, b, alpha);
+        collector.submitCustomGeometry(matrices, markerLayer(TEXTURE), (p2, pin) -> {
+            vertex(pin, p2, -half, -half, PIN_Z, 0.0f, 1.0f, r, g, b, alpha);
+            vertex(pin, p2, half, -half, PIN_Z, 1.0f, 1.0f, r, g, b, alpha);
+            vertex(pin, p2, half, half, PIN_Z, 1.0f, 0.0f, r, g, b, alpha);
+            vertex(pin, p2, -half, half, PIN_Z, 0.0f, 0.0f, r, g, b, alpha);
+        });
 
         matrices.popPose();
     }
@@ -327,7 +334,7 @@ public final class PingRenderer {
      * translucent nametag box. Raised above centre and drawn see-through so both stay readable
      * through walls, matching the pin. Each side is drawn as a background box then the glyphs on top.
      */
-    private static void drawLabels(Font font, MultiBufferSource consumers, PoseStack.Pose pose,
+    private static void drawLabels(Font font, OrderedSubmitNodeCollector collector, PoseStack matrices,
                                    String name, String dist, int alpha, int rgb) {
         // Both labels take the ping's own colour, so a callout reads as one object; the distance is
         // supporting detail, so it takes a darkened version of the same hue rather than a grey.
@@ -348,13 +355,13 @@ public final class PingRenderer {
         // Name box: its right edge lands on the pin's left edge, so the text starts a box-width
         // plus one padding further left.
         float nameBoxRight = -PIN_EDGE - LABEL_GAP;
-        drawBoxedLabel(font, consumers, pose, name,
+        drawBoxedLabel(font, collector, matrices, name,
                 nameBoxRight - TAG_PAD_X - nameW, textY, textArgb, alpha);
 
         // Distance box: its left edge lands on the pin's right edge. The glyphs sit a pixel right of
         // where the box places them — the box itself stays put.
         float distBoxLeft = PIN_EDGE + LABEL_GAP;
-        drawBoxedLabel(font, consumers, pose, dist,
+        drawBoxedLabel(font, collector, matrices, dist,
                 distBoxLeft + TAG_PAD_X, textY, distArgb, alpha, TEXT_SCALE);
     }
 
@@ -362,10 +369,10 @@ public final class PingRenderer {
      * One label: a translucent nametag box sized to the text, then the glyphs. {@code textLeft}/
      * {@code textY} are the world-space top-left of the text; the box is padded around it.
      */
-    private static void drawBoxedLabel(Font font, MultiBufferSource consumers, PoseStack.Pose pose,
+    private static void drawBoxedLabel(Font font, OrderedSubmitNodeCollector collector, PoseStack matrices,
                                        String text, float textLeft, float textY, int textArgb,
                                        int alpha) {
-        drawBoxedLabel(font, consumers, pose, text, textLeft, textY, textArgb, alpha, 0.0f);
+        drawBoxedLabel(font, collector, matrices, text, textLeft, textY, textArgb, alpha, 0.0f);
     }
 
     /**
@@ -373,7 +380,7 @@ public final class PingRenderer {
      * sized and placed from {@code textLeft}, so a nudge re-centres the text within its background
      * without moving the background itself.
      */
-    private static void drawBoxedLabel(Font font, MultiBufferSource consumers, PoseStack.Pose pose,
+    private static void drawBoxedLabel(Font font, OrderedSubmitNodeCollector collector, PoseStack matrices,
                                        String text, float textLeft, float textY, int textArgb,
                                        int alpha, float textNudgeX) {
         float w = font.width(text) * TEXT_SCALE;
@@ -383,17 +390,21 @@ public final class PingRenderer {
         int bg = (bgAlpha << 24) | (TAG_BG & 0xFFFFFF);
         // Box padded around the glyph rectangle. Y grows upward in world space; the text is drawn
         // downward from textY + h (baseline), so the glyph rectangle spans [textY, textY + h].
-        fillQuad(consumers, pose,
+        fillQuad(collector, matrices,
                 textLeft - TAG_PAD_X, textY - TAG_PAD_Y,
                 textLeft + w + TAG_PAD_X, textY + h + TAG_PAD_Y, bg);
 
-        Matrix4f mat = new Matrix4f(pose.pose());
-        // The nudge is applied here only, after the box above has been placed from the unnudged
-        // textLeft — that is what lets the glyphs shift inside a stationary background.
-        mat.translate(textLeft + textNudgeX, textY + h, 0.0f); // +h: baseline sits at glyph bottom
-        mat.scale(TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE); // -Y: text y grows downward
-        font.drawInBatch(text, 0.0f, 0.0f, textArgb, false, mat, consumers,
-                glyphMode(), 0, FULL_BRIGHT);
+        // submitText places glyphs from the PoseStack rather than a hand-built matrix, so the
+        // transform that drawInBatch took as an argument is pushed here instead. The nudge is
+        // applied only to this push, after the box above was placed from the unnudged textLeft --
+        // that is what lets the glyphs shift inside a stationary background.
+        matrices.pushPose();
+        matrices.translate(textLeft + textNudgeX, textY + h, 0.0f); // +h: baseline at glyph bottom
+        matrices.scale(TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE); // -Y: text y grows downward
+        collector.submitText(matrices, 0.0f, 0.0f,
+                net.minecraft.network.chat.Component.literal(text).getVisualOrderText(),
+                false, glyphMode(), 0, textArgb, 0, FULL_BRIGHT);
+        matrices.popPose();
     }
 
     /**
@@ -423,42 +434,20 @@ public final class PingRenderer {
     }
 
     /**
-     * An untextured translucent quad on the see-through nametag-background layer, ARGB colour.
-     * Seated at {@link #TAG_Z}, behind both the glyphs and the pin.
+     * The translucent nametag-style box behind a label, ARGB colour. Drawn through the pipeline's
+     * own background submission, which matches the glyphs' depth behaviour via {@link #glyphMode()}.
      */
-    private static void fillQuad(MultiBufferSource consumers, PoseStack.Pose pose,
+    private static void fillQuad(OrderedSubmitNodeCollector collector, PoseStack matrices,
                                  float x0, float y0, float x1, float y1, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >> 16) & 0xFF;
-        int g = (argb >> 8) & 0xFF;
-        int b = argb & 0xFF;
-        VertexConsumer buffer = consumers.getBuffer(boxLayer());
-        // Wind BL -> BR -> TR -> TL to match the pin quad, so the box faces the camera and isn't
-        // culled by the background pipeline's back-face culling (the earlier order was reversed,
-        // which is why the box didn't render at all).
-        colorVertex(buffer, pose, x0, y0, r, g, b, a);
-        colorVertex(buffer, pose, x1, y0, r, g, b, a);
-        colorVertex(buffer, pose, x1, y1, r, g, b, a);
-        colorVertex(buffer, pose, x0, y1, r, g, b, a);
+        // 26.3 dropped the text-background render types in favour of submitting a background
+        // directly, so the hand-wound quad (and its position-colour-lightmap vertex helper) is gone:
+        // the pipeline owns the geometry and the winding now.
+        collector.submitTextBackground(matrices, x0, y0, x1, y1, argb, glyphMode(), FULL_BRIGHT);
     }
 
-    /**
-     * Position-colour-lightmap vertex for the nametag-background layer. That layer's format is
-     * POSITION_COLOR_LIGHTMAP — position, colour and light, with no normal — so this deliberately
-     * omits setNormal (calling it would write into an element the format doesn't have).
-     *
-     * <p>Seated at {@link #TAG_Z}, a small step away from the camera, so the glyphs at z=0 paint in
-     * front of the box no matter what order the shared buffer flushes its layers in.
-     */
-    private static void colorVertex(VertexConsumer buffer, PoseStack.Pose pose, float x, float y,
-                                    int r, int g, int b, int a) {
-        buffer.addVertex(pose, x, y, TAG_Z)
-                .setColor(r, g, b, a)
-                .setLight(FULL_BRIGHT);
-    }
 
     /** A one-shot expanding ring, only in the first {@link #RIPPLE_MS} of the ping's life. */
-    private static void renderRipple(MultiBufferSource consumers, PoseStack.Pose pose,
+    private static void renderRipple(OrderedSubmitNodeCollector collector, PoseStack matrices,
                                      PingState.Ping ping, int r, int g, int b, int pingAlpha) {
         long elapsed = System.currentTimeMillis() - ping.placedAtMillis();
         if (elapsed < 0 || elapsed >= RIPPLE_MS) {
@@ -470,20 +459,21 @@ public final class PingRenderer {
         if (rippleAlpha <= 0) {
             return;
         }
-        VertexConsumer buffer = consumers.getBuffer(markerLayer(RING));
         float inner = Math.max(0.0f, radius - RIPPLE_THICKNESS);
         float outer = radius + RIPPLE_THICKNESS;
-        for (int i = 0; i < RIPPLE_SEGMENTS; i++) {
-            double a0 = (i / (double) RIPPLE_SEGMENTS) * Math.PI * 2.0;
-            double a1 = ((i + 1) / (double) RIPPLE_SEGMENTS) * Math.PI * 2.0;
-            float c0 = (float) Math.cos(a0), s0 = (float) Math.sin(a0);
-            float c1 = (float) Math.cos(a1), s1 = (float) Math.sin(a1);
-            // A trapezoid segment of the annulus; the whole white texture is sampled flat.
-            vertex(buffer, pose, c0 * inner, s0 * inner, 0.0f, 0.0f, r, g, b, rippleAlpha);
-            vertex(buffer, pose, c0 * outer, s0 * outer, 1.0f, 0.0f, r, g, b, rippleAlpha);
-            vertex(buffer, pose, c1 * outer, s1 * outer, 1.0f, 1.0f, r, g, b, rippleAlpha);
-            vertex(buffer, pose, c1 * inner, s1 * inner, 0.0f, 1.0f, r, g, b, rippleAlpha);
-        }
+        collector.submitCustomGeometry(matrices, markerLayer(RING), (pose, buffer) -> {
+            for (int i = 0; i < RIPPLE_SEGMENTS; i++) {
+                double a0 = (i / (double) RIPPLE_SEGMENTS) * Math.PI * 2.0;
+                double a1 = ((i + 1) / (double) RIPPLE_SEGMENTS) * Math.PI * 2.0;
+                float c0 = (float) Math.cos(a0), s0 = (float) Math.sin(a0);
+                float c1 = (float) Math.cos(a1), s1 = (float) Math.sin(a1);
+                // A trapezoid segment of the annulus; the whole white texture is sampled flat.
+                vertex(buffer, pose, c0 * inner, s0 * inner, 0.0f, 0.0f, r, g, b, rippleAlpha);
+                vertex(buffer, pose, c0 * outer, s0 * outer, 1.0f, 0.0f, r, g, b, rippleAlpha);
+                vertex(buffer, pose, c1 * outer, s1 * outer, 1.0f, 1.0f, r, g, b, rippleAlpha);
+                vertex(buffer, pose, c1 * inner, s1 * inner, 0.0f, 1.0f, r, g, b, rippleAlpha);
+            }
+        });
     }
 
     private static void vertex(VertexConsumer buffer, PoseStack.Pose pose, float x, float y,

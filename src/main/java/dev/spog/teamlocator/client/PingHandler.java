@@ -81,7 +81,7 @@ public final class PingHandler {
         if (sameServer) {
             ClientState.flagAttacked(attacker);
         }
-        mc.execute(() -> SystemToast.add(mc.getToastManager(), PING_TOAST,
+        mc.execute(() -> SystemToast.add(mc.gui.toastManager(), PING_TOAST,
                 Component.translatable("relay.toast.attacked", displayName(mc, attacker)),
                 serverLine));
         playPingSound(mc);

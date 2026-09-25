@@ -76,17 +76,17 @@ public class TeamLocatorClient implements ClientModInitializer {
         // Unbound by default, like the rest: an accidental alert pings every mutually-trusted
         // teammate, so sending one should be a deliberate binding choice, not a default key.
         pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.ping", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.ping", InputConstants.Type.KEYBOARD, unbound, category));
         toggleTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.toggle_target", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.toggle_target", InputConstants.Type.KEYBOARD, unbound, category));
         configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.open_config", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.open_config", InputConstants.Type.KEYBOARD, unbound, category));
         hudToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.toggle_hud", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.toggle_hud", InputConstants.Type.KEYBOARD, unbound, category));
         inWorldIconsToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.toggle_in_world_icons", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.toggle_in_world_icons", InputConstants.Type.KEYBOARD, unbound, category));
         mapPingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.map_ping", InputConstants.Type.KEYSYM, unbound, category));
+                "key.relay.map_ping", InputConstants.Type.KEYBOARD, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -153,7 +153,7 @@ public class TeamLocatorClient implements ClientModInitializer {
                 placeMapPing(client);
             }
             while (configKey.consumeClick()) {
-                client.setScreen(new TeamLocatorConfigScreen(null, CONFIG));
+                client.setScreenAndShow(new TeamLocatorConfigScreen(null, CONFIG));
             }
             while (hudToggleKey.consumeClick()) {
                 toggleHud();

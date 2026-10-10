@@ -1,6 +1,7 @@
 package dev.spog.teamlocator.client.gui;
 
 import dev.spog.teamlocator.client.PingPalette;
+import dev.spog.teamlocator.client.RelayLang;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
@@ -148,7 +149,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int addStatusColor;
 
     public TeamLocatorConfigScreen(Screen parent, TeamConfig config) {
-        super(Component.translatable("relay.config.title"));
+        super(RelayLang.text("relay.config.title"));
         this.parent = parent;
         this.config = config;
         this.initialRelayUrl = config.relayUrl;
@@ -164,7 +165,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         doneButton = addRenderableWidget(new PanelButton(
                 right - CARD_PADDING - 90, bottom - CARD_PADDING - 20, 90, 20,
-                Component.translatable("relay.config.done"), b -> onClose()));
+                RelayLang.text("relay.config.done"), b -> onClose()));
 
         // Text fields are real widgets: vanilla's caret, selection and clipboard handling is not
         // worth reimplementing immediate-mode. They are positioned per-frame in the draw pass, which
@@ -181,7 +182,7 @@ public class TeamLocatorConfigScreen extends Screen {
                 });
 
         chatPrefixInput = new EditBox(this.font, 0, -100, 60, 20,
-                Component.translatable("relay.config.chat_prefix"));
+                RelayLang.text("relay.config.chat_prefix"));
         chatPrefixInput.setBordered(false);
         chatPrefixInput.setMaxLength(1);
         chatPrefixInput.setValue(config.chatPrefix);
@@ -193,7 +194,7 @@ public class TeamLocatorConfigScreen extends Screen {
 
         int textStart = 4 + this.font.width(SCHEME_LABEL);
         relayUrlInput = new EditBox(this.font, textStart, -100, RELAY_BOX_W - 4 - textStart, 12,
-                Component.translatable("relay.config.relay_url"));
+                RelayLang.text("relay.config.relay_url"));
         relayUrlInput.setBordered(false);
         relayUrlInput.setMaxLength(256);
         relayUrlInput.setValue(config.relayUrl);
@@ -204,18 +205,18 @@ public class TeamLocatorConfigScreen extends Screen {
         addRenderableWidget(relayUrlInput);
 
         nameInput = new EditBox(this.font, 0, -100, 130, 20,
-                Component.translatable("relay.config.add_player"));
+                RelayLang.text("relay.config.add_player"));
         nameInput.setBordered(false);
-        nameInput.setHint(Component.translatable("relay.config.add_player"));
+        nameInput.setHint(RelayLang.text("relay.config.add_player"));
         nameInput.setMaxLength(16);
         addRenderableWidget(nameInput);
 
         addButton = addRenderableWidget(new PanelButton(0, -100, 65, 20,
-                Component.translatable("relay.config.add"), b -> addTypedPlayer()));
+                RelayLang.text("relay.config.add"), b -> addTypedPlayer()));
     }
 
     private EditBox colorField(String initial, String key, Consumer<String> onChange) {
-        EditBox box = new EditBox(this.font, 0, -100, 70, 20, Component.translatable(key));
+        EditBox box = new EditBox(this.font, 0, -100, 70, 20, RelayLang.text(key));
         // Borderless: the frame is drawn by fieldFrame() inside the scissored pass, so it matches
         // the panel and cannot escape the card while scrolling.
         box.setBordered(false);
@@ -495,7 +496,7 @@ public class TeamLocatorConfigScreen extends Screen {
         int y = top + CARD_PADDING / 2;
 
         for (Tab tab : Tab.values()) {
-            Component label = Component.translatable(tab.key);
+            Component label = RelayLang.text(tab.key);
             int tabWidth = this.font.width(label) + 20;
             boolean selected = tab == active;
             boolean hovered = mouseX >= x && mouseX <= x + tabWidth
@@ -833,12 +834,12 @@ public class TeamLocatorConfigScreen extends Screen {
         modes.add(new Dropdown.Entry<>(TeamConfig.Mode.GLOBAL, modeLabel(TeamConfig.Mode.GLOBAL).getString()));
         modes.add(new Dropdown.Entry<>(TeamConfig.Mode.SERVER, modeLabel(TeamConfig.Mode.SERVER).getString()));
         activeMode.setActive(serverAvailable);
-        activeMode.setTooltip(serverAvailable ? null : Component.translatable("relay.config.no_server"));
+        activeMode.setTooltip(serverAvailable ? null : RelayLang.text("relay.config.no_server"));
         y = dropdownRow(graphics, "relay.config.active_list", null, activeMode, modes,
                 config.activeMode, x, y, mouseX, mouseY);
 
         // --- Add a player: name field then the Add button ---
-        graphics.text(this.font, Component.translatable("relay.config.add_player"),
+        graphics.text(this.font, RelayLang.text("relay.config.add_player"),
                 x, y + 6, LABEL_COLOR, false);
         fieldFrame(graphics, nameInput, x + CONTROL_X, y, 130);
         placeField(nameInput, x + CONTROL_X + 5, y + 6, 120);
@@ -856,7 +857,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // --- Table ---
         List<TrustEntry> entries = currentList();
         if (entries.isEmpty()) {
-            graphics.text(this.font, Component.translatable("relay.config.trust_empty"),
+            graphics.text(this.font, RelayLang.text("relay.config.trust_empty"),
                     x, y + 4, MUTED_COLOR, false);
             return y + this.font.lineHeight + CARD_PADDING - top;
         }
@@ -865,10 +866,10 @@ public class TeamLocatorConfigScreen extends Screen {
         int shareX = muteX + SWITCH_COL_W + 10;
         int removeX = shareX + SWITCH_COL_W + 10;
 
-        graphics.text(this.font, Component.translatable("relay.config.column.player"),
+        graphics.text(this.font, RelayLang.text("relay.config.column.player"),
                 x, y, MUTED_COLOR, false);
-        centered(graphics, Component.translatable("relay.config.column.alerts"), muteX, SWITCH_COL_W, y);
-        centered(graphics, Component.translatable("relay.config.column.visibility"), shareX, SWITCH_COL_W, y);
+        centered(graphics, RelayLang.text("relay.config.column.alerts"), muteX, SWITCH_COL_W, y);
+        centered(graphics, RelayLang.text("relay.config.column.visibility"), shareX, SWITCH_COL_W, y);
         y += this.font.lineHeight + 6;
 
         for (TrustEntry entry : entries) {
@@ -901,7 +902,7 @@ public class TeamLocatorConfigScreen extends Screen {
             }));
 
             drawDangerButton(graphics, removeX, y - 3, 50,
-                    Component.translatable("relay.config.remove").getString());
+                    RelayLang.string("relay.config.remove"));
             zones.add(new Zone(removeX, y - 3, removeX + 50, y + 13, () -> {
                 entries.remove(entry);
                 config.save();
@@ -919,10 +920,10 @@ public class TeamLocatorConfigScreen extends Screen {
 
     /** A section heading, with an optional line of explanation under it. */
     private int header(GuiGraphicsExtractor graphics, String titleKey, String descKey, int x, int y) {
-        graphics.text(this.font, Component.translatable(titleKey), x, y, TITLE_COLOR, false);
+        graphics.text(this.font, RelayLang.text(titleKey), x, y, TITLE_COLOR, false);
         y += this.font.lineHeight + 4;
         if (descKey != null) {
-            graphics.text(this.font, Component.translatable(descKey), x, y, MUTED_COLOR, false);
+            graphics.text(this.font, RelayLang.text(descKey), x, y, MUTED_COLOR, false);
             y += this.font.lineHeight + 6;
         } else {
             y += 2;
@@ -939,7 +940,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int toggleGated(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                             boolean on, boolean enabled, int x, int y, int mouseX, int mouseY,
                             Runnable onClick) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6,
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6,
                 enabled ? LABEL_COLOR : MUTED_COLOR, false);
         int toggleX = x + CONTROL_X;
         // Centred on the row the boxed toggle used to fill, so switching the control did not shift
@@ -959,7 +960,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private <T> int dropdownRow(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                                 Dropdown<T> dropdown, List<Dropdown.Entry<T>> entries, T current,
                                 int x, int y, int mouseX, int mouseY) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6,
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6,
                 dropdown.isActive() ? LABEL_COLOR : MUTED_COLOR, false);
         dropdown.setEntries(entries);
         dropdown.setBounds(x + CONTROL_X, y, CONTROL_W);
@@ -979,7 +980,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private int sliderRow(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                           int value, int[] steps, int x, int y,
                           int mouseX, int mouseY, java.util.function.IntConsumer onChange) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6, LABEL_COLOR, false);
         int barX = x + CONTROL_X;
         int index = nearestStep(steps, value);
         double fraction = steps.length <= 1 ? 0 : (double) index / (steps.length - 1);
@@ -1000,7 +1001,7 @@ public class TeamLocatorConfigScreen extends Screen {
                              int value, int min, int max, String unit, boolean enabled,
                              int x, int y, int mouseX, int mouseY,
                              java.util.function.IntConsumer onChange) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6,
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6,
                 enabled ? LABEL_COLOR : MUTED_COLOR, false);
         int barX = x + CONTROL_X;
         double fraction = (double) (value - min) / (max - min);
@@ -1022,7 +1023,7 @@ public class TeamLocatorConfigScreen extends Screen {
                              double xValue, double yValue, int x, int y, int mouseX, int mouseY,
                              java.util.function.DoubleConsumer onX,
                              java.util.function.DoubleConsumer onY) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6, LABEL_COLOR, false);
         int half = (CONTROL_W - 6) / 2;
         int leftX = x + CONTROL_X;
         int rightX = leftX + half + 6;
@@ -1042,7 +1043,7 @@ public class TeamLocatorConfigScreen extends Screen {
     /** HUD scale, which runs 0.5..2.0 rather than 0..1. */
     private int scaleRow(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                          int x, int y, int mouseX, int mouseY) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6, LABEL_COLOR, false);
         int barX = x + CONTROL_X;
         double fraction = (config.hudScale - 0.5) / 1.5;
         drawBar(graphics, barX, y, CONTROL_W, fraction,
@@ -1061,7 +1062,7 @@ public class TeamLocatorConfigScreen extends Screen {
     /** A labelled text field. */
     private int fieldRow(GuiGraphicsExtractor graphics, String labelKey, String descKey,
                          EditBox box, int fieldWidth, int x, int y, int mouseX, int mouseY) {
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6, LABEL_COLOR, false);
         fieldFrame(graphics, box, x + CONTROL_X, y, fieldWidth);
         placeField(box, x + CONTROL_X + 5, y + 6, fieldWidth - 10);
         zones.add(new Zone(x + CONTROL_X, y, x + CONTROL_X + fieldWidth, y + 20,
@@ -1076,7 +1077,7 @@ public class TeamLocatorConfigScreen extends Screen {
         // Short label, with what the colour actually covers in the tooltip. Spelling it out on the
         // row ("Primary color: player names & punctuation") overran the control column and ran the
         // text into the field beside it.
-        graphics.text(this.font, Component.translatable(labelKey), x, y + 6, LABEL_COLOR, false);
+        graphics.text(this.font, RelayLang.text(labelKey), x, y + 6, LABEL_COLOR, false);
         fieldFrame(graphics, box, x + CONTROL_X, y, 70);
         placeField(box, x + CONTROL_X + 5, y + 6, 60);
         zones.add(new Zone(x + CONTROL_X, y, x + CONTROL_X + 70, y + 20,
@@ -1093,7 +1094,7 @@ public class TeamLocatorConfigScreen extends Screen {
      * it, so the scheme reads as part of the field without being editable.
      */
     private int relayAddressRow(GuiGraphicsExtractor graphics, int x, int y, int mouseX, int mouseY) {
-        graphics.text(this.font, Component.translatable("relay.config.relay_url"),
+        graphics.text(this.font, RelayLang.text("relay.config.relay_url"),
                 x, y + 6, LABEL_COLOR, false);
         int boxX = x + CONTROL_X;
         fieldFrame(graphics, relayUrlInput, boxX, y, RELAY_BOX_W);
@@ -1115,7 +1116,7 @@ public class TeamLocatorConfigScreen extends Screen {
         }
         if (mouseX >= x && mouseX <= x + CONTROL_X + CONTROL_W
                 && mouseY >= y && mouseY <= y + ROW_HEIGHT - 6) {
-            hoverTooltip = Component.translatable(descKey);
+            hoverTooltip = RelayLang.text(descKey);
         }
     }
 
@@ -1250,7 +1251,7 @@ public class TeamLocatorConfigScreen extends Screen {
     // ------------------------------------------------------------------ labels
 
     private Component modeLabel(TeamConfig.Mode mode) {
-        return Component.translatable(mode == TeamConfig.Mode.GLOBAL
+        return RelayLang.text(mode == TeamConfig.Mode.GLOBAL
                 ? "relay.config.active_list.global" : "relay.config.active_list.server");
     }
 
@@ -1261,7 +1262,7 @@ public class TeamLocatorConfigScreen extends Screen {
             case TABLE -> "relay.config.hud_align.table";
             default -> "relay.config.hud_align.left";
         };
-        return Component.translatable(key);
+        return RelayLang.text(key);
     }
 
     /**
@@ -1272,7 +1273,7 @@ public class TeamLocatorConfigScreen extends Screen {
     private Component armorDisplayLabel(TeamConfig.ArmorDisplay display) {
         return switch (display) {
             case OFF -> CommonComponents.OPTION_OFF;
-            case LOWEST -> Component.translatable("relay.config.hud_show_armor.lowest");
+            case LOWEST -> RelayLang.text("relay.config.hud_show_armor.lowest");
             default -> CommonComponents.OPTION_ON;
         };
     }
@@ -1283,11 +1284,11 @@ public class TeamLocatorConfigScreen extends Screen {
             case NUMBER_ONLY -> "number_only";
             case BOTH -> "both";
         };
-        return Component.translatable("relay.config.hud_durability." + key);
+        return RelayLang.text("relay.config.hud_durability." + key);
     }
 
     private Component alertSoundLabel(TeamConfig.AlertSound sound) {
-        return Component.translatable(sound == TeamConfig.AlertSound.ALARM
+        return RelayLang.text(sound == TeamConfig.AlertSound.ALARM
                 ? "relay.config.alert_sound.alarm" : "relay.config.alert_sound.noteblocks");
     }
 
@@ -1331,14 +1332,14 @@ public class TeamLocatorConfigScreen extends Screen {
             return;
         }
 
-        addStatus = Component.translatable("relay.config.lookup_pending", typed);
+        addStatus = RelayLang.text("relay.config.lookup_pending", typed);
         addStatusColor = 0xFFA0A0A0;
         // The rows are painted immediate-mode from the live list, so landing an entry is enough --
         // no rebuild is needed for it to appear on the next frame.
         NameLookup.resolve(typed).whenComplete((resolved, err) -> Minecraft.getInstance()
                 .execute(() -> {
                     if (resolved == null || err != null) {
-                        addStatus = Component.translatable("relay.config.lookup_failed", typed);
+                        addStatus = RelayLang.text("relay.config.lookup_failed", typed);
                         addStatusColor = 0xFFFF5555;
                         return;
                     }

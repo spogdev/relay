@@ -59,13 +59,13 @@ public final class PingHandler {
         // connected to), and a known one yields the name/address to show in its place.
         final Component serverLine;
         if (sameServer) {
-            serverLine = Component.translatable("relay.toast.same_server");
+            serverLine = RelayLang.text("relay.toast.same_server");
         } else {
             CrossServerResolver.Result resolved = CrossServerResolver.resolve(fromServer);
             if (!resolved.known()) {
                 return;
             }
-            serverLine = Component.translatable("relay.toast.server", resolved.displayName());
+            serverLine = RelayLang.text("relay.toast.server", resolved.displayName());
         }
 
         // Anti-spam: the ping is still received, just not shown while this attacker pinged
@@ -82,7 +82,7 @@ public final class PingHandler {
             ClientState.flagAttacked(attacker);
         }
         mc.execute(() -> SystemToast.add(mc.gui.toastManager(), PING_TOAST,
-                Component.translatable("relay.toast.attacked", displayName(mc, attacker)),
+                RelayLang.text("relay.toast.attacked", displayName(mc, attacker)),
                 serverLine));
         playPingSound(mc);
     }
@@ -96,8 +96,8 @@ public final class PingHandler {
     public static void onPingAck(List<UUID> receivers) {
         Minecraft mc = Minecraft.getInstance();
         mc.execute(() -> RelayChat.send(receivers.isEmpty()
-                ? Component.translatable("relay.ping.no_receivers")
-                : Component.translatable("relay.ping.received_by", RelayChat.value(receivers.stream()
+                ? RelayLang.text("relay.ping.no_receivers")
+                : RelayLang.text("relay.ping.received_by", RelayChat.value(receivers.stream()
                         .map(id -> displayName(mc, id))
                         .collect(Collectors.joining(", "))))));
     }

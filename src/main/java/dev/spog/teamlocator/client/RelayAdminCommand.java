@@ -65,7 +65,7 @@ public final class RelayAdminCommand {
                                                 }))))
                         .executes(ctx -> {
                             ctx.getSource().sendError(
-                                    Component.translatable("relay.command.usage"));
+                                    RelayLang.text("relay.command.usage"));
                             return 0;
                         })));
     }
@@ -83,7 +83,7 @@ public final class RelayAdminCommand {
 
     private static void run(FabricClientCommandSource source, String command, List<String> args) {
         if (!TeamLocatorClient.RELAY.isReady()) {
-            source.sendError(Component.translatable("relay.command.not_connected"));
+            source.sendError(RelayLang.text("relay.command.not_connected"));
             return;
         }
         Minecraft mc = source.getClient();

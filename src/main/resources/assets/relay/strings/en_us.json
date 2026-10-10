@@ -1,11 +1,4 @@
 {
-  "key.relay.ping": "Send Help Alert",
-  "key.relay.toggle_target": "Toggle Trust for Targeted Player",
-  "key.relay.open_config": "Open Relay Menu",
-  "key.relay.toggle_hud": "Toggle HUD",
-  "key.relay.toggle_in_world_icons": "Toggle Player Markers",
-  "key.relay.map_ping": "Place Ping",
-  "key.category.relay.main": "Relay",
   "relay.config.title": "Relay Menu",
   "relay.config.active_list": "Active List",
   "relay.config.active_list.global": "Global",

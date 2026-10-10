@@ -12,7 +12,8 @@
     "client.ClientLanguageMixin",
     "client.KeyBindsListMixin",
     "client.KeyBindsScreenMixin",
-    "client.LanguageManagerMixin"
+    "client.LanguageManagerMixin",
+    "client.KeybindContentsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

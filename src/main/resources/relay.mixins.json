@@ -8,7 +8,11 @@
     "client.PlayerTrackerMinimapElementRendererMixin",
     "client.PlayerTrackerMapElementRendererMixin",
     "client.ChatInterceptMixin",
-    "client.WaypointShareOptionMixin"
+    "client.WaypointShareOptionMixin",
+    "client.ClientLanguageMixin",
+    "client.KeyBindsListMixin",
+    "client.KeyBindsScreenMixin",
+    "client.LanguageManagerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

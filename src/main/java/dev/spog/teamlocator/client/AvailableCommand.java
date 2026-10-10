@@ -38,10 +38,10 @@ public final class AvailableCommand {
 
     private static void run(FabricClientCommandSource source) {
         if (!TeamLocatorClient.RELAY.isReady()) {
-            source.sendError(Text.translatable("relay.available.not_connected"));
+            source.sendError(RelayLang.text("relay.available.not_connected"));
             return;
         }
-        source.sendFeedback(RelayChat.primary(Text.translatable("relay.available.checking")));
+        source.sendFeedback(RelayChat.primary(RelayLang.text("relay.available.checking")));
         MinecraftClient mc = source.getClient();
         TeamLocatorClient.RELAY.queryAvailability(receivers ->
                 mc.execute(() -> report(mc, receivers)));
@@ -50,14 +50,14 @@ public final class AvailableCommand {
     /** Runs on the game thread. {@code receivers} null means the relay never answered. */
     private static void report(MinecraftClient mc, List<UUID> receivers) {
         if (receivers == null) {
-            RelayChat.send(Text.translatable("relay.available.timeout"));
+            RelayChat.send(RelayLang.text("relay.available.timeout"));
         } else if (receivers.isEmpty()) {
-            RelayChat.send(Text.translatable("relay.available.none"));
+            RelayChat.send(RelayLang.text("relay.available.none"));
         } else {
             String names = receivers.stream()
                     .map(id -> PingHandler.displayName(mc, id))
                     .collect(Collectors.joining(", "));
-            RelayChat.send(Text.translatable("relay.available.list",
+            RelayChat.send(RelayLang.text("relay.available.list",
                     RelayChat.value(names)));
         }
     }

@@ -27,14 +27,14 @@ public final class RelayToasts {
 
     /** The relay connection dropped; we are retrying in the background. */
     public static void connectionLost() {
-        show(Text.translatable("relay.connection.lost"),
-                Text.translatable("relay.connection.lost.detail"));
+        show(RelayLang.text("relay.connection.lost"),
+                RelayLang.text("relay.connection.lost.detail"));
     }
 
     /** The relay is back and authenticated. */
     public static void connectionRestored() {
-        show(Text.translatable("relay.connection.restored"),
-                Text.translatable("relay.connection.restored.detail"));
+        show(RelayLang.text("relay.connection.restored"),
+                RelayLang.text("relay.connection.restored.detail"));
     }
 
     /**
@@ -43,8 +43,8 @@ public final class RelayToasts {
      * would wrongly suggest the relay is merely down.
      */
     public static void banned() {
-        show(Text.translatable("relay.banned.title"),
-                Text.translatable("relay.banned.detail"));
+        show(RelayLang.text("relay.banned.title"),
+                RelayLang.text("relay.banned.detail"));
     }
 
     /**

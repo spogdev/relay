@@ -114,7 +114,12 @@ public class TeamLocatorClient implements ClientModInitializer {
 
         // The relay connection is held for the whole client lifetime — including the title screen
         // and singleplayer — so cross-server attack pings arrive anywhere. Only the scope changes.
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> connectRelay());
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
+            // Relay keeps its strings out of the game's translation table (see RelayLang), so it
+            // loads them itself once the language manager knows which language is selected.
+            RelayLang.reload();
+            connectRelay();
+        });
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             ClientState.reset();
             PingState.reset();
@@ -192,12 +197,12 @@ public class TeamLocatorClient implements ClientModInitializer {
         if (removed) {
             CONFIG.save();
             syncToServer();
-            RelayChat.send(Text.translatable("relay.toggle_target.removed", RelayChat.value(name)));
+            RelayChat.send(RelayLang.text("relay.toggle_target.removed", RelayChat.value(name)));
         } else {
             list.trusted.add(new TrustEntry(id, name));
             CONFIG.save();
             syncToServer();
-            RelayChat.send(Text.translatable("relay.toggle_target.added", RelayChat.value(name)));
+            RelayChat.send(RelayLang.text("relay.toggle_target.added", RelayChat.value(name)));
         }
     }
 
@@ -273,7 +278,7 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static void toggleHud() {
         CONFIG.hudEnabled = !CONFIG.hudEnabled;
         CONFIG.save();
-        RelayChat.send(Text.translatable(
+        RelayChat.send(RelayLang.text(
                 CONFIG.hudEnabled ? "relay.hud.shown" : "relay.hud.hidden"));
     }
 
@@ -292,7 +297,7 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static void toggleInWorldIcons() {
         CONFIG.playerMarkersEnabled = !CONFIG.playerMarkersEnabled;
         CONFIG.save();
-        RelayChat.send(Text.translatable(CONFIG.playerMarkersEnabled
+        RelayChat.send(RelayLang.text(CONFIG.playerMarkersEnabled
                 ? "relay.in_world_icons.shown" : "relay.in_world_icons.hidden"));
     }
 

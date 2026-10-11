@@ -60,13 +60,10 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     private int positionTicks;
     private int viewerTicks;
-    /**
-     * Swing time seen on the previous report, to detect the start of a new swing.
-     *
-     * <p>Starts at 1 rather than 0 because 0 is itself a "swing has just started" value, and a
-     * zero here would make the first swing after connecting look like one already in progress.
-     */
-    private int lastSwingTime = 1;
+    /** Swing time seen on the previous report, to detect a restarted swing. */
+    private int lastSwingTime;
+    /** Whether a swing was running on the previous report, to detect a newly started one. */
+    private boolean lastSwinging;
 
     /**
      * How many terrain frames to hand the socket per tick.
@@ -245,6 +242,7 @@ public final class SpectateManager {
         }
         drainTerrainBacklog();
         reportPositionIfStreaming();
+        resendTabListIfTexturesArrived();
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
@@ -344,30 +342,35 @@ public final class SpectateManager {
      * The animation id for a swing that has just started, or -1 for no swing.
      *
      * <p>One packet per swing, not one per tick: a repeat restarts the animation and the arm never
-     * completes its arc. Detecting the start needs {@code LivingEntity}'s actual semantics, which
-     * are easy to get backwards -- {@code swing()} sets {@code swingTime} to <em>-1</em> and
-     * {@code swinging} true, then {@code updateSwingTime} increments it every tick and clears both
-     * only once the swing has run its duration. So {@code swingTime} counts strictly <em>up</em>
-     * while a swing is in progress and never decreases mid-swing; a start is the tick where it is
-     * -1 or 0, having not been so before.
+     * completes its arc.
      *
-     * <p>An earlier version of this looked for the value going down, which cannot happen while
-     * {@code swinging} is true, so it reported no swing at all and the arms stayed still.
+     * <p>Detecting the start is where two earlier attempts went wrong, both by reasoning about
+     * {@code swingTime}'s values instead of its transitions. {@code swing()} sets it to -1 and
+     * {@code swinging} true; {@code updateSwingTime} then increments it every tick and clears both
+     * once the swing has run its duration. Crucially this runs in {@code LocalPlayer.tick}, which
+     * is <em>before</em> this sampling at {@code END_CLIENT_TICK} -- so the -1 is never observed
+     * here, and neither is 0 reliably. Matching on those values made a swing register only when
+     * the sampling happened to land right, which is why swings mostly went missing.
      *
-     * <p>{@code lastSwingTime} starts at 0, which reads as "mid-swing" and would suppress a swing
-     * on the very first report; it is initialised to a positive value so the first one counts.
+     * <p>What is reliable is the transition: a swing is new if it was not running a tick ago, or if
+     * it was running and {@code swingTime} has gone down, which only happens on a restart. That
+     * holds wherever in the tick this is sampled.
      */
     private int swingAction(net.minecraft.client.player.LocalPlayer player) {
         int time = player.swingTime;
         int previous = lastSwingTime;
         lastSwingTime = time;
+        boolean wasSwinging = lastSwinging;
+        lastSwinging = player.swinging;
         if (!player.swinging) {
             return -1;
         }
-        // A swing is new when swingTime has just been reset: it is <= 0 now (the -1 that swing()
-        // writes, or the 0 the next tick makes of it) and was past that point before. Sampling at
-        // 20 Hz sees at most one of the two, and either identifies the same swing exactly once.
-        if (time > 0 || previous <= 0) {
+        // A new swing is one that either was not running a tick ago, or was running and has
+        // restarted -- which shows as swingTime having gone down rather than up, since
+        // updateSwingTime only ever increments it while a swing continues. Both cases are needed:
+        // the first catches a swing after a pause, the second catches the next swing in a stream
+        // of them, where swinging never returns to false in between.
+        if (wasSwinging && time > previous) {
             return -1;
         }
         return player.swingingArm == net.minecraft.world.InteractionHand.OFF_HAND
@@ -526,6 +529,44 @@ public final class SpectateManager {
             }
         }
         SpectateClient.LOGGER.info("spectate: stopped streaming to {}", viewer);
+    }
+
+    /**
+     * Sends the tab list again once a profile's textures have been fetched.
+     *
+     * <p>The first tab list a viewer gets is built the moment it starts watching, and the texture
+     * fetch behind it is a network call that cannot be waited for on the client thread. So that
+     * first list goes out with whatever was already cached -- for a first-ever session, nothing --
+     * and without this the skin would stay default until the viewer reconnected.
+     *
+     * <p>A resend is cheap and idempotent: ADD_PLAYER for a player the client already knows
+     * updates the existing entry, which is how a real server corrects one.
+     */
+    private void resendTabListIfTexturesArrived() {
+        CaptureSession session = CaptureHooks.session();
+        if (session == null || !session.hasViewers()) {
+            return;
+        }
+        if (!TabList.resolvedSinceLastSend()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener listener = mc.getConnection();
+        if (listener == null) {
+            return;
+        }
+        var tabList = TabList.of(mc);
+        if (tabList == null) {
+            return;
+        }
+        try {
+            StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
+                    PacketWire.gameCodec(listener.registryAccess());
+            terrainBacklog.add(PacketWire.encode(codec, tabList));
+            SpectateClient.LOGGER.info("spectate: resent the tab list with resolved skins");
+        } catch (RuntimeException e) {
+            SpectateClient.LOGGER.warn("spectate: could not resend the tab list", e);
+        }
     }
 
     /** Reports this client's position immediately, outside the usual 5 Hz cadence. */

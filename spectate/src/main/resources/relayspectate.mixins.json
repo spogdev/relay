@@ -4,8 +4,10 @@
   "package": "dev.spog.relayspectate.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ClientEffectCaptureMixin",
     "ClientPacketListenerRegistryMixin",
     "ConnectionCaptureMixin",
+    "InboundApplyMarkerMixin",
     "LoopbackNotMemoryMixin",
     "SpectateKeybindMixin",
     "SpectateLanguageMixin"

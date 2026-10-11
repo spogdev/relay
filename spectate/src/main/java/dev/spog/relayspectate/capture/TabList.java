@@ -136,6 +136,20 @@ public final class TabList {
     private static final java.util.Map<java.util.UUID, GameProfile> RESOLVED =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * Set when a fetch has completed since the last tab list was sent.
+     *
+     * <p>Read and cleared by {@link #resolvedSinceLastSend()}, which the capture tick polls while
+     * streaming so a late-arriving skin reaches a viewer that is already watching.
+     */
+    private static final java.util.concurrent.atomic.AtomicBoolean RESOLVED_SINCE_LAST_SEND =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** True once, if any profile's textures have arrived since the last tab list was sent. */
+    public static boolean resolvedSinceLastSend() {
+        return RESOLVED_SINCE_LAST_SEND.getAndSet(false);
+    }
+
     /** Ids currently being fetched, so a slow fetch is not started twice. */
     private static final java.util.Set<java.util.UUID> FETCHING =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -184,7 +198,15 @@ public final class TabList {
             try {
                 Minecraft.getInstance().services().profileResolver().fetchById(id)
                         .filter(full -> full.properties().containsKey("textures"))
-                        .ifPresent(full -> RESOLVED.put(id, full));
+                        .ifPresent(full -> {
+                            RESOLVED.put(id, full);
+                            // The tab list already sent went out without this profile's textures,
+                            // since the fetch is asynchronous and the list is built the moment a
+                            // viewer starts. Nothing would ever send a second one, so the skin
+                            // would stay default for the whole session and only be right for the
+                            // next one. This asks for a resend.
+                            RESOLVED_SINCE_LAST_SEND.set(true);
+                        });
             } catch (RuntimeException e) {
                 // Warned, not swallowed. A failure here is invisible in the world -- the player
                 // simply keeps a default skin -- which is exactly the kind of silent failure that

@@ -206,6 +206,16 @@ public final class HostDriver {
 
         connection.send(JoinSequence.spectatorLogin(targetLogin));
         connection.send(JoinSequence.chunkRadius());
+        // The viewer's own tab-list entry, which is where its client reads its game mode from --
+        // not from the login packet above. Without it gameMode() is null, isSpectator() is false
+        // and the viewer cannot pass through blocks.
+        var self = JoinSequence.selfSpectating(net.minecraft.client.Minecraft.getInstance());
+        if (self != null) {
+            connection.send(self);
+        } else {
+            SpectateClient.LOGGER.warn(
+                    "spectate host: no self tab-list entry; the viewer will not be a spectator");
+        }
         inGame = true;
         // Before any queued terrain is flushed: the cache centre has to be right first, or the
         // client discards every chunk as out of view range.

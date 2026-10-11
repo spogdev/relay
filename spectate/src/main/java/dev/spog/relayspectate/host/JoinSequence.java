@@ -8,7 +8,14 @@ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.CommonPlayerSpawnInfo;
 import net.minecraft.world.entity.PositionMoveRotation;
+import com.mojang.authlib.GameProfile;
+import dev.spog.relayspectate.capture.TabList;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.world.level.GameType;
+
+import java.util.EnumSet;
+import java.util.List;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Set;
@@ -78,6 +85,45 @@ public final class JoinSequence {
                 target.doLimitedCrafting(),
                 spectating,
                 target.enforcesSecureChat());
+    }
+
+    /**
+     * A tab-list entry for the viewer itself, in spectator.
+     *
+     * <p>Required for spectator mode to work at all, which is not obvious. The login packet's game
+     * mode is not what a client reads back: {@code AbstractClientPlayer.gameMode()} is
+     * {@code getPlayerInfo().getGameMode()}, a lookup of the player's <em>own tab-list entry</em>,
+     * and it returns null when there is none. {@code Player.tick} then sets
+     * {@code noPhysics = isSpectator()} every tick, so with no entry the viewer collides with
+     * everything and cannot fly through blocks -- however plainly the login packet said
+     * SPECTATOR.
+     *
+     * <p>The forwarded list cannot supply this. It is the target's, so it contains the viewer only
+     * if the viewer happens to be on the target's server too, and then with the viewer's real game
+     * mode rather than spectator.
+     *
+     * <p>Built with no profile properties: this entry exists to carry a game mode, and the
+     * viewer's own skin is resolved by its client from its own account.
+     */
+    public static ClientboundPlayerInfoUpdatePacket selfSpectating(Minecraft mc) {
+        GameProfile profile = new GameProfile(
+                mc.getUser().getProfileId(), mc.getUser().getName());
+        return TabList.rebuild(
+                EnumSet.of(
+                        ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+                        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+                        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE),
+                List.of(new ClientboundPlayerInfoUpdatePacket.Entry(
+                        profile.id(),
+                        profile,
+                        false,
+                        0,
+                        GameType.SPECTATOR,
+                        null,
+                        true,
+                        0,
+                        null)),
+                mc);
     }
 
     /** Tells the client its view distance, matching what the capture actually sends. */

@@ -349,9 +349,17 @@ public final class ViewerSession {
                         .toList();
         var rebuilt = dev.spog.relayspectate.capture.TabList.rebuild(
                 info.actions(), fixed, Minecraft.getInstance());
-        // Forwarding the original on failure would reinstate the real game mode and undo this, so
-        // the packet is dropped instead; the viewer keeps the entry it already has.
-        return rebuilt;
+        if (rebuilt != null) {
+            return rebuilt;
+        }
+        // Forward the original rather than dropping it. Dropping an ADD_PLAYER loses every player
+        // in it -- and this runs on the resend path, where the players have just been removed, so
+        // dropping it leaves them removed and invisible. The viewer's own game mode is corrected
+        // every tick from the login state anyway, so a stale entry here is a brief cosmetic
+        // wrongness rather than a player that never comes back.
+        SpectateClient.LOGGER.warn(
+                "spectate: could not correct the viewer's tab-list entry; forwarding as sent");
+        return decoded;
     }
 
     /** The same entry with its game mode forced to spectator. */

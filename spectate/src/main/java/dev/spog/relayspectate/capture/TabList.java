@@ -150,7 +150,16 @@ public final class TabList {
         return RESOLVED_SINCE_LAST_SEND.getAndSet(false);
     }
 
-    /** Ids currently being fetched, so a slow fetch is not started twice. */
+    /**
+     * Ids a fetch has been started for, successful or not.
+     *
+     * <p>Never cleared on failure, which is deliberate. Clearing it meant a profile the service
+     * has nothing for was refetched every time the list was rebuilt, and each rebuild happens
+     * because of a resend, so one unresolvable player kept the resend firing every tick -- which
+     * removed and re-added every player continuously and left them all invisible. One attempt per
+     * player per session is enough; a skin that is not available now will not appear by asking
+     * again a tick later.
+     */
     private static final java.util.Set<java.util.UUID> FETCHING =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -226,9 +235,9 @@ public final class TabList {
                 // simply keeps a default skin -- which is exactly the kind of silent failure that
                 // has already cost several rounds of diagnosis on this feature.
                 SpectateClient.LOGGER.warn("spectate: could not resolve textures for {}", id, e);
-            } finally {
-                FETCHING.remove(id);
             }
+            // No removal from FETCHING: see the field's note. A retry loop here cost every
+            // player's visibility.
         });
     }
 

@@ -89,6 +89,15 @@ public final class SpectateManager {
             new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     /**
+     * Frames that must reach the viewer before anything already queued.
+     *
+     * <p>Drained ahead of {@link #terrainBacklog} and only ever holding tab-list packets, which
+     * every player spawn depends on. See {@link #queueAhead}.
+     */
+    private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> priorityBacklog =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /**
      * Inbound frame counts by type, for one summary line per session.
      *
      * <p>Worth the few lines: the loss between "the target sent 421 chunks" and "the viewer
@@ -261,8 +270,8 @@ public final class SpectateManager {
                 if (chunks > 0) {
                     SpectateClient.LOGGER.info(
                             "spectate: {} chunk packets delivered after 5s; "
-                            + "frames received by type: {}",
-                            chunks, inboundFrameSummary());
+                            + "frames received by type: {}; {}",
+                            chunks, inboundFrameSummary(), session.playerSummary());
                 } else {
                     // Zero is a distinct failure from "some", and the difference decides where to
                     // look. Vanilla only reports it as "Timed out while waiting for the client to
@@ -304,8 +313,45 @@ public final class SpectateManager {
      * to receive it in. The backlog drains at a fixed rate per tick either way, so this does not
      * make the sweep slower; it only stops later packets overtaking it.
      */
-    private void queueGamePacket(byte[] wire) {
+
+    /**
+     * Queues a live captured packet, sending tab-list updates ahead of the backlog.
+     *
+     * <p>A player who walks into the target's view while the sweep is still draining produces a
+     * tab-list entry and a spawn. Both go through this queue, and the spawn is discarded if the
+     * entry has not arrived -- so the entry cannot be allowed to sit behind several hundred chunk
+     * frames. The spawn itself stays in order, behind the terrain it needs.
+     */
+    private void queueCaptured(Packet<?> packet, byte[] wire) {
+        if (packet instanceof net.minecraft.network.protocol.game
+                .ClientboundPlayerInfoUpdatePacket
+                || packet instanceof net.minecraft.network.protocol.game
+                        .ClientboundPlayerInfoRemovePacket) {
+            queueAhead(wire);
+            return;
+        }
         terrainBacklog.add(wire);
+    }
+
+    /**
+     * Queues a frame that every later frame depends on, ahead of the backlog.
+     *
+     * <p>Only for tab-list packets. A player spawn is discarded outright by
+     * {@code createEntityFromPacket} when the client has no tab-list entry for that player, and
+     * the spawn is never repeated -- so an entry arriving after the spawn it belongs to loses that
+     * player for the rest of the session. Terrain has no such dependency: a chunk that arrives a
+     * second later is simply a second later.
+     *
+     * <p>Jumping the queue is therefore safe here and nowhere else. It reorders a packet ahead of
+     * frames that cannot depend on it, while the ordering the backlog exists to enforce -- entity
+     * data after its spawn, effects after the world they happen in -- is untouched.
+     *
+     * <p>A separate queue rather than splicing into the main one: draining and refilling a
+     * concurrent queue is not atomic, and capture writes to it from the Netty event loop, so a
+     * frame arriving mid-splice could be reordered or lost.
+     */
+    private void queueAhead(byte[] wire) {
+        priorityBacklog.add(wire);
     }
 
     /**
@@ -326,13 +372,20 @@ public final class SpectateManager {
     }
 
     private void drainTerrainBacklog() {
-        if (terrainBacklog.isEmpty()) {
+        if (terrainBacklog.isEmpty() && priorityBacklog.isEmpty()) {
             return;
         }
         SpectateClientSocket s = socket;
         if (s == null) {
             terrainBacklog.clear();
+            priorityBacklog.clear();
             return;
+        }
+        // Priority frames are not rate limited. There are only ever a handful, and the frames
+        // waiting behind them are the ones that depend on them.
+        byte[] ahead;
+        while ((ahead = priorityBacklog.poll()) != null) {
+            s.sendGamePacket(ahead);
         }
         int budget = frameBudget();
         int sent = 0;
@@ -532,7 +585,7 @@ public final class SpectateManager {
         }
         CaptureSession session = CaptureHooks.session();
         if (session == null) {
-            session = new CaptureSession(this::queueGamePacket);
+            session = new CaptureSession(this::queueCaptured);
             CaptureHooks.setSession(session);
             reportedSweepDone = false;
         }
@@ -621,10 +674,10 @@ public final class SpectateManager {
                     .map(net.minecraft.network.protocol.game
                             .ClientboundPlayerInfoUpdatePacket.Entry::profileId)
                     .toList();
-            terrainBacklog.add(PacketWire.encode(codec,
+            queueAhead(PacketWire.encode(codec,
                     new net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket(
                             ids)));
-            terrainBacklog.add(PacketWire.encode(codec, tabList));
+            queueAhead(PacketWire.encode(codec, tabList));
             SpectateClient.LOGGER.info(
                     "spectate: resent the tab list with resolved skins for {} player(s)",
                     ids.size());
@@ -660,6 +713,23 @@ public final class SpectateManager {
         }
         StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
                 PacketWire.gameCodec(listener.registryAccess());
+        // The tab list first, ahead of the terrain rather than between it and the entities.
+        // createEntityFromPacket returns null for a player with no tab-list entry and discards
+        // the spawn entirely, so the entry has to arrive before any player spawn -- and spawns
+        // now include live ones, which share this queue and can arrive while the sweep's several
+        // hundred chunk frames are still draining. Queued behind the terrain, the entry could be
+        // seconds late and every player who moved into view in the meantime was dropped. It is
+        // one small frame; nothing is gained by making it wait.
+        var tabList = TabList.of(mc);
+        if (tabList != null) {
+            try {
+                queueAhead(PacketWire.encode(codec, tabList));
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.warn("spectate: could not encode the tab list", e);
+            }
+        } else {
+            SpectateClient.LOGGER.warn("spectate: no tab list to send; players will not render");
+        }
         int chunks = 0;
         for (var chunk : ChunkSweep.loadedChunksAround(mc)) {
             try {
@@ -668,19 +738,6 @@ public final class SpectateManager {
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.warn("spectate: could not encode a packed chunk", e);
             }
-        }
-        // The tab list before any entity. createEntityFromPacket returns null for a player with
-        // no tab-list entry, discarding the spawn entirely -- so without this there are no
-        // players, including the target, and the camera has nothing to attach to.
-        var tabList = TabList.of(mc);
-        if (tabList != null) {
-            try {
-                terrainBacklog.add(PacketWire.encode(codec, tabList));
-            } catch (RuntimeException e) {
-                SpectateClient.LOGGER.warn("spectate: could not encode the tab list", e);
-            }
-        } else {
-            SpectateClient.LOGGER.warn("spectate: no tab list to send; players will not render");
         }
         // Entities after terrain: the client drops an entity whose chunk it does not have.
         int entities = 0;

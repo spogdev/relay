@@ -112,7 +112,20 @@ public final class ChunkSweep {
             return out;
         }
         int blockRadius = SpectateProtocol.SWEEP_RADIUS_CHUNKS * 16;
+        // Players counted separately from everything else. "Players are invisible" has been
+        // diagnosed several times from the viewer's end alone, and the one fact that would have
+        // localised it immediately -- whether the target even swept any other players, and
+        // whether distance excluded them -- was never in either log.
+        int players = 0;
+        int playersOutOfRange = 0;
         for (Entity entity : level.entitiesForRendering()) {
+            if (entity instanceof net.minecraft.world.entity.player.Player && entity != self) {
+                if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
+                    playersOutOfRange++;
+                } else {
+                    players++;
+                }
+            }
             if (entity == self) {
                 // The target's own player entity is not in its client's entity list as something
                 // to spawn for others; it is handled as the local player. It is sent below.
@@ -126,7 +139,10 @@ public final class ChunkSweep {
         // The target itself, last, so the camera has something to attach to even if the list above
         // was empty.
         addEntity(out, self);
-        SpectateClient.LOGGER.info("spectate: packed {} entity packets", out.size());
+        SpectateClient.LOGGER.info(
+                "spectate: packed {} entity packets, including {} other player(s)"
+                        + " ({} beyond the {}-block sweep radius)",
+                out.size(), players, playersOutOfRange, blockRadius);
         return out;
     }
 

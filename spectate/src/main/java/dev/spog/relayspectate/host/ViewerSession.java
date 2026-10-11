@@ -378,6 +378,25 @@ public final class ViewerSession {
                 entry.chatSession());
     }
 
+    /** Player spawn packets received, for the summary. */
+    private int playerSpawnsReceived;
+    /** Tab-list entries received, for the summary. */
+    private int tabEntriesReceived;
+    /** The most recent player entity id received, to check whether the client kept it. */
+    private int lastPlayerSpawnId = -1;
+
+    /** How many player spawns arrived, how many tab entries, and whether the last one survived. */
+    public String playerSummary() {
+        String kept = "n/a";
+        if (lastPlayerSpawnId >= 0) {
+            Minecraft mc = Minecraft.getInstance();
+            kept = mc.level == null ? "no level"
+                    : String.valueOf(mc.level.getEntity(lastPlayerSpawnId) != null);
+        }
+        return playerSpawnsReceived + " player spawn(s), " + tabEntriesReceived
+                + " tab entry/entries, last spawn still present: " + kept;
+    }
+
     /** Flushes packets queued while the client was still logging in. */
     private void drainPending() {
         byte[] queued;
@@ -427,6 +446,21 @@ public final class ViewerSession {
             // and what matters is how many arrived and where the first one sat relative to the
             // centre the host set -- which is what distinguishes "not sent" from "sent and
             // rejected".
+            // Player spawns and tab-list entries counted on arrival, and the entity that results
+            // checked a moment later. This is the pair of facts that "players are invisible" needs
+            // and that no log has carried: whether the spawn arrived at all, and whether the
+            // client kept it -- createEntityFromPacket discards a player spawn outright when no
+            // tab-list entry exists for it, and says so only at warn on its own logger.
+            if (decoded instanceof net.minecraft.network.protocol.game
+                    .ClientboundAddEntityPacket add
+                    && add.getType() == net.minecraft.world.entity.EntityType.PLAYER) {
+                playerSpawnsReceived++;
+                lastPlayerSpawnId = add.getId();
+            }
+            if (decoded instanceof net.minecraft.network.protocol.game
+                    .ClientboundPlayerInfoUpdatePacket tab) {
+                tabEntriesReceived += tab.entries().size();
+            }
             if (decoded instanceof net.minecraft.network.protocol.game
                     .ClientboundLevelChunkWithLightPacket chunk) {
                 if (chunksReceived == 0) {

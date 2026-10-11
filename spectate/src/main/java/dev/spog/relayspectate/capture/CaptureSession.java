@@ -13,7 +13,6 @@ import net.minecraft.world.level.ChunkPos;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 /**
  * The target's side of a spectate session: taps the packets this client receives from its own
@@ -33,7 +32,15 @@ public final class CaptureSession {
     /** Viewers currently being streamed to. */
     private final Set<UUID> viewers = ConcurrentHashMap.newKeySet();
 
-    private final Consumer<byte[]> sink;
+    /**
+     * Where encoded frames go, told what kind of packet each one was.
+     *
+     * <p>The packet is passed alongside the bytes so the receiver can order frames by kind without
+     * re-parsing them. Reading a packet id back out of the wire bytes would mean this mod keeping
+     * its own copy of vanilla's id table, which is the one thing {@link PacketWire} exists to
+     * avoid.
+     */
+    private final java.util.function.BiConsumer<Packet<?>, byte[]> sink;
     private volatile StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec;
     private volatile boolean handshakeSent;
 
@@ -43,7 +50,7 @@ public final class CaptureSession {
     /** Counts packets this session could not re-encode, so a burst reports once. */
     private volatile long encodeFailures;
 
-    public CaptureSession(Consumer<byte[]> sink) {
+    public CaptureSession(java.util.function.BiConsumer<Packet<?>, byte[]> sink) {
         this.sink = sink;
     }
 
@@ -103,7 +110,7 @@ public final class CaptureSession {
             @SuppressWarnings("unchecked")
             Packet<? super ClientGamePacketListener> game =
                     (Packet<? super ClientGamePacketListener>) packet;
-            sink.accept(PacketWire.encode(c, game));
+            sink.accept(packet, PacketWire.encode(c, game));
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;
             }

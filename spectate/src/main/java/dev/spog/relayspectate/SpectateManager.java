@@ -320,7 +320,8 @@ public final class SpectateManager {
         }
         positionTicks = 0;
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
-                mc.player.getYRot(), mc.player.getXRot());
+                mc.player.getYRot(), mc.player.getXRot(),
+                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround());
     }
 
     /** Handles one frame from the service. Runs on the socket's receive thread. */
@@ -374,9 +375,19 @@ public final class SpectateManager {
                     double z = frame.getDouble();
                     float yaw = frame.getFloat();
                     float pitch = frame.getFloat();
+                    // Optional tail, so a target running an older build still centres the cache.
+                    int entityId = -1;
+                    float headYaw = yaw;
+                    boolean onGround = true;
+                    if (frame.remaining() >= 4 + 4 + 1) {
+                        entityId = frame.getInt();
+                        headYaw = frame.getFloat();
+                        onGround = frame.get() != 0;
+                    }
                     ViewerSession session = viewing;
                     if (session != null) {
-                        session.applyTargetPosition(x, y, z, yaw, pitch);
+                        session.applyTargetPosition(x, y, z, yaw, pitch,
+                                entityId, headYaw, onGround);
                     }
                 }
             }
@@ -469,7 +480,8 @@ public final class SpectateManager {
             return;
         }
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
-                mc.player.getYRot(), mc.player.getXRot());
+                mc.player.getYRot(), mc.player.getXRot(),
+                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround());
     }
 
     /**

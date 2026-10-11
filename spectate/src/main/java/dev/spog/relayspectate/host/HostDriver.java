@@ -285,6 +285,36 @@ public final class HostDriver {
     }
 
     /**
+     * Moves the target's entity in the viewer's world.
+     *
+     * <p>Synthesized from the target's position reports rather than forwarded, because a client's
+     * own movement never appears in its inbound stream: it moved itself, so the server has nothing
+     * to tell it. Every other entity moves through forwarded packets as normal; the target is the
+     * one entity that needs this, and it is the one a viewer is watching.
+     *
+     * <p>Sent as an absolute position sync, which is what a server sends for a player that has
+     * moved far enough to need one -- the relative move packets carry deltas this has no basis to
+     * compute. {@code headYaw} is accepted and currently unused; see the note in the body.
+     */
+    public void moveTargetEntity(int entityId, double x, double y, double z,
+                                 float yaw, float pitch, float headYaw, boolean onGround) {
+        if (!inGame || !connection.isConnected()) {
+            return;
+        }
+        connection.send(new net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket(
+                entityId,
+                new net.minecraft.world.entity.PositionMoveRotation(
+                        new net.minecraft.world.phys.Vec3(x, y, z),
+                        net.minecraft.world.phys.Vec3.ZERO,
+                        yaw, pitch),
+                onGround));
+        // No head-rotation packet: its only public constructor takes an Entity, and the host has
+        // an id rather than an entity -- the entity lives in the viewer's world, which the host
+        // deliberately does not reach into. The position sync above carries yaw, so the body turns
+        // correctly; the head follows the body for a remote player that is not separately rotated.
+    }
+
+    /**
      * Releases the client's loading screen, once.
      *
      * <p>Called after the first chunks have been forwarded rather than immediately on entering the

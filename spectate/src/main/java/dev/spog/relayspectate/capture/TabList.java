@@ -95,8 +95,16 @@ public final class TabList {
         java.util.UUID self = mc.player == null ? null : mc.player.getUUID();
         boolean includesSelf = self != null
                 && entries.stream().anyMatch(e -> self.equals(e.profileId()));
-        SpectateClient.LOGGER.info("spectate: tab list has {} player(s), includes self: {}",
-                entries.size(), includesSelf);
+        // The texture count is reported because a profile with no "textures" property yields a
+        // default skin no matter how correctly the packet is built -- the client resolves skins
+        // from that property alone. That is a different fault from a malformed packet and needs a
+        // different fix, so the two are worth telling apart from one log line.
+        long withTextures = entries.stream()
+                .filter(e -> e.profile().properties().containsKey("textures"))
+                .count();
+        SpectateClient.LOGGER.info(
+                "spectate: tab list has {} player(s), includes self: {}, with textures: {}",
+                entries.size(), includesSelf, withTextures);
         try {
             return encodeThenDecode(connection, entries);
         } catch (RuntimeException e) {
@@ -150,9 +158,16 @@ public final class TabList {
         switch (action) {
             case ADD_PLAYER -> {
                 buf.writeUtf(entry.profile().name(), 16);
-                PropertyMap properties = entry.profile().properties();
+                // Collected first so the count and the writes cannot disagree. PropertyMap is a
+                // multimap: size() counts keys while values() iterates values, and a profile with
+                // two properties under one key would have written a count of one followed by two
+                // properties -- desynchronising the whole packet, which is read positionally. The
+                // skin lives in the "textures" property, so getting this wrong costs the skin and
+                // then everything after it.
+                List<com.mojang.authlib.properties.Property> properties =
+                        new ArrayList<>(entry.profile().properties().values());
                 buf.writeVarInt(properties.size());
-                for (var property : properties.values()) {
+                for (com.mojang.authlib.properties.Property property : properties) {
                     buf.writeUtf(property.name());
                     buf.writeUtf(property.value());
                     buf.writeNullable(property.signature(),

@@ -251,7 +251,8 @@ public final class ViewerSession {
      * discards any chunk outside it, and it starts at 0,0, so until the first position arrives
      * every chunk from a target standing anywhere else is thrown away on receipt.
      */
-    public void applyTargetPosition(double x, double y, double z, float yaw, float pitch) {
+    public void applyTargetPosition(double x, double y, double z, float yaw, float pitch,
+                                    int entityId, float headYaw, boolean onGround) {
         if (closed) {
             return;
         }
@@ -274,6 +275,14 @@ public final class ViewerSession {
         // with "Ignoring chunk since it's not in the view range". HostDriver stores a position it
         // cannot apply yet and applies it when the game phase opens, so this must reach it.
         d.updateTargetPosition(x, y, z, yaw, pitch);
+        // Move the target's own entity. Its movement is not in its inbound stream -- a client
+        // moves itself and the server never tells it where it is -- so without this the target
+        // stood still in the viewer's world while every other entity moved normally. Synthesized
+        // from the position report, which already arrives five times a second for the chunk
+        // cache's benefit.
+        if (entityId >= 0) {
+            d.moveTargetEntity(entityId, x, y, z, yaw, pitch, headYaw, onGround);
+        }
         // The first position is also the point at which the viewer has both terrain and somewhere
         // to stand, so it is when the loading screen can be released.
         if (sentAnyPacket) {

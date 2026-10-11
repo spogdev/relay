@@ -193,10 +193,17 @@ public final class SpectateClientSocket {
      * knows where it is because it moved itself there. Without this the viewer's chunk cache stays
      * centred on 0,0 and discards every chunk that arrives.
      */
-    public void sendTargetPosition(double x, double y, double z, float yaw, float pitch) {
-        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2);
+    public void sendTargetPosition(double x, double y, double z, float yaw, float pitch,
+                                   int entityId, float headYaw, boolean onGround) {
+        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2 + 4 + 4 + 1);
         buf.put(SpectateProtocol.TYPE_TARGET_POSITION);
         buf.putDouble(x).putDouble(y).putDouble(z).putFloat(yaw).putFloat(pitch);
+        // The entity id, head rotation and ground flag were added so the viewer can move the
+        // target's own entity. A client's position never appears in its own inbound stream -- it
+        // moved itself there -- so the target's entity stood still in the viewer's world while
+        // every other entity moved normally. The viewer turns each report into a position-sync
+        // packet for this id.
+        buf.putInt(entityId).putFloat(headYaw).put((byte) (onGround ? 1 : 0));
         sendBinary(buf.flip());
     }
 

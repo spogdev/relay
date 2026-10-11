@@ -29,6 +29,15 @@ import org.slf4j.LoggerFactory;
 @Environment(EnvType.CLIENT)
 public final class SpectateClient implements ClientModInitializer {
     public static final String MOD_ID = "relayspectate";
+
+    /**
+     * Identifies this build in the log.
+     *
+     * <p>Bumped whenever behaviour changes. Its only job is to make "the new jar is installed"
+     * checkable from the log, which during this feature's development was repeatedly assumed and
+     * never verified.
+     */
+    public static final String BUILD_MARKER = "noclip-items-diag-1";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -56,7 +65,12 @@ public final class SpectateClient implements ClientModInitializer {
         MenuButton.register();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
-        LOGGER.info("Relay Spectate loaded");
+        // The build stamp is the point of this line. Several rounds of "nothing changed" could
+        // not be told apart from "the new jar is not the one running", because nothing in the log
+        // identified the build -- and the mod version alone does not change between builds during
+        // development. BUILD_MARKER is bumped whenever behaviour changes, so one line in the log
+        // settles which jar is loaded before anything else is investigated.
+        LOGGER.info("Relay Spectate loaded (build {})", BUILD_MARKER);
     }
 
     private void onTick(Minecraft client) {

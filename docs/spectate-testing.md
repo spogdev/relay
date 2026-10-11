@@ -54,6 +54,10 @@ service exposed directly -- mainly useful for a local dev instance.
 Two accounts on two machines, both with both jars, both with the service
 reachable.
 
+**The viewer must be at the main menu, not in a world.** A session replaces the
+client's world with the target's, so it cannot start from in-game; the menu says
+so if you try.
+
 1. **Player B** (the target) joins a server and plays normally.
 2. **B must have A trusted.** The addon reads Relay's own trust list — no
    separate permission. Trust is standing, so there is no prompt.
@@ -82,20 +86,17 @@ transition. The most likely failures and what they look like:
 
 ## Known rough edges
 
-**The login packet carries the target server's view distance.** It is replayed
-verbatim, so A's client expects more chunks than the 10-chunk capture sends.
-Missing chunks should render as nothing rather than breaking, but holes at the
-edge are likely. If it looks bad, the fix is to rewrite that field rather than
-replay it.
+**The camera is locked to the target.** You see what they see, from their eyes.
+You cannot move independently -- that is deliberate, since a free camera in
+streamed terrain can look through walls the target cannot see.
 
-**The camera is not locked yet.** A joins as its own player entity in B's world,
-so A will be a free camera rather than pinned to B. That is the next piece. It
-also means this build does not yet have the property that makes the feature
-defensible — right now A can look wherever they like within the streamed radius.
+**The view extends 10 chunks and then stops.** Terrain past that is never sent,
+so the horizon ends abruptly. The client is told its view distance is 10 so it
+should not expect more, but the edge will look flat.
 
-**Nothing is verified in-game.** The routing is tested (7 tests, real sockets,
-all passing) and both jars build, but the rendering path has never been run.
-Expect at least one round of fixes.
+**Nothing has been run in a real client.** The routing is tested and the join
+sequence was built by reading the vanilla server's own bytecode rather than
+guessing, but the rendering path has still never executed. Expect something.
 
 ## Bandwidth
 

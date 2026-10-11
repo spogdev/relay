@@ -23,26 +23,31 @@ dependency and will refuse to load without it.
 
 ## Running the service
 
-It is a separate process from the main relay, on its own port. Needs Java 25.
+It is a separate process from the main relay, on its own port, bound to
+localhost and reached through the existing reverse proxy. Needs Java 25.
 
 ```bash
-java -jar relay-spectate-service-all.jar --port 8081
+java -jar relay-spectate-service-all.jar --host 127.0.0.1 --port 8090
 ```
 
-Behind a reverse proxy, the client expects the path `/spectate`. Caddy, alongside
-the existing relay block:
+Pick a port nothing else is using -- check with `ss -tlnp` first rather than
+assuming, since a relay host tends to accumulate services in the 808x range.
+
+The client expects the path `/spectate` on Relay's own host. In Caddy, the
+specific path must come **before** the catch-all, because directives are matched
+in order and a bare `reverse_proxy` first would swallow it:
 
 ```
 relay.spog.dev {
-    reverse_proxy /spectate 127.0.0.1:8081
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy /spectate 127.0.0.1:8090
+    reverse_proxy localhost:8080
 }
 ```
 
-The client derives the service address from Relay's configured address plus port
-8081, so if both run on the same host behind the same proxy there is nothing to
-configure. To point it elsewhere, set `serviceAddress` in
-`config/relayspectate.json`.
+The client defaults to Relay's configured host with that path, so with both
+behind the same proxy there is nothing to configure. `serviceAddress` in
+`config/relayspectate.json` overrides the host, and may carry `host:port` for a
+service exposed directly -- mainly useful for a local dev instance.
 
 ## Testing it
 

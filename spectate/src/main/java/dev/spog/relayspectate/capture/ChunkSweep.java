@@ -118,12 +118,24 @@ public final class ChunkSweep {
         // whether distance excluded them -- was never in either log.
         int players = 0;
         int playersOutOfRange = 0;
+        int items = 0;
+        int itemsWithoutStack = 0;
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof net.minecraft.world.entity.player.Player && entity != self) {
                 if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
                     playersOutOfRange++;
                 } else {
                     players++;
+                }
+            }
+            if (entity instanceof net.minecraft.world.entity.item.ItemEntity item
+                    && entity.distanceToSqr(self.position())
+                            <= (double) blockRadius * blockRadius) {
+                items++;
+                // Counted because an item entity with no stack in its synced data renders as
+                // nothing at all, which is indistinguishable from the entity never arriving.
+                if (item.getItem().isEmpty()) {
+                    itemsWithoutStack++;
                 }
             }
             if (entity == self) {
@@ -141,8 +153,9 @@ public final class ChunkSweep {
         addEntity(out, self);
         SpectateClient.LOGGER.info(
                 "spectate: packed {} entity packets, including {} other player(s)"
-                        + " ({} beyond the {}-block sweep radius)",
-                out.size(), players, playersOutOfRange, blockRadius);
+                        + " ({} beyond the {}-block sweep radius) and {} dropped item(s)"
+                        + " ({} with an empty stack)",
+                out.size(), players, playersOutOfRange, blockRadius, items, itemsWithoutStack);
         return out;
     }
 

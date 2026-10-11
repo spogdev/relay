@@ -9,8 +9,10 @@
     "ConnectionCaptureMixin",
     "InboundApplyMarkerMixin",
     "LoopbackNotMemoryMixin",
+    "SpectateDisconnectMixin",
     "SpectateKeybindMixin",
-    "SpectateLanguageMixin"
+    "SpectateLanguageMixin",
+    "SpectatePauseScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -206,6 +206,11 @@ public final class SpectateManager {
         return s != null && s.isAuthenticated() && Minecraft.getInstance().level == null;
     }
 
+    /** True while this client is watching someone, for the pause menu's disconnect button. */
+    public boolean isViewing() {
+        return viewing != null;
+    }
+
     /**
      * Ends the session this client is viewing, telling the service to stop the capture.
      *

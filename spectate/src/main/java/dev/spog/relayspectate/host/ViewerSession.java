@@ -312,6 +312,32 @@ public final class ViewerSession {
      * only when the entry actually disagrees, so the ordinary case costs one scan of a short list.
      */
     private Packet<?> withOwnEntrySpectating(Packet<?> decoded) {
+        // A respawn carries the target's game mode and the client applies it to itself through
+        // setLocalMode -- which is where Minecraft.gameMode.isSpectator() reads from, and that is
+        // what decides no-clip and whether the local player is rendered in third person. So the
+        // target dying, respawning or changing dimension silently took the viewer out of
+        // spectator: it collided with blocks again and appeared as a visible body behind its own
+        // camera. The login packet is rewritten for the same reason; this is the same packet's
+        // mid-session equivalent and needs the same treatment.
+        if (decoded instanceof net.minecraft.network.protocol.game.ClientboundRespawnPacket re) {
+            var info = re.commonPlayerSpawnInfo();
+            if (info.gameType() != net.minecraft.world.level.GameType.SPECTATOR) {
+                return new net.minecraft.network.protocol.game.ClientboundRespawnPacket(
+                        new net.minecraft.network.protocol.game.CommonPlayerSpawnInfo(
+                                info.dimensionType(),
+                                info.dimension(),
+                                info.seed(),
+                                net.minecraft.world.level.GameType.SPECTATOR,
+                                net.minecraft.world.level.GameType.SPECTATOR,
+                                info.isDebug(),
+                                info.isFlat(),
+                                info.lastDeathLocation(),
+                                info.portalCooldown(),
+                                info.seaLevel()),
+                        re.dataToKeep());
+            }
+            return decoded;
+        }
         java.util.UUID me = Minecraft.getInstance().getUser().getProfileId();
         // A remove for the viewer's own id has to be dropped. The capture resends the tab list by
         // removing every player and re-adding them, which is the only way a client picks up a

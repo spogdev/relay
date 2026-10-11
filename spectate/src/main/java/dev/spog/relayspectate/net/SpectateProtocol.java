@@ -150,17 +150,24 @@ public final class SpectateProtocol {
     public static final int CAPTURE_RADIUS_CHUNKS = 10;
 
     /**
-     * How far from the target the initial sweep actually sends, in chunks.
+     * The view radius the viewer's client is told to use, in chunks.
      *
-     * <p>One less than {@link #CAPTURE_RADIUS_CHUNKS}, because the viewer's chunk cache rejects a
-     * chunk that sits outside its view range at the moment it arrives -- and the whole sweep is
-     * sent in one burst, before the target has moved and before anything can widen that range. The
-     * first attempt sent the full radius and the client logged
-     * "Ignoring chunk since it's not in the view range" for precisely the outermost ring, which is
-     * what pointed at this.
+     * <p>Deliberately larger than {@link #CAPTURE_RADIUS_CHUNKS}. The client's chunk cache rejects
+     * any chunk further than this from its view centre at the instant it arrives
+     * ({@code abs(x - viewCenterX) > chunkRadius}), and the initial sweep lands as one burst, so
+     * every chunk has to be inside the radius already -- there is no later widening to save it.
      *
-     * <p>Costing the view one chunk of distance is the right trade: the alternative is a ring of
-     * chunks that are always discarded, which is bandwidth spent to produce a log warning.
+     * <p>Matching the two exactly is what failed: sending a radius-10 sweep with a radius-10
+     * client left the outermost ring rejected, and reducing the sweep to 9 left it rejected at 9.
+     * The margin removes the off-by-one question entirely rather than inviting another round of
+     * it, and costs nothing: a larger radius only means the client is willing to accept chunks
+     * that are never sent.
      */
-    public static final int SWEEP_RADIUS_CHUNKS = CAPTURE_RADIUS_CHUNKS - 1;
+    public static final int VIEWER_RADIUS_CHUNKS = CAPTURE_RADIUS_CHUNKS + 4;
+
+    /**
+     * How far from the target the initial sweep sends, in chunks. Equal to the capture radius; the
+     * headroom lives in {@link #VIEWER_RADIUS_CHUNKS} instead.
+     */
+    public static final int SWEEP_RADIUS_CHUNKS = CAPTURE_RADIUS_CHUNKS;
 }

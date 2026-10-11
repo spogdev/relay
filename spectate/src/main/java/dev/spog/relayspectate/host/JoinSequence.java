@@ -71,8 +71,8 @@ public final class JoinSequence {
                 false,
                 target.levels(),
                 target.maxPlayers(),
-                SpectateProtocol.CAPTURE_RADIUS_CHUNKS,
-                SpectateProtocol.CAPTURE_RADIUS_CHUNKS,
+                SpectateProtocol.VIEWER_RADIUS_CHUNKS,
+                SpectateProtocol.VIEWER_RADIUS_CHUNKS,
                 false,
                 target.showDeathScreen(),
                 target.doLimitedCrafting(),
@@ -82,7 +82,7 @@ public final class JoinSequence {
 
     /** Tells the client its view distance, matching what the capture actually sends. */
     public static ClientboundSetChunkCacheRadiusPacket chunkRadius() {
-        return new ClientboundSetChunkCacheRadiusPacket(SpectateProtocol.CAPTURE_RADIUS_CHUNKS);
+        return new ClientboundSetChunkCacheRadiusPacket(SpectateProtocol.VIEWER_RADIUS_CHUNKS);
     }
 
     /**

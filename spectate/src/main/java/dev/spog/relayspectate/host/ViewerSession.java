@@ -69,6 +69,7 @@ public final class ViewerSession {
 
     private volatile boolean started;
     private volatile boolean sentAnyPacket;
+    private volatile int chunksReceived;
     private volatile int dropped;
 
     public ViewerSession(UUID target) {
@@ -269,7 +270,20 @@ public final class ViewerSession {
                 codec = PacketWire.gameCodec(listener.registryAccess());
                 gameCodec = codec;
             }
-            serverSide.send(PacketWire.decode(codec, wire));
+            Packet<?> decoded = PacketWire.decode(codec, wire);
+            // Counted and sampled rather than logged per packet: a sweep is hundreds of chunks,
+            // and what matters is how many arrived and where the first one sat relative to the
+            // centre the host set -- which is what distinguishes "not sent" from "sent and
+            // rejected".
+            if (decoded instanceof net.minecraft.network.protocol.game
+                    .ClientboundLevelChunkWithLightPacket chunk) {
+                if (chunksReceived == 0) {
+                    SpectateClient.LOGGER.info("spectate: first chunk at {},{}",
+                            chunk.getX(), chunk.getZ());
+                }
+                chunksReceived++;
+            }
+            serverSide.send(decoded);
             if (!sentAnyPacket) {
                 sentAnyPacket = true;
                 // Terrain has reached the client, so the loading screen can go. Done here rather
@@ -283,6 +297,11 @@ public final class ViewerSession {
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.debug("spectate: dropped undecodable packet", e);
         }
+    }
+
+    /** How many chunk packets this session has delivered to the client. */
+    public int chunksReceived() {
+        return chunksReceived;
     }
 
     /** True while the loopback client is attached. */

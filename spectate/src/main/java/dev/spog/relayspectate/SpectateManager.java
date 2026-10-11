@@ -50,6 +50,7 @@ public final class SpectateManager {
     private volatile SpectateClientSocket socket;
     private volatile ViewerSession viewing;
     private int positionTicks;
+    private int viewerTicks;
     private boolean reportedUnavailable;
 
     /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
@@ -189,6 +190,14 @@ public final class SpectateManager {
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
+            // One summary a few seconds in, so a blank world can be told apart from a world whose
+            // terrain never arrived without needing a packet-by-packet log.
+            if (++viewerTicks == 100) {
+                SpectateClient.LOGGER.info("spectate: {} chunk packets delivered after 5s",
+                        session.chunksReceived());
+            }
+        } else {
+            viewerTicks = 0;
         }
     }
 

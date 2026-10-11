@@ -132,7 +132,26 @@ public final class ChunkSweep {
 
     private static void addEntity(List<Packet<?>> out, Entity entity) {
         try {
-            out.add(new ClientboundAddEntityPacket(entity, 0, entity.blockPosition()));
+            // Spawned at its exact position, not its block position. The
+            // ClientboundAddEntityPacket(Entity, int, BlockPos) convenience constructor reads
+            // BlockPos.getX/getY/getZ, which are integers, so every entity arrived snapped to the
+            // corner of the block it was standing in. For mobs that is a glitch that their next
+            // movement packet corrects; for entities that never move it is permanent, which is why
+            // text displays appeared at the wrong height and several in one block clumped onto a
+            // single point. Displays carry their own transform in synced data and are never
+            // repositioned by the server, so the spawn position is the only one they ever get.
+            out.add(new ClientboundAddEntityPacket(
+                    entity.getId(),
+                    entity.getUUID(),
+                    entity.getX(),
+                    entity.getY(),
+                    entity.getZ(),
+                    entity.getXRot(),
+                    entity.getYRot(),
+                    entity.getType(),
+                    0,
+                    entity.getDeltaMovement(),
+                    entity.getYHeadRot()));
             var data = entity.getEntityData().getNonDefaultValues();
             if (data != null && !data.isEmpty()) {
                 out.add(new ClientboundSetEntityDataPacket(entity.getId(), data));

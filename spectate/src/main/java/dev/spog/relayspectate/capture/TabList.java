@@ -169,10 +169,13 @@ public final class TabList {
      * target would relay a complete tab list in which the one player a viewer is actually watching
      * had no skin.
      *
-     * <p>Fetched off-thread and used on the next rebuild rather than waited for: the resolver
-     * blocks on an HTTP call, and this runs on the client thread while a viewer is waiting for
-     * terrain. The first tab list for a given player may therefore ship without textures, and the
-     * next one carries them.
+     * <p>Fetched off-thread and used on the next rebuild rather than waited for: the fetch is an
+     * HTTP call, and this runs on the client thread while a viewer is waiting for terrain. The
+     * first tab list for a given player therefore ships without textures, and the capture tick
+     * resends it once the fetch completes.
+     *
+     * <p>This explains the pattern of "some players have skins and some do not": the ones that do
+     * were sent by the server with textures already attached and never needed any of this.
      */
     private static GameProfile withTextures(GameProfile profile) {
         if (profile.properties().containsKey("textures")) {
@@ -196,7 +199,18 @@ public final class TabList {
         // background executor is sized for CPU work.
         net.minecraft.util.Util.ioPool().execute(() -> {
             try {
-                Minecraft.getInstance().services().profileResolver().fetchById(id)
+                // The session service directly, not services().profileResolver(). The resolver
+                // reachable from the client is wrapped by LocalPlayerResolver, whose fetchById
+                // returns ClientPacketListener.getPlayerInfo(id).getProfile() when the id is in
+                // the tab list -- which it always is for the players being captured. So asking
+                // the resolver for a tab-list player's profile hands back the very textureless
+                // profile being worked around, the filter below rejected it, and nothing was ever
+                // resolved or resent. fetchProfile goes to the service and returns the full
+                // profile, textures included.
+                var result = Minecraft.getInstance().services().sessionService()
+                        .fetchProfile(id, true);
+                java.util.Optional.ofNullable(result)
+                        .map(com.mojang.authlib.yggdrasil.ProfileResult::profile)
                         .filter(full -> full.properties().containsKey("textures"))
                         .ifPresent(full -> {
                             RESOLVED.put(id, full);

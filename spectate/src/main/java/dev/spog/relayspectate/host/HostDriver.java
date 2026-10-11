@@ -209,7 +209,8 @@ public final class HostDriver {
         // The viewer's own tab-list entry, which is where its client reads its game mode from --
         // not from the login packet above. Without it gameMode() is null, isSpectator() is false
         // and the viewer cannot pass through blocks.
-        var self = JoinSequence.selfSpectating(net.minecraft.client.Minecraft.getInstance());
+        var self = JoinSequence.selfSpectating(
+                net.minecraft.client.Minecraft.getInstance(), access);
         if (self != null) {
             connection.send(self);
         } else {

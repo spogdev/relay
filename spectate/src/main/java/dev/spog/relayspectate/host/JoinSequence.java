@@ -104,8 +104,13 @@ public final class JoinSequence {
      *
      * <p>Built with no profile properties: this entry exists to carry a game mode, and the
      * viewer's own skin is resolved by its client from its own account.
+     *
+     * <p>Takes the registries explicitly rather than reading them from {@code mc.getConnection()}.
+     * This runs during loopback login, when that connection is the viewer's own and may be absent
+     * or mid-handshake, and depending on it made this return null every time.
      */
-    public static ClientboundPlayerInfoUpdatePacket selfSpectating(Minecraft mc) {
+    public static ClientboundPlayerInfoUpdatePacket selfSpectating(
+            Minecraft mc, net.minecraft.core.RegistryAccess registries) {
         GameProfile profile = new GameProfile(
                 mc.getUser().getProfileId(), mc.getUser().getName());
         return TabList.rebuild(
@@ -123,7 +128,7 @@ public final class JoinSequence {
                         true,
                         0,
                         null)),
-                mc);
+                registries);
     }
 
     /** Tells the client its view distance, matching what the capture actually sends. */

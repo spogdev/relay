@@ -259,8 +259,27 @@ public final class TabList {
         if (connection == null || entries.isEmpty()) {
             return null;
         }
+        return rebuild(actions, entries, connection.registryAccess());
+    }
+
+    /**
+     * As {@link #rebuild(EnumSet, List, Minecraft)}, against registries given directly.
+     *
+     * <p>Exists because the host builds the viewer's own entry during loopback login, when
+     * {@code Minecraft.getConnection()} is not a usable source: it is the viewer's connection to
+     * its own server, which may be absent or still mid-handshake. Requiring it there made
+     * {@code selfSpectating} return null at the guard every time -- silently, since returning null
+     * from a guard logs nothing -- and the viewer was never made a spectator. The host has the
+     * loopback connection's registries in hand, so it passes them.
+     */
+    public static ClientboundPlayerInfoUpdatePacket rebuild(
+            EnumSet<Action> actions, List<Entry> entries,
+            net.minecraft.core.RegistryAccess registries) {
+        if (entries.isEmpty() || registries == null) {
+            return null;
+        }
         try {
-            return encodeThenDecode(connection, actions, entries);
+            return encodeThenDecode(registries, actions, entries);
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.warn("spectate: could not rebuild the tab list", e);
             return null;
@@ -294,14 +313,15 @@ public final class TabList {
      */
     private static ClientboundPlayerInfoUpdatePacket encodeThenDecode(
             ClientPacketListener connection, List<Entry> entries) {
-        return encodeThenDecode(connection, ACTIONS, entries);
+        return encodeThenDecode(connection.registryAccess(), ACTIONS, entries);
     }
 
     /** As above, for a caller that must preserve an existing packet's action set. */
     private static ClientboundPlayerInfoUpdatePacket encodeThenDecode(
-            ClientPacketListener connection, EnumSet<Action> actions, List<Entry> entries) {
+            net.minecraft.core.RegistryAccess registries, EnumSet<Action> actions,
+            List<Entry> entries) {
         RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(
-                Unpooled.buffer(), connection.registryAccess());
+                Unpooled.buffer(), registries);
         buf.writeEnumSet(actions, Action.class);
         buf.writeCollection(entries, (out, entry) -> {
             RegistryFriendlyByteBuf typed = (RegistryFriendlyByteBuf) out;

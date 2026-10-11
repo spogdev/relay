@@ -161,13 +161,12 @@ public final class ViewerSession {
             return;
         }
 
-        // The host encodes game packets against the registries the client builds from the replayed
-        // configuration, so the supplier reads them off the client's connection once it exists.
+        // The host encodes game packets against the registries the viewer's client assembled from
+        // the replayed configuration. They are read from LoopbackRegistries rather than through
+        // Minecraft.getConnection(), which reads mc.player.connection -- and the player does not
+        // exist until the login packet the host is about to encode has been received.
         HostDriver hostDriver = new HostDriver(serverSide, List.copyOf(handshake), loginWire,
-                () -> {
-                    ClientPacketListener current = Minecraft.getInstance().getConnection();
-                    return current == null ? null : current.registryAccess();
-                });
+                () -> LoopbackRegistries.of(connection));
         this.driver = hostDriver;
         hostDriver.begin();
 
@@ -327,6 +326,7 @@ public final class ViewerSession {
     }
 
     private void finishClose(Connection conn) {
+        LoopbackRegistries.forget(conn);
         if (conn != null && conn.isConnected()) {
             conn.disconnect(Component.literal("Spectate session ended"));
         }

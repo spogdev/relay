@@ -2,6 +2,7 @@ package dev.spog.relayspectate.host;
 
 import dev.spog.relayspectate.SpectateClient;
 import dev.spog.relayspectate.capture.PacketWire;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.Connection;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -46,8 +47,16 @@ public final class HostDriver {
     private final byte[] loginWire;
     private final Supplier<RegistryAccess> registries;
 
+    /**
+     * How many client-thread passes to wait for the registries. At roughly one per frame this is a
+     * few seconds -- long enough to absorb a slow resource reload, short enough that a session that
+     * will never be ready reports instead of hanging.
+     */
+    private static final int MAX_REGISTRY_WAIT_TICKS = 200;
+
     private volatile boolean inGame;
     private volatile boolean announcedChunksLoaded;
+    private int registryWaitTicks;
 
     /**
      * @param handshake the target's recorded configuration-phase packets, in order
@@ -106,11 +115,35 @@ public final class HostDriver {
      * replaying the target's is wrong in three separate ways.
      */
     private void enterGame() {
+        // Deferred to the client thread, and retried, because the registries do not exist yet.
+        // handleConfigurationFinished runs on the client thread and builds them there as it
+        // constructs the client's play listener; this method runs on the Netty thread the moment
+        // the acknowledgement arrives, which is strictly earlier. Reading them here directly
+        // returned null and failed every session.
+        Minecraft.getInstance().execute(this::tryEnterGame);
+    }
+
+    /**
+     * Attempts the game-phase switch, rescheduling itself until the client's registries exist.
+     *
+     * <p>Runs on the client thread. The wait is normally a single tick -- the client is already
+     * inside {@code handleConfigurationFinished} when this is first scheduled -- but it is bounded
+     * rather than infinite so a session that will never be ready fails with a message instead of
+     * hanging on the loading screen.
+     */
+    private void tryEnterGame() {
+        if (inGame || !connection.isConnected()) {
+            return;
+        }
         RegistryAccess access = registries.get();
         if (access == null) {
-            SpectateClient.LOGGER.warn("spectate host: no registries after configuration");
-            connection.disconnect(net.minecraft.network.chat.Component.literal(
-                    "Spectate: registry sync failed"));
+            if (++registryWaitTicks > MAX_REGISTRY_WAIT_TICKS) {
+                SpectateClient.LOGGER.warn("spectate host: no registries after configuration");
+                connection.disconnect(net.minecraft.network.chat.Component.literal(
+                        "Spectate: registry sync failed"));
+                return;
+            }
+            Minecraft.getInstance().execute(this::tryEnterGame);
             return;
         }
         ClientboundLoginPacket targetLogin = decodeLogin(access);

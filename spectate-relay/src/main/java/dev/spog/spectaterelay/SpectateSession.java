@@ -98,6 +98,19 @@ public final class SpectateSession {
         return !viewers.isEmpty();
     }
 
+    /** Frames forwarded from this session to a viewer, for a periodic progress line. */
+    private final java.util.concurrent.atomic.AtomicLong forwarded =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** Counts one forwarded frame and logs every 100th, so a stalled stream is visible. */
+    public void countForwarded() {
+        long n = forwarded.incrementAndGet();
+        if (n % 100 == 0) {
+            org.slf4j.LoggerFactory.getLogger(SpectateSession.class)
+                    .info("forwarded {} frames from {}", n, uuid);
+        }
+    }
+
     public UUID watching() {
         return watching;
     }

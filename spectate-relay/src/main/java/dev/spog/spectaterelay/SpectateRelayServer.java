@@ -274,14 +274,32 @@ public final class SpectateRelayServer extends WebSocketServer {
      */
     private void forwardToViewers(SpectateSession target, ByteBuffer frame) {
         if (!target.hasViewers()) {
+            LOG.debug("drop frame type {}: target {} has no viewers",
+                    Wire.typeOf(frame), target.uuid());
             return;
         }
+        byte type = Wire.typeOf(frame);
         for (UUID viewerId : target.viewers()) {
             SpectateSession viewer = byUuid.get(viewerId);
-            if (viewer != null && viewer.conn().isOpen()
-                    && target.uuid().equals(viewer.watching())) {
-                viewer.conn().send(frame.duplicate());
+            // Each condition is logged on failure rather than silently skipped. A frame dropped
+            // here is invisible in both clients' logs -- the target reports what it sent and the
+            // viewer reports what it received, and neither can see this hop -- so a silent drop
+            // here is the hardest kind of loss to locate.
+            if (viewer == null) {
+                LOG.warn("drop frame type {}: viewer {} has no session", type, viewerId);
+                continue;
             }
+            if (!viewer.conn().isOpen()) {
+                LOG.warn("drop frame type {}: viewer {} socket closed", type, viewerId);
+                continue;
+            }
+            if (!target.uuid().equals(viewer.watching())) {
+                LOG.warn("drop frame type {}: viewer {} watching {} not target {}",
+                        type, viewerId, viewer.watching(), target.uuid());
+                continue;
+            }
+            viewer.conn().send(frame.duplicate());
+            target.countForwarded();
         }
     }
 

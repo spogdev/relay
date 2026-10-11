@@ -66,6 +66,32 @@ public final class SpectateManager {
 
     /** Terrain frames still to be handed to the socket, drained by {@link #tick()}. */
     private final java.util.ArrayDeque<byte[]> terrainBacklog = new java.util.ArrayDeque<>();
+
+    /**
+     * Inbound frame counts by type, for one summary line per session.
+     *
+     * <p>Worth the few lines: the loss between "the target sent 421 chunks" and "the viewer
+     * rendered nothing" has been chased across several rounds by comparing two logs that each
+     * describe only their own end, and the service in between is not visible in either. Counting
+     * what actually arrived, by type, turns that into one line.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<Byte, java.util.concurrent.atomic.AtomicInteger>
+            inboundFrames = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void countInboundFrame(byte type) {
+        inboundFrames.computeIfAbsent(type,
+                ignored -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+    }
+
+    private String inboundFrameSummary() {
+        StringBuilder out = new StringBuilder();
+        inboundFrames.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .forEach(e -> out.append(out.isEmpty() ? "" : " ")
+                        .append(String.format("0x%02x", e.getKey()))
+                        .append('=').append(e.getValue().get()));
+        return out.isEmpty() ? "none" : out.toString();
+    }
     private boolean reportedUnavailable;
 
     /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
@@ -211,8 +237,10 @@ public final class SpectateManager {
             if (++viewerTicks == 100) {
                 int chunks = session.chunksReceived();
                 if (chunks > 0) {
-                    SpectateClient.LOGGER.info("spectate: {} chunk packets delivered after 5s",
-                            chunks);
+                    SpectateClient.LOGGER.info(
+                            "spectate: {} chunk packets delivered after 5s; "
+                            + "frames received by type: {}",
+                            chunks, inboundFrameSummary());
                 } else {
                     // Zero is a distinct failure from "some", and the difference decides where to
                     // look. Vanilla only reports it as "Timed out while waiting for the client to
@@ -222,9 +250,9 @@ public final class SpectateManager {
                     // ever sent a position, since terrain is sent immediately after one.
                     SpectateClient.LOGGER.warn(
                             "spectate: no terrain after 5s -- inGame={} positionSeen={}; "
-                            + "the target sent no chunk frames, so check its log for "
-                            + "\"packed N loaded chunks\"",
-                            session.isInGame(), session.hasSeenPosition());
+                            + "frames received by type: {}",
+                            session.isInGame(), session.hasSeenPosition(),
+                            inboundFrameSummary());
                 }
             }
         } else {
@@ -296,6 +324,7 @@ public final class SpectateManager {
 
     /** Handles one frame from the service. Runs on the socket's receive thread. */
     private void onFrame(ByteBuffer frame) {
+        countInboundFrame(Frames.typeOf(frame));
         switch (Frames.typeOf(frame)) {
             case SpectateProtocol.TYPE_SESSION_READY -> {
                 UUID target = Frames.readUuid(frame);
@@ -372,6 +401,7 @@ public final class SpectateManager {
      */
     private void beginViewing(UUID target) {
         discardViewing();
+        inboundFrames.clear();
         ViewerSession session = new ViewerSession(target);
         viewing = session;
         SpectateClient.LOGGER.info("spectate: awaiting handshake from {}", target);

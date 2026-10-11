@@ -63,6 +63,14 @@ public final class HostDriver {
      * <p>Only the first position report moves the viewer. See {@link #applyPosition}.
      */
     private volatile boolean sentInitialPosition;
+
+    /**
+     * How far behind the target the viewer starts, in blocks.
+     *
+     * <p>Far enough to see the target's whole model, close enough to stay well inside the streamed
+     * radius.
+     */
+    private static final double SPAWN_OFFSET_BLOCKS = 4.0;
     private int registryWaitTicks;
 
     /**
@@ -249,7 +257,16 @@ public final class HostDriver {
         // is rather than at the origin.
         if (!sentInitialPosition) {
             sentInitialPosition = true;
-            connection.send(JoinSequence.position(x, y, z, yaw, pitch));
+            // Placed behind and above the target rather than on it. The viewer's own position is
+            // the target's, and a camera inside another player's model sees the inside of that
+            // model -- which renders as nothing and looks exactly like the target failing to
+            // spawn. Offset along the view direction so the target is in front of the viewer at
+            // the moment the world appears.
+            double yawRad = Math.toRadians(yaw);
+            double behindX = x + Math.sin(yawRad) * SPAWN_OFFSET_BLOCKS;
+            double behindZ = z - Math.cos(yawRad) * SPAWN_OFFSET_BLOCKS;
+            connection.send(JoinSequence.position(
+                    behindX, y + 1.0, behindZ, yaw, pitch));
         }
     }
 

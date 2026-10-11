@@ -89,6 +89,14 @@ public final class TabList {
         if (entries.isEmpty()) {
             return null;
         }
+        // Named, not just counted. The target failing to appear in its own tab list is the one
+        // omission that would present as "entities work but players do not", since the target is
+        // the player a viewer most expects to see -- and it would be invisible in a bare count.
+        java.util.UUID self = mc.player == null ? null : mc.player.getUUID();
+        boolean includesSelf = self != null
+                && entries.stream().anyMatch(e -> self.equals(e.profileId()));
+        SpectateClient.LOGGER.info("spectate: tab list has {} player(s), includes self: {}",
+                entries.size(), includesSelf);
         try {
             return encodeThenDecode(connection, entries);
         } catch (RuntimeException e) {

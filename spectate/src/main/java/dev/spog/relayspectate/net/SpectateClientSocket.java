@@ -194,8 +194,9 @@ public final class SpectateClientSocket {
      * centred on 0,0 and discards every chunk that arrives.
      */
     public void sendTargetPosition(double x, double y, double z, float yaw, float pitch,
-                                   int entityId, float headYaw, boolean onGround) {
-        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2 + 4 + 4 + 1);
+                                   int entityId, float headYaw, boolean onGround,
+                                   int swingAction) {
+        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2 + 4 + 4 + 1 + 1);
         buf.put(SpectateProtocol.TYPE_TARGET_POSITION);
         buf.putDouble(x).putDouble(y).putDouble(z).putFloat(yaw).putFloat(pitch);
         // The entity id, head rotation and ground flag were added so the viewer can move the
@@ -204,6 +205,11 @@ public final class SpectateClientSocket {
         // every other entity moved normally. The viewer turns each report into a position-sync
         // packet for this id.
         buf.putInt(entityId).putFloat(headYaw).put((byte) (onGround ? 1 : 0));
+        // The swing action is appended as a further optional field, for the same reason as the
+        // fields above: an arm swing is an animation the server tells other clients about, so it
+        // is absent from the target's own inbound stream and the target's arms never moved. -1
+        // means "not swinging"; anything else is a ClientboundAnimatePacket action id.
+        buf.put((byte) swingAction);
         sendBinary(buf.flip());
     }
 

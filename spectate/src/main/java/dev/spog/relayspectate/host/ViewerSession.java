@@ -252,7 +252,8 @@ public final class ViewerSession {
      * every chunk from a target standing anywhere else is thrown away on receipt.
      */
     public void applyTargetPosition(double x, double y, double z, float yaw, float pitch,
-                                    int entityId, float headYaw, boolean onGround) {
+                                    int entityId, float headYaw, boolean onGround,
+                                    int swingAction) {
         if (closed) {
             return;
         }
@@ -278,10 +279,12 @@ public final class ViewerSession {
         // Move the target's own entity. Its movement is not in its inbound stream -- a client
         // moves itself and the server never tells it where it is -- so without this the target
         // stood still in the viewer's world while every other entity moved normally. Synthesized
-        // from the position report, which already arrives five times a second for the chunk
-        // cache's benefit.
+        // from the position report, which arrives every tick for the chunk cache's benefit.
         if (entityId >= 0) {
             d.moveTargetEntity(entityId, x, y, z, yaw, pitch, headYaw, onGround);
+            if (swingAction >= 0) {
+                d.swingTargetArm(entityId, swingAction);
+            }
         }
         // The first position is also the point at which the viewer has both terrain and somewhere
         // to stand, so it is when the loading screen can be released.

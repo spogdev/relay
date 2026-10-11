@@ -294,7 +294,8 @@ public final class HostDriver {
      *
      * <p>Sent as an absolute position sync, which is what a server sends for a player that has
      * moved far enough to need one -- the relative move packets carry deltas this has no basis to
-     * compute. {@code headYaw} is accepted and currently unused; see the note in the body.
+     * compute. The head is rotated by a separate packet, since the position sync carries only the
+     * body's yaw.
      */
     public void moveTargetEntity(int entityId, double x, double y, double z,
                                  float yaw, float pitch, float headYaw, boolean onGround) {
@@ -308,10 +309,50 @@ public final class HostDriver {
                         net.minecraft.world.phys.Vec3.ZERO,
                         yaw, pitch),
                 onGround));
-        // No head-rotation packet: its only public constructor takes an Entity, and the host has
-        // an id rather than an entity -- the entity lives in the viewer's world, which the host
-        // deliberately does not reach into. The position sync above carries yaw, so the body turns
-        // correctly; the head follows the body for a remote player that is not separately rotated.
+        // The head is rotated separately. The position sync above carries only the body yaw, and a
+        // player's head turns independently of its body -- so with no head packet the head held
+        // whatever angle it had when it spawned, which looked like the head locking up after a
+        // while rather than never having moved at all.
+        connection.send(rotateHead(entityId, headYaw));
+    }
+
+    /**
+     * Builds a head-rotation packet for an entity the host cannot reach.
+     *
+     * <p>Through the codec rather than the constructor: the only public constructor takes an
+     * {@code Entity}, and the entity lives in the viewer's world, which the host does not reach
+     * into. Writing the wire format is the same approach {@code TabList} takes, and for the same
+     * reason. The format is a var-int id and the angle packed into a byte.
+     */
+    private static net.minecraft.network.protocol.game.ClientboundRotateHeadPacket rotateHead(
+            int entityId, float headYaw) {
+        net.minecraft.network.FriendlyByteBuf buf =
+                new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buf.writeVarInt(entityId);
+        buf.writeByte((byte) Math.floor(headYaw * 256.0F / 360.0F));
+        return net.minecraft.network.protocol.game.ClientboundRotateHeadPacket.STREAM_CODEC
+                .decode(buf);
+    }
+
+    /**
+     * Swings the target's arm in the viewer's world.
+     *
+     * <p>Synthesized for the same reason as its movement: an arm swing is an animation the server
+     * sends to the <em>other</em> clients, so it never appears in the target's own inbound stream
+     * and the target mined, attacked and placed blocks without ever moving its arms.
+     *
+     * @param action a {@code ClientboundAnimatePacket} action id
+     */
+    public void swingTargetArm(int entityId, int action) {
+        if (!inGame || !connection.isConnected()) {
+            return;
+        }
+        net.minecraft.network.FriendlyByteBuf buf =
+                new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buf.writeVarInt(entityId);
+        buf.writeByte(action);
+        connection.send(net.minecraft.network.protocol.game.ClientboundAnimatePacket.STREAM_CODEC
+                .decode(buf));
     }
 
     /**

@@ -45,13 +45,23 @@ public final class SpectateManager {
 
     private final ConcurrentLinkedQueue<Runnable> pendingMainThread = new ConcurrentLinkedQueue<>();
 
-    /** Report the target's position every 4 client ticks (5 Hz), matching Relay's own cadence. */
-    private static final int POSITION_INTERVAL_TICKS = 4;
+    /**
+     * Report the target's position every client tick (20 Hz).
+     *
+     * <p>Relay's own cadence is 4 ticks, which is ample for a map marker but not for a body a
+     * viewer is watching: each report becomes a teleport of the target's entity, and at 5 Hz the
+     * entity jumps four ticks' worth of travel at a time. The client interpolates between the
+     * positions it is given, so the fix is to give it one every tick -- which is also what a real
+     * server sends for a player in view.
+     */
+    private static final int POSITION_INTERVAL_TICKS = 1;
 
     private volatile SpectateClientSocket socket;
     private volatile ViewerSession viewing;
     private int positionTicks;
     private int viewerTicks;
+    /** Swing time seen on the previous report, to detect the start of a new swing. */
+    private int lastSwingTime;
 
     /**
      * How many terrain frames to hand the socket per tick.
@@ -321,7 +331,28 @@ public final class SpectateManager {
         positionTicks = 0;
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYRot(), mc.player.getXRot(),
-                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround());
+                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround(),
+                swingAction(mc.player));
+    }
+
+    /**
+     * The animation id for a swing that has just started, or -1 for no swing.
+     *
+     * <p>Detected from {@code swingTime} rather than from {@code swinging}, because the swing lasts
+     * several ticks and the viewer needs one packet per swing rather than one per tick -- a repeat
+     * restarts the animation and the arm never completes its arc. {@code swingTime} is reset to 0
+     * when a swing begins and counts up from there, so a value that has gone down marks a new one.
+     */
+    private int swingAction(net.minecraft.client.player.LocalPlayer player) {
+        int time = player.swingTime;
+        int previous = lastSwingTime;
+        lastSwingTime = time;
+        if (!player.swinging || time >= previous) {
+            return -1;
+        }
+        return player.swingingArm == net.minecraft.world.InteractionHand.OFF_HAND
+                ? net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_OFF_HAND
+                : net.minecraft.network.protocol.game.ClientboundAnimatePacket.SWING_MAIN_HAND;
     }
 
     /** Handles one frame from the service. Runs on the socket's receive thread. */
@@ -379,15 +410,19 @@ public final class SpectateManager {
                     int entityId = -1;
                     float headYaw = yaw;
                     boolean onGround = true;
+                    int swingAction = -1;
                     if (frame.remaining() >= 4 + 4 + 1) {
                         entityId = frame.getInt();
                         headYaw = frame.getFloat();
                         onGround = frame.get() != 0;
                     }
+                    if (frame.remaining() >= 1) {
+                        swingAction = frame.get();
+                    }
                     ViewerSession session = viewing;
                     if (session != null) {
                         session.applyTargetPosition(x, y, z, yaw, pitch,
-                                entityId, headYaw, onGround);
+                                entityId, headYaw, onGround, swingAction);
                     }
                 }
             }
@@ -481,7 +516,7 @@ public final class SpectateManager {
         }
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYRot(), mc.player.getXRot(),
-                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround());
+                mc.player.getId(), mc.player.getYHeadRot(), mc.player.onGround(), -1);
     }
 
     /**

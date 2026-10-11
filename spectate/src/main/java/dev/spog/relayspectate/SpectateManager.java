@@ -60,8 +60,13 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     private int positionTicks;
     private int viewerTicks;
-    /** Swing time seen on the previous report, to detect the start of a new swing. */
-    private int lastSwingTime;
+    /**
+     * Swing time seen on the previous report, to detect the start of a new swing.
+     *
+     * <p>Starts at 1 rather than 0 because 0 is itself a "swing has just started" value, and a
+     * zero here would make the first swing after connecting look like one already in progress.
+     */
+    private int lastSwingTime = 1;
 
     /**
      * How many terrain frames to hand the socket per tick.
@@ -338,16 +343,31 @@ public final class SpectateManager {
     /**
      * The animation id for a swing that has just started, or -1 for no swing.
      *
-     * <p>Detected from {@code swingTime} rather than from {@code swinging}, because the swing lasts
-     * several ticks and the viewer needs one packet per swing rather than one per tick -- a repeat
-     * restarts the animation and the arm never completes its arc. {@code swingTime} is reset to 0
-     * when a swing begins and counts up from there, so a value that has gone down marks a new one.
+     * <p>One packet per swing, not one per tick: a repeat restarts the animation and the arm never
+     * completes its arc. Detecting the start needs {@code LivingEntity}'s actual semantics, which
+     * are easy to get backwards -- {@code swing()} sets {@code swingTime} to <em>-1</em> and
+     * {@code swinging} true, then {@code updateSwingTime} increments it every tick and clears both
+     * only once the swing has run its duration. So {@code swingTime} counts strictly <em>up</em>
+     * while a swing is in progress and never decreases mid-swing; a start is the tick where it is
+     * -1 or 0, having not been so before.
+     *
+     * <p>An earlier version of this looked for the value going down, which cannot happen while
+     * {@code swinging} is true, so it reported no swing at all and the arms stayed still.
+     *
+     * <p>{@code lastSwingTime} starts at 0, which reads as "mid-swing" and would suppress a swing
+     * on the very first report; it is initialised to a positive value so the first one counts.
      */
     private int swingAction(net.minecraft.client.player.LocalPlayer player) {
         int time = player.swingTime;
         int previous = lastSwingTime;
         lastSwingTime = time;
-        if (!player.swinging || time >= previous) {
+        if (!player.swinging) {
+            return -1;
+        }
+        // A swing is new when swingTime has just been reset: it is <= 0 now (the -1 that swing()
+        // writes, or the 0 the next tick makes of it) and was past that point before. Sampling at
+        // 20 Hz sees at most one of the two, and either identifies the same swing exactly once.
+        if (time > 0 || previous <= 0) {
             return -1;
         }
         return player.swingingArm == net.minecraft.world.InteractionHand.OFF_HAND

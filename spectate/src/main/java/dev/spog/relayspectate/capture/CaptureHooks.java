@@ -59,6 +59,33 @@ public final class CaptureHooks {
         }
     }
 
+    /**
+     * Called when the target's client spawns a particle locally.
+     *
+     * <p>Client-side particles -- block cracks, footfalls, splashes -- are computed by the client
+     * from state it already has and are never sent to or from a server. A viewer is fed a packet
+     * stream rather than simulating, so it has nothing to compute them from and shows none of
+     * them. This turns each one into the packet a server would have sent for it, and hands it to
+     * the ordinary capture path, which applies the usual radius filter and encoding.
+     *
+     * <p>Sent with a count of zero and the offsets as the particle's own velocity, which is how a
+     * server encodes a single particle at an exact position with an exact motion: a non-zero count
+     * instead means "this many, scattered randomly over these distances", which would turn one
+     * crack particle into a cloud.
+     */
+    public static void onLocalParticle(net.minecraft.core.particles.ParticleOptions options,
+                                       boolean overrideLimiter, boolean alwaysRender,
+                                       double x, double y, double z,
+                                       double dx, double dy, double dz) {
+        CaptureSession s = session;
+        if (s == null) {
+            return;
+        }
+        s.offer(new net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket(
+                options, overrideLimiter, alwaysRender, x, y, z,
+                (float) dx, (float) dy, (float) dz, 0.0F, 0));
+    }
+
     /** Called when the target's own connection drops: forget everything about it. */
     public static void onDisconnect() {
         HANDSHAKE.clear();

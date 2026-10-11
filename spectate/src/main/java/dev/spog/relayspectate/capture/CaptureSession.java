@@ -78,6 +78,13 @@ public final class CaptureSession {
      * Offers one inbound packet to the session. Called on the Netty event loop for every packet
      * this client receives, so it returns immediately when there is nothing to do -- that fast path
      * is the common case and must not cost the target anything measurable.
+     *
+     * <p>Also called on the client thread, for packets synthesized from things the target's client
+     * did locally rather than received -- see {@code CaptureHooks.onLocalParticle}. That is safe:
+     * the viewer set is concurrent, the codec field is volatile and idempotent to recompute, and
+     * the sink serialises its own sends. Packet order between the two threads is not guaranteed,
+     * which is fine for the packets involved -- a particle has no ordering relationship with the
+     * terrain and entity stream.
      */
     public void offer(Packet<?> packet) {
         if (viewers.isEmpty()) {

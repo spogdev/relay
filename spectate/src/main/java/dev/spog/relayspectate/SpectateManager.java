@@ -562,8 +562,24 @@ public final class SpectateManager {
         try {
             StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
                     PacketWire.gameCodec(listener.registryAccess());
+            // Removed before being re-added, which is the whole reason the previous attempt at
+            // this did nothing. handlePlayerInfoUpdate stores a new PlayerInfo with
+            // Map.putIfAbsent, so an ADD_PLAYER for a player the client already knows is
+            // discarded and the profile is never replaced. PlayerInfo also builds its skin
+            // lookup once, lazily, and caches it for the object's lifetime -- so even a replaced
+            // profile would not change a skin already resolved. Only a new PlayerInfo picks up
+            // new textures, and only a remove makes the client build one.
+            var ids = tabList.entries().stream()
+                    .map(net.minecraft.network.protocol.game
+                            .ClientboundPlayerInfoUpdatePacket.Entry::profileId)
+                    .toList();
+            terrainBacklog.add(PacketWire.encode(codec,
+                    new net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket(
+                            ids)));
             terrainBacklog.add(PacketWire.encode(codec, tabList));
-            SpectateClient.LOGGER.info("spectate: resent the tab list with resolved skins");
+            SpectateClient.LOGGER.info(
+                    "spectate: resent the tab list with resolved skins for {} player(s)",
+                    ids.size());
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.warn("spectate: could not resend the tab list", e);
         }

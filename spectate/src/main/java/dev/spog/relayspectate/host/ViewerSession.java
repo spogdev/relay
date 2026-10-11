@@ -294,45 +294,80 @@ public final class ViewerSession {
     }
 
     /**
-     * Removes the viewer's own entry from a forwarded tab list.
+     * Forces the viewer's own entry in a forwarded tab list to spectator.
      *
-     * <p>A client reads its own game mode from its tab-list entry --
-     * {@code AbstractClientPlayer.gameMode()} is {@code PlayerInfo.getGameMode()} -- and
+     * <p>A client reads its own game mode from its tab-list entry:
+     * {@code AbstractClientPlayer.gameMode()} is {@code getPlayerInfo().getGameMode()}, and
      * {@code Player.tick} then sets {@code noPhysics = isSpectator()} from it every tick. The
-     * forwarded list is the target's, listing its players with their real game modes, so if the
-     * viewer is also on the target's server its own entry arrives saying survival. That drops the
-     * viewer out of spectator: collision comes back and it can no longer fly through blocks.
+     * forwarded list is the target's, listing real game modes, so a viewer that is also on the
+     * target's server received an entry saying survival -- which dropped it out of spectator and
+     * restored collision.
      *
-     * <p>The login packet already told the client it is a spectator, and that is the only thing
-     * that should decide it. Dropping the entry leaves the viewer's own game mode untouched while
-     * still listing everyone else.
+     * <p>The entry is corrected rather than removed. Removing it looks like the obvious fix and is
+     * worse: {@code gameMode()} returns <em>null</em> when there is no entry, so
+     * {@code isSpectator()} is then false and the viewer keeps colliding with everything. An
+     * earlier version of this method did exactly that and caused the symptom it was meant to fix.
      *
      * <p>Rebuilt through the codec rather than by mutating the packet, which is immutable, and
-     * only when the entry is actually present, so the ordinary case costs one scan of a short
-     * list.
+     * only when the entry actually disagrees, so the ordinary case costs one scan of a short list.
      */
-    private Packet<?> withoutOwnTabListEntry(Packet<?> decoded) {
+    private Packet<?> withOwnEntrySpectating(Packet<?> decoded) {
+        java.util.UUID me = Minecraft.getInstance().getUser().getProfileId();
+        // A remove for the viewer's own id has to be dropped. The capture resends the tab list by
+        // removing every player and re-adding them, which is the only way a client picks up a
+        // changed profile -- but while the viewer's own entry is missing, gameMode() returns null,
+        // isSpectator() is false and Player.tick turns collision back on. Other players' removes
+        // pass through untouched.
+        if (decoded instanceof net.minecraft.network.protocol.game
+                .ClientboundPlayerInfoRemovePacket remove) {
+            java.util.List<java.util.UUID> others = remove.profileIds().stream()
+                    .filter(id -> !me.equals(id))
+                    .toList();
+            if (others.isEmpty()) {
+                return null;
+            }
+            if (others.size() == remove.profileIds().size()) {
+                return decoded;
+            }
+            return new net.minecraft.network.protocol.game
+                    .ClientboundPlayerInfoRemovePacket(others);
+        }
         if (!(decoded instanceof net.minecraft.network.protocol.game
                 .ClientboundPlayerInfoUpdatePacket info)) {
             return decoded;
         }
-        java.util.UUID self = Minecraft.getInstance().getUser().getProfileId();
+        java.util.UUID self = me;
         boolean present = info.entries().stream()
-                .anyMatch(e -> self.equals(e.profileId()));
+                .anyMatch(e -> self.equals(e.profileId())
+                        && e.gameMode() != net.minecraft.world.level.GameType.SPECTATOR);
         if (!present) {
             return decoded;
         }
         java.util.List<net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket.Entry>
-                kept = info.entries().stream()
-                        .filter(e -> !self.equals(e.profileId()))
+                fixed = info.entries().stream()
+                        .map(e -> self.equals(e.profileId()) ? spectating(e) : e)
                         .toList();
-        if (kept.isEmpty()) {
-            // Nothing left to say. A packet with an empty entry list is valid but pointless, and
-            // returning the original would reinstate the entry this method exists to remove.
-            return null;
-        }
-        return dev.spog.relayspectate.capture.TabList.rebuild(
-                info.actions(), kept, Minecraft.getInstance());
+        var rebuilt = dev.spog.relayspectate.capture.TabList.rebuild(
+                info.actions(), fixed, Minecraft.getInstance());
+        // Forwarding the original on failure would reinstate the real game mode and undo this, so
+        // the packet is dropped instead; the viewer keeps the entry it already has.
+        return rebuilt;
+    }
+
+    /** The same entry with its game mode forced to spectator. */
+    private static net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket.Entry
+            spectating(net.minecraft.network.protocol.game
+                    .ClientboundPlayerInfoUpdatePacket.Entry entry) {
+        return new net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket.Entry(
+                entry.profileId(),
+                entry.profile(),
+                entry.listed(),
+                entry.latency(),
+                net.minecraft.world.level.GameType.SPECTATOR,
+                entry.displayName(),
+                entry.showHat(),
+                entry.listOrder(),
+                entry.chatSession());
     }
 
     /** Flushes packets queued while the client was still logging in. */
@@ -392,7 +427,7 @@ public final class ViewerSession {
                 }
                 chunksReceived++;
             }
-            Packet<?> forward = withoutOwnTabListEntry(decoded);
+            Packet<?> forward = withOwnEntrySpectating(decoded);
             if (forward != null) {
                 serverSide.send(forward);
             }

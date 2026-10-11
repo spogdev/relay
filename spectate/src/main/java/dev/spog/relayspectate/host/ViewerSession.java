@@ -282,6 +282,10 @@ public final class ViewerSession {
             return;
         }
         seenPosition = true;
+        // Kept for the chunk summary, which has to ask about where the target is now rather than
+        // where it was when the session opened.
+        lastTargetX = x;
+        lastTargetZ = z;
         HostDriver d = driver;
         if (d == null) {
             // The driver does not exist yet; hold the position for start() to pass on.
@@ -428,6 +432,9 @@ public final class ViewerSession {
                 entry.chatSession());
     }
 
+    /** The target's most recent reported position, for the chunk summary. */
+    private volatile double lastTargetX;
+    private volatile double lastTargetZ;
     /** Player spawn packets received, for the summary. */
     private int playerSpawnsReceived;
     /** Tab-list entries received, for the summary. */
@@ -436,6 +443,26 @@ public final class ViewerSession {
     private int lastPlayerSpawnId = -1;
 
     /** How many player spawns arrived, how many tab entries, and whether the last one survived. */
+    /**
+     * Whether the chunk the target is standing in has actually loaded for the viewer.
+     *
+     * <p>The decisive fact for "chunks do not load as the target walks". A count of chunks
+     * received says only that packets arrived; this says whether the client kept one and built it,
+     * which is what distinguishes a chunk never sent from a chunk sent and rejected as out of view
+     * range -- the two have different fixes and have been confused before.
+     */
+    public String chunkSummary() {
+        Minecraft mc = Minecraft.getInstance();
+        String atTarget = "n/a";
+        if (mc.level != null && seenPosition) {
+            int cx = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetX);
+            int cz = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetZ);
+            atTarget = String.valueOf(mc.level.getChunk(cx, cz, 
+                    net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false) != null);
+        }
+        return chunksReceived + " chunk packet(s) received, target's chunk loaded: " + atTarget;
+    }
+
     public String playerSummary() {
         String kept = "n/a";
         if (lastPlayerSpawnId >= 0) {

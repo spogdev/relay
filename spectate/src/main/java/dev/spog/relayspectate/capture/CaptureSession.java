@@ -53,6 +53,10 @@ public final class CaptureSession {
     private volatile long filteredPackets;
     /** Packets actually forwarded, for the one-line summary. */
     private volatile long forwardedPackets;
+    /** Chunk packets forwarded live, as opposed to swept, for the one-line summary. */
+    private volatile long liveChunks;
+    /** Chunk packets the radius filter rejected, for the one-line summary. */
+    private volatile long chunksOutOfRange;
 
     public CaptureSession(java.util.function.BiConsumer<Packet<?>, byte[]> sink) {
         this.sink = sink;
@@ -120,6 +124,13 @@ public final class CaptureSession {
             return;
         }
         if (!CaptureFilter.isWithinRadius(packet, localChunk(mc))) {
+            // Counted separately from the filter's other rejections. A chunk dropped for distance
+            // is the one rejection that is expected to be rare and that a viewer notices
+            // immediately as terrain that never appears, so it needs to be distinguishable from
+            // the ordinary filtered traffic in the summary.
+            if (CaptureFilter.isChunkPacket(packet)) {
+                chunksOutOfRange++;
+            }
             return;
         }
         try {
@@ -135,6 +146,7 @@ public final class CaptureSession {
             forwardedPackets++;
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;
+                liveChunks++;
             }
         } catch (RuntimeException e) {
             // A packet this mod cannot re-encode must not break the target's own game: drop it and
@@ -161,7 +173,8 @@ public final class CaptureSession {
     /** Forwarded, filtered and failed counts, for one summary line per session. */
     public String frameSummary() {
         return forwardedPackets + " forwarded, " + filteredPackets + " filtered, "
-                + encodeFailures + " failed to encode";
+                + encodeFailures + " failed to encode, " + liveChunks + " live chunk(s), "
+                + chunksOutOfRange + " chunk(s) out of range";
     }
 
     public boolean handshakeSent() {

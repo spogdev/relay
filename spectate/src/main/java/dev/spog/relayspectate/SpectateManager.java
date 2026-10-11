@@ -60,8 +60,6 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     /** Set once the first sweep has fully drained, so the log line is not repeated per tick. */
     private boolean reportedSweepDone;
-    /** Set once the capture summary has been logged for this session. */
-    private boolean reportedCapture;
     private int captureTicks;
     private int positionTicks;
     private int viewerTicks;
@@ -274,6 +272,12 @@ public final class SpectateManager {
             session.tickCamera();
             // One summary a few seconds in, so a blank world can be told apart from a world whose
             // terrain never arrived without needing a packet-by-packet log.
+            // Repeated like the capture summary, and for the same reason: terrain that fails to
+            // arrive as the target walks cannot be seen in a snapshot taken at five seconds.
+            if (viewerTicks > 0 && viewerTicks % 300 == 0) {
+                SpectateClient.LOGGER.info("spectate: viewer -- {}; {}",
+                        session.chunkSummary(), session.playerSummary());
+            }
             if (++viewerTicks == 100) {
                 int chunks = session.chunksReceived();
                 if (chunks > 0) {
@@ -597,7 +601,6 @@ public final class SpectateManager {
             session = new CaptureSession(this::queueCaptured);
             CaptureHooks.setSession(session);
             reportedSweepDone = false;
-            reportedCapture = false;
             captureTicks = 0;
         }
         session.addViewer(viewer);
@@ -705,14 +708,19 @@ public final class SpectateManager {
      */
     private void reportCaptureOnce() {
         CaptureSession session = CaptureHooks.session();
-        if (session == null || !session.hasViewers() || reportedCapture) {
+        if (session == null || !session.hasViewers()) {
+            captureTicks = 0;
             return;
         }
-        if (++captureTicks < 100) {
+        // Repeated, not once. The counts that matter most are about what happens as the target
+        // moves -- chunks loaded while walking, items dropped mid-session -- and a single summary
+        // five seconds in is taken before any of that has happened. Every 15 seconds is often
+        // enough to bracket a test and rare enough not to fill the log.
+        if (++captureTicks < 300) {
             return;
         }
-        reportedCapture = true;
-        SpectateClient.LOGGER.info("spectate: capture after 5s -- {}", session.frameSummary());
+        captureTicks = 0;
+        SpectateClient.LOGGER.info("spectate: capture -- {}", session.frameSummary());
     }
 
     /** Reports this client's position immediately, outside the usual 5 Hz cadence. */

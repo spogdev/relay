@@ -53,3 +53,9 @@ jar {
         rename { "${it}_relay-spectate" }
     }
 }
+
+// Prints the module's full compile classpath, for ad-hoc experiments against the game's own
+// codecs outside the mod (see docs/spectate-testing.md).
+tasks.register('printCp') {
+    doLast { println sourceSets.main.compileClasspath.asPath }
+}

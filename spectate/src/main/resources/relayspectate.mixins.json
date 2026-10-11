@@ -6,6 +6,7 @@
   "client": [
     "ClientPacketListenerRegistryMixin",
     "ConnectionCaptureMixin",
+    "LoopbackNotMemoryMixin",
     "SpectateKeybindMixin",
     "SpectateLanguageMixin"
   ],

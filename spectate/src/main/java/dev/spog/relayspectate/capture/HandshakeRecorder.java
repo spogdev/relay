@@ -68,6 +68,15 @@ public final class HandshakeRecorder {
         if (packet instanceof ClientboundLoginPacket) {
             packets.removeIf(r -> r.packet() instanceof ClientboundLoginPacket);
         }
+        if (packet instanceof ClientboundUpdateTagsPacket tags) {
+            // Logged because a replay that carries the tag packet but not the item tags inside it
+            // fails identically to one that carries no tag packet at all, and the two need
+            // different fixes.
+            SpectateClient.LOGGER.info("spectate: recorded tags for {} registries, item tags: {}",
+                    tags.getTags().size(),
+                    tags.getTags().keySet().stream()
+                            .anyMatch(k -> k.identifier().getPath().equals("item")));
+        }
         packets.add(new Recorded(packet));
     }
 

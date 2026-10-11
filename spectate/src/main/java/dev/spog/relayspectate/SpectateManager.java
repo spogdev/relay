@@ -425,6 +425,9 @@ public final class SpectateManager {
                 return new EncodedHandshake(List.of(), null);
             }
         }
+        SpectateClient.LOGGER.info("spectate: sending handshake -- {} ({} config frames, login={}B)",
+                recorder.describe(), configuration.size(),
+                login == null ? 0 : login.length);
         return new EncodedHandshake(configuration, login);
     }
 }

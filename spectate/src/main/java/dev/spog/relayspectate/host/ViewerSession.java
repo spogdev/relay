@@ -106,7 +106,10 @@ public final class ViewerSession {
         try {
             StreamCodec<ByteBuf, Packet<? super ClientConfigurationPacketListener>> codec =
                     PacketWire.configurationCodec();
-            handshake.add(PacketWire.decode(codec, wire));
+            Packet<?> decoded = PacketWire.decode(codec, wire);
+            handshake.add(decoded);
+            SpectateClient.LOGGER.info("spectate: handshake packet {} ({}B)",
+                    decoded.getClass().getSimpleName(), wire.length);
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.warn("spectate: undecodable handshake packet; session will fail",
                     e);

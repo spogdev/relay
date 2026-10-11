@@ -321,8 +321,23 @@ public final class TabList {
                 for (com.mojang.authlib.properties.Property property : properties) {
                     buf.writeUtf(property.name());
                     buf.writeUtf(property.value());
-                    buf.writeNullable(property.signature(),
-                            (b, signature) -> b.writeUtf(signature));
+                    // Written unsigned, deliberately. A signature only verifies against Mojang's
+                    // public key for a profile fetched straight from the session service, and the
+                    // target's may not be: Essential, for one, replaces signatures with the
+                    // literal string "trusted" and accepts that in its own verifier. Forwarding
+                    // such a signature made the viewer's vanilla verifier try to RSA-verify five
+                    // bytes -- "Bad signature length: got 5 but was expecting 512" -- mark the
+                    // property INVALID and discard the skin, which is why skins stayed default
+                    // while the texture payload itself was arriving perfectly intact.
+                    //
+                    // Dropping it yields UNSIGNED rather than INVALID, and SkinManager rejects
+                    // only INVALID, so the skin loads. Nothing is lost by this: the viewer is
+                    // being handed a world by a peer it has already chosen to trust, and a
+                    // texture signature is not what establishes that trust.
+                    //
+                    // writeBoolean(false) is what writeNullable writes for an absent value: the
+                    // present/absent flag, and then nothing.
+                    buf.writeBoolean(false);
                 }
             }
             case INITIALIZE_CHAT -> buf.writeNullable(entry.chatSession(),

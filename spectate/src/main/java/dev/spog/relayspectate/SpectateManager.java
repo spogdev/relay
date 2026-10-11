@@ -76,12 +76,14 @@ public final class SpectateManager {
     }
 
     public void disconnect() {
+        // discardViewing rather than stopViewing: the socket is about to go, so there is nobody to
+        // send a session-stop to, and the service ends the session when the connection drops.
+        discardViewing();
         SpectateClientSocket s = socket;
         if (s != null) {
             s.close();
         }
         socket = null;
-        stopViewing();
         CaptureHooks.onDisconnect();
     }
 
@@ -103,17 +105,41 @@ public final class SpectateManager {
         s.requestSession(target);
     }
 
-    /** Ends the session this client is viewing. */
+    /**
+     * Ends the session this client is viewing, telling the service to stop the capture.
+     *
+     * <p>For when the user stops watching. To tear down local state <em>without</em> cancelling
+     * the session at the service, use {@link #discardViewing()}.
+     */
     public void stopViewing() {
-        ViewerSession session = viewing;
-        viewing = null;
-        if (session != null) {
-            session.close();
-        }
+        boolean had = discardViewing();
         SpectateClientSocket s = socket;
-        if (s != null && s.isConnected()) {
+        if (had && s != null && s.isConnected()) {
             s.stopSession();
         }
+    }
+
+    /**
+     * Drops the local viewing session without sending anything to the service.
+     *
+     * <p>Separate from {@link #stopViewing()} because the two are not the same operation, and
+     * conflating them broke every session: {@code beginViewing} cleared any previous session
+     * first, which sent a session-stop for the session the service had just granted -- so the
+     * target was told to start capturing and immediately told to stop.
+     *
+     * <p>Used when the service has already ended the session (a stream-end or a denial, where
+     * there is nothing left to cancel) and when replacing one session with another.
+     *
+     * @return true if there was a session to drop
+     */
+    private boolean discardViewing() {
+        ViewerSession session = viewing;
+        viewing = null;
+        if (session == null) {
+            return false;
+        }
+        session.close();
+        return true;
     }
 
     /** Drains work that must happen on the client thread. Called once per client tick. */
@@ -139,7 +165,7 @@ public final class SpectateManager {
                 byte reason = Frames.readDenyReason(frame);
                 String detail = Frames.readDenyDetail(frame);
                 SpectateClient.LOGGER.info("spectate denied ({}): {}", reason, detail);
-                pendingMainThread.add(this::stopViewing);
+                pendingMainThread.add(this::discardViewing);
             }
             case SpectateProtocol.TYPE_HANDSHAKE -> {
                 byte[] payload = Frames.readPayload(frame);
@@ -166,7 +192,7 @@ public final class SpectateManager {
                     session.feed(payload);
                 }
             }
-            case SpectateProtocol.TYPE_STREAM_END -> pendingMainThread.add(this::stopViewing);
+            case SpectateProtocol.TYPE_STREAM_END -> pendingMainThread.add(this::discardViewing);
             case SpectateProtocol.TYPE_CAPTURE_START -> {
                 UUID viewer = Frames.readUuid(frame);
                 pendingMainThread.add(() -> beginCapture(viewer));
@@ -187,7 +213,7 @@ public final class SpectateManager {
      * fill it. That is why {@link ViewerSession} queues anything arriving before the game phase.
      */
     private void beginViewing(UUID target) {
-        stopViewing();
+        discardViewing();
         ViewerSession session = new ViewerSession(target);
         viewing = session;
         SpectateClient.LOGGER.info("spectate: awaiting handshake from {}", target);

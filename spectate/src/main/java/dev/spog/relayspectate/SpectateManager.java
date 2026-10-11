@@ -58,6 +58,8 @@ public final class SpectateManager {
 
     private volatile SpectateClientSocket socket;
     private volatile ViewerSession viewing;
+    /** Set once the first sweep has fully drained, so the log line is not repeated per tick. */
+    private boolean reportedSweepDone;
     private int positionTicks;
     private int viewerTicks;
     /** Swing time seen on the previous report, to detect a restarted swing. */
@@ -77,8 +79,14 @@ public final class SpectateManager {
      */
     private static final int TERRAIN_FRAMES_PER_TICK = 32;
 
-    /** Terrain frames still to be handed to the socket, drained by {@link #tick()}. */
-    private final java.util.ArrayDeque<byte[]> terrainBacklog = new java.util.ArrayDeque<>();
+    /**
+     * Captured frames still to be handed to the socket, drained by {@link #tick()}.
+     *
+     * <p>Concurrent because live capture is queued from the Netty event loop while the sweep is
+     * queued and the queue drained on the client thread.
+     */
+    private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> terrainBacklog =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     /**
      * Inbound frame counts by type, for one summary line per session.
@@ -280,6 +288,43 @@ public final class SpectateManager {
      * <p>Called once per client tick. See {@link #TERRAIN_FRAMES_PER_TICK} for why the sweep is not
      * simply sent where it is produced.
      */
+    /**
+     * Queues one captured frame behind anything already waiting.
+     *
+     * <p>Live capture used to go straight to the socket while the initial sweep went through the
+     * backlog, so the two raced -- and the sweep is hundreds of frames drained at
+     * {@link #TERRAIN_FRAMES_PER_TICK} per tick, which takes seconds. Live packets therefore
+     * arrived at the viewer well before the terrain and entities they referred to, and the client
+     * silently discards those: handleSetEntityData looks up the entity id and returns if it does
+     * not exist yet, so a dropped item's stack -- which is sent once, as entity data -- was lost
+     * for good and the item rendered as nothing. Sounds and effects for not-yet-existent positions
+     * went the same way.
+     *
+     * <p>One queue keeps capture in the order the target saw it, which is the order a viewer has
+     * to receive it in. The backlog drains at a fixed rate per tick either way, so this does not
+     * make the sweep slower; it only stops later packets overtaking it.
+     */
+    private void queueGamePacket(byte[] wire) {
+        terrainBacklog.add(wire);
+    }
+
+    /**
+     * How many frames to hand the socket this tick.
+     *
+     * <p>The limit exists to stop a sweep's few hundred frames being written in one go, which
+     * overran the send buffer and lost frames silently. It must not become a permanent speed limit
+     * on live capture: a busy server can exceed 32 packets a tick, and a cap below the arrival
+     * rate would make the queue grow without bound and the viewer fall steadily further behind.
+     *
+     * <p>So the cap applies only while a backlog is actually being worked off. Once the queue is
+     * down to roughly one tick's worth, it drains completely each tick and live capture flows at
+     * the rate it arrives.
+     */
+    private int frameBudget() {
+        int waiting = terrainBacklog.size();
+        return waiting <= TERRAIN_FRAMES_PER_TICK ? waiting : TERRAIN_FRAMES_PER_TICK;
+    }
+
     private void drainTerrainBacklog() {
         if (terrainBacklog.isEmpty()) {
             return;
@@ -289,13 +334,15 @@ public final class SpectateManager {
             terrainBacklog.clear();
             return;
         }
+        int budget = frameBudget();
         int sent = 0;
         byte[] wire;
-        while (sent < TERRAIN_FRAMES_PER_TICK && (wire = terrainBacklog.poll()) != null) {
+        while (sent < budget && (wire = terrainBacklog.poll()) != null) {
             s.sendGamePacket(wire);
             sent++;
         }
-        if (terrainBacklog.isEmpty()) {
+        if (terrainBacklog.isEmpty() && !reportedSweepDone) {
+            reportedSweepDone = true;
             SpectateClient.LOGGER.info("spectate: finished sending swept terrain");
         }
     }
@@ -485,8 +532,9 @@ public final class SpectateManager {
         }
         CaptureSession session = CaptureHooks.session();
         if (session == null) {
-            session = new CaptureSession(s::sendGamePacket);
+            session = new CaptureSession(this::queueGamePacket);
             CaptureHooks.setSession(session);
+            reportedSweepDone = false;
         }
         session.addViewer(viewer);
 

@@ -2,11 +2,11 @@ package dev.spog.relayspectate.mixin;
 
 import dev.spog.relayspectate.SpectateManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Keeps the viewer's player noclipped while spectating.
@@ -23,21 +23,32 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * all arrive on the same path and can replace or delete it -- and it makes a basic property of
  * spectating depend on a packet that is not really about collision at all.
  *
- * <p>So {@code noPhysics} is set here instead, after vanilla has computed it, for the one player
- * this mod is driving. {@code Minecraft.gameMode}'s mode is kept at SPECTATOR separately, which is
- * what governs rendering; this covers the half of spectating that reads the tab list.
+ * <p>So {@code noPhysics} is set here instead, for the one player this mod is driving.
+ * {@code Minecraft.gameMode}'s mode is kept at SPECTATOR separately, which is what governs
+ * rendering; this covers the half of spectating that reads the tab list.
+ *
+ * <p>{@code isSpectator} is overridden rather than the flag assigned, because the order within a
+ * tick defeats assignment. {@code Player.tick} assigns {@code noPhysics = isSpectator()} as its
+ * first act and then calls up into {@code Avatar.tick}, where movement and collision happen.
+ * Setting the flag at RETURN set it after every use that tick -- always exactly one tick stale,
+ * which is indistinguishable from never working, and an earlier version of this did that and the
+ * viewer still collided with everything. Setting it at HEAD is no better: vanilla's own assignment
+ * is the next instruction and overwrites it.
+ *
+ * <p>Overriding the source fixes both, and fixes more than collision: every other
+ * {@code isSpectator()} check on the viewer's player -- being pushed by entities, taking damage,
+ * block interaction -- becomes correct at the same time, which is what spectating actually means.
  */
-@Mixin(LocalPlayer.class)
+@Mixin(Player.class)
 public abstract class SpectateNoClipMixin {
-    @Inject(method = "tick", at = @At("RETURN"))
-    private void relayspectate$noclip(CallbackInfo ci) {
+    @Inject(method = "isSpectator", at = @At("HEAD"), cancellable = true)
+    private void relayspectate$spectating(CallbackInfoReturnable<Boolean> cir) {
         if (!SpectateManager.get().isViewing()) {
             return;
         }
-        LocalPlayer self = (LocalPlayer) (Object) this;
-        if (self != Minecraft.getInstance().player) {
+        if ((Player) (Object) this != Minecraft.getInstance().player) {
             return;
         }
-        self.noPhysics = true;
+        cir.setReturnValue(true);
     }
 }

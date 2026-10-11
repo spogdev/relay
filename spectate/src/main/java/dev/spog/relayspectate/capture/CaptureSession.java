@@ -19,15 +19,15 @@ import java.util.function.Consumer;
  * The target's side of a spectate session: taps the packets this client receives from its own
  * server and forwards the relevant ones.
  *
- * <p>Only a allow-list of packet kinds is forwarded, and terrain is clipped to
+ * <p>Only an allow-list of packet kinds is forwarded, and terrain is clipped to
  * {@link dev.spog.relayspectate.net.SpectateProtocol#CAPTURE_RADIUS_CHUNKS} around this player.
  * Both matter: the inbound stream carries things a viewer has no business seeing (this player's
  * inventory, private messages, advancement progress) and things a viewer cannot use (statistics,
  * recipe unlocks). Forwarding everything would be both a privacy leak and wasted bandwidth.
  *
  * <p>Filtering happens by packet class rather than by content, because the point is to decide
- * without parsing. A packet class not named here is dropped -- the default is to not send, so a
- * packet kind added in a future version is withheld rather than leaked.
+ * without parsing. A packet class not named in {@link CaptureFilter} is dropped -- the default is
+ * to not send, so a packet kind added in a future version is withheld rather than leaked.
  */
 public final class CaptureSession {
     /** Viewers currently being streamed to. */
@@ -36,6 +36,9 @@ public final class CaptureSession {
     private final Consumer<byte[]> sink;
     private volatile StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec;
     private volatile boolean handshakeSent;
+
+    /** Set once at least one chunk has been forwarded, so the viewer can be let into the world. */
+    private volatile boolean sentAnyChunk;
 
     public CaptureSession(Consumer<byte[]> sink) {
         this.sink = sink;
@@ -49,6 +52,7 @@ public final class CaptureSession {
         viewers.remove(viewer);
         if (viewers.isEmpty()) {
             handshakeSent = false;
+            sentAnyChunk = false;
         }
     }
 
@@ -64,6 +68,7 @@ public final class CaptureSession {
     public void clear() {
         viewers.clear();
         handshakeSent = false;
+        sentAnyChunk = false;
     }
 
     /**
@@ -96,12 +101,20 @@ public final class CaptureSession {
             Packet<? super ClientGamePacketListener> game =
                     (Packet<? super ClientGamePacketListener>) packet;
             sink.accept(PacketWire.encode(c, game));
+            if (CaptureFilter.isChunkPacket(packet)) {
+                sentAnyChunk = true;
+            }
         } catch (RuntimeException e) {
             // A packet this mod cannot re-encode must not break the target's own game: drop it and
             // keep the session running. The viewer sees a gap rather than the target disconnecting.
             SpectateClient.LOGGER.debug("spectate: dropped un-encodable packet {}",
                     packet.getClass().getSimpleName(), e);
         }
+    }
+
+    /** True once terrain has been sent, so the viewer has something to render. */
+    public boolean hasSentChunks() {
+        return sentAnyChunk;
     }
 
     /** This player's chunk, or null if there is no player yet. */

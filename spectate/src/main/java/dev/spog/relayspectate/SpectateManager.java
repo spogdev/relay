@@ -43,8 +43,13 @@ public final class SpectateManager {
 
     private final ConcurrentLinkedQueue<Runnable> pendingMainThread = new ConcurrentLinkedQueue<>();
 
+    /** Report the target's position every 4 client ticks (5 Hz), matching Relay's own cadence. */
+    private static final int POSITION_INTERVAL_TICKS = 4;
+
     private volatile SpectateClientSocket socket;
     private volatile ViewerSession viewing;
+    private int positionTicks;
+    private boolean reportedUnavailable;
 
     private SpectateManager() {
     }
@@ -102,7 +107,21 @@ public final class SpectateManager {
             SpectateClient.LOGGER.warn("spectate: not connected to the service");
             return;
         }
+        // Refused while this client is in a world of its own. A session replaces the client's
+        // world with the target's, so starting one from in-game would disconnect the player from
+        // the server they are playing on -- and ending it could not put them back. Spectating is
+        // a from-the-menu feature, which is also how it was asked for.
+        if (Minecraft.getInstance().level != null) {
+            SpectateClient.LOGGER.info("spectate: refused, leave your world first");
+            return;
+        }
         s.requestSession(target);
+    }
+
+    /** True if a session can be started right now. Drives the menu's own messaging. */
+    public boolean canStartSession() {
+        SpectateClientSocket s = socket;
+        return s != null && s.isAuthenticated() && Minecraft.getInstance().level == null;
     }
 
     /**
@@ -142,7 +161,11 @@ public final class SpectateManager {
         return true;
     }
 
-    /** Drains work that must happen on the client thread. Called once per client tick. */
+    /**
+     * Drains cross-thread work and, while streaming, reports this client's position.
+     *
+     * <p>Called once per client tick, from the client thread.
+     */
     public void tick() {
         Runnable task;
         while ((task = pendingMainThread.poll()) != null) {
@@ -152,6 +175,52 @@ public final class SpectateManager {
                 SpectateClient.LOGGER.warn("spectate: main-thread task failed", e);
             }
         }
+        reportPositionIfStreaming();
+        ViewerSession session = viewing;
+        if (session != null) {
+            session.tickCamera();
+        }
+    }
+
+    /**
+     * Sends this client's position to its viewers, a few times a second.
+     *
+     * <p>Not derived from the forwarded stream: a client's own position is not in its inbound
+     * packets, because it moved itself there. The viewer needs it both to place the camera and to
+     * centre its chunk cache, and the second is what makes the forwarded terrain visible at all.
+     *
+     * <p>Also where a target with no world reports that fact, so a viewer waiting on it is denied
+     * rather than left on a loading screen forever.
+     */
+    private void reportPositionIfStreaming() {
+        CaptureSession session = CaptureHooks.session();
+        if (session == null || !session.hasViewers()) {
+            return;
+        }
+        SpectateClientSocket s = socket;
+        if (s == null || !s.isAuthenticated()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.getConnection() == null) {
+            if (!reportedUnavailable) {
+                reportedUnavailable = true;
+                s.sendCaptureUnavailable();
+            }
+            return;
+        }
+        reportedUnavailable = false;
+        if (++positionTicks < POSITION_INTERVAL_TICKS) {
+            return;
+        }
+        positionTicks = 0;
+        // Only once terrain is on its way: a position with no chunks would release the viewer's
+        // loading screen into an empty world.
+        if (!session.hasSentChunks()) {
+            return;
+        }
+        s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+                mc.player.getYRot(), mc.player.getXRot());
     }
 
     /** Handles one frame from the service. Runs on the socket's receive thread. */
@@ -190,6 +259,20 @@ public final class SpectateManager {
                 ViewerSession session = viewing;
                 if (session != null) {
                     session.feed(payload);
+                }
+            }
+            case SpectateProtocol.TYPE_TARGET_POSITION -> {
+                frame.get(); // type
+                if (frame.remaining() >= 8 * 3 + 4 * 2) {
+                    double x = frame.getDouble();
+                    double y = frame.getDouble();
+                    double z = frame.getDouble();
+                    float yaw = frame.getFloat();
+                    float pitch = frame.getFloat();
+                    ViewerSession session = viewing;
+                    if (session != null) {
+                        session.applyTargetPosition(x, y, z, yaw, pitch);
+                    }
                 }
             }
             case SpectateProtocol.TYPE_STREAM_END -> pendingMainThread.add(this::discardViewing);

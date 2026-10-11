@@ -79,10 +79,16 @@ public final class SpectateClient implements ClientModInitializer {
             }
         }
 
-        // A disconnect from the target's own server invalidates the recorded handshake: its
-        // registries belong to that server, and a session started from them after reconnecting to
-        // a different one would decode against the wrong tables.
-        if (client.getConnection() == null && CaptureHooks.handshake().isComplete()) {
+        // A disconnect from this client's own server invalidates the recorded handshake: its
+        // registries belong to that server, and a session started from them after reconnecting
+        // elsewhere would decode against the wrong tables.
+        //
+        // "No connection" is not the test on its own: while this client is viewing a session its
+        // connection is the loopback, which is non-null and nothing to do with the server the
+        // recording came from. A client that is viewing cannot also be on a real server, so the
+        // two conditions together identify a genuine disconnect.
+        boolean onRealServer = client.getConnection() != null && manager.viewing() == null;
+        if (!onRealServer && CaptureHooks.handshake().isComplete()) {
             CaptureHooks.onDisconnect();
         }
     }

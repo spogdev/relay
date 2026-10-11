@@ -16,6 +16,7 @@ import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.network.protocol.game.ClientboundGameEventPacket;
 import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelEventPacket;
@@ -28,6 +29,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
@@ -114,8 +116,15 @@ public final class CaptureFilter {
             // Player list, so names and skins resolve on rendered players.
             ClientboundPlayerInfoUpdatePacket.class,
             ClientboundPlayerInfoRemovePacket.class,
+            // The target changing dimension: re-keys the viewer's level, without which every
+            // chunk that follows belongs to a dimension the viewer is not in.
+            ClientboundRespawnPacket.class,
             // Ambient.
             ClientboundSetTimePacket.class,
+            // Weather and similar level state. Note the host synthesizes its own
+            // LEVEL_CHUNKS_LOAD_START rather than relying on one arriving here; forwarding the
+            // target's copy is harmless because the client treats it as idempotent.
+            ClientboundGameEventPacket.class,
             ClientboundLevelEventPacket.class,
             ClientboundLevelParticlesPacket.class,
             ClientboundExplodePacket.class,
@@ -125,6 +134,17 @@ public final class CaptureFilter {
     /** True if this packet kind may be forwarded at all. */
     public static boolean isForwardable(Packet<?> packet) {
         return FORWARDED.contains(packet.getClass());
+    }
+
+    /**
+     * True if this packet carries terrain.
+     *
+     * <p>Used to decide when the viewer has something to render, which gates releasing its loading
+     * screen: announcing before any terrain has been sent would just move the wait rather than
+     * remove it.
+     */
+    public static boolean isChunkPacket(Packet<?> packet) {
+        return packet instanceof ClientboundLevelChunkWithLightPacket;
     }
 
     /**

@@ -6,6 +6,7 @@ import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
 import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.multiplayer.LevelLoadTracker;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
@@ -57,15 +58,35 @@ public final class ViewerSession {
     /** Handshake configuration packets, decoded as they arrive. */
     private final List<Packet<?>> handshake = new ArrayList<>();
 
+    /** The target's login packet, still encoded; see {@link #acceptLoginPacket}. */
+    private volatile byte[] loginWire;
+
     private volatile Connection viewerSide;
     private volatile HostDriver driver;
     private volatile StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> gameCodec;
     private volatile boolean closed;
+    private final SpectateCamera camera;
+
     private volatile boolean started;
+    private volatile boolean sentAnyPacket;
     private volatile int dropped;
 
     public ViewerSession(UUID target) {
         this.target = target;
+        this.camera = new SpectateCamera(target);
+    }
+
+    /**
+     * Keeps the camera on the target. Called once per client tick while the session is live.
+     *
+     * <p>Per-tick rather than once at start: the target's entity arrives through the stream, so it
+     * does not exist when the session opens, and it is replaced when the target respawns or
+     * changes dimension.
+     */
+    public void tickCamera() {
+        if (!closed && isInGame()) {
+            camera.tick();
+        }
     }
 
     public UUID target() {
@@ -97,28 +118,19 @@ public final class ViewerSession {
      *
      * <p>Must run on the client thread: {@link #start()} touches {@code Minecraft}.
      *
-     * <p>The login packet is decoded with the game codec against the registries the target's server
-     * uses. Those have just arrived in the configuration packets above but have not been applied to
-     * anything yet, so this client's own registries are used for the decode -- which is correct for
-     * the login packet specifically, because its fields are dimension keys and primitives rather
-     * than registry-id references into a server-specific table.
+     * <p>Kept as raw bytes rather than decoded here. Its first field is a dimension-type
+     * {@code Holder}, which resolves against the registries the target's server sent -- and those
+     * do not exist yet: they have arrived as configuration packets but nothing has applied them.
+     * Decoding now would have to use whatever registries this client happens to have, which from
+     * the main menu is nothing at all, and a spectate session started from the menu is the whole
+     * point of the feature. So the decode is deferred to the host's game-phase switch, by which
+     * point the viewer's client has built exactly the right set.
      */
     public synchronized void acceptLoginPacket(byte[] wire) {
         if (closed || started) {
             return;
         }
-        ClientPacketListener listener = Minecraft.getInstance().getConnection();
-        try {
-            StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
-                    PacketWire.gameCodec(listener != null
-                            ? listener.registryAccess()
-                            : net.minecraft.core.RegistryAccess.EMPTY);
-            handshake.add(PacketWire.decode(codec, wire));
-        } catch (RuntimeException e) {
-            SpectateClient.LOGGER.warn("spectate: undecodable login packet; aborting session", e);
-            close();
-            return;
-        }
+        this.loginWire = wire;
         start();
     }
 
@@ -151,10 +163,11 @@ public final class ViewerSession {
 
         // The host encodes game packets against the registries the client builds from the replayed
         // configuration, so the supplier reads them off the client's connection once it exists.
-        HostDriver hostDriver = new HostDriver(serverSide, List.copyOf(handshake), () -> {
-            ClientPacketListener current = Minecraft.getInstance().getConnection();
-            return current == null ? null : current.registryAccess();
-        });
+        HostDriver hostDriver = new HostDriver(serverSide, List.copyOf(handshake), loginWire,
+                () -> {
+                    ClientPacketListener current = Minecraft.getInstance().getConnection();
+                    return current == null ? null : current.registryAccess();
+                });
         this.driver = hostDriver;
         hostDriver.begin();
 
@@ -197,6 +210,27 @@ public final class ViewerSession {
         send(wire);
     }
 
+    /**
+     * Applies the target's reported position: moves the viewer's camera and, crucially, the chunk
+     * cache's view centre.
+     *
+     * <p>The centre is what makes the forwarded terrain usable at all. {@code ClientChunkCache}
+     * discards any chunk outside it, and it starts at 0,0, so until the first position arrives
+     * every chunk from a target standing anywhere else is thrown away on receipt.
+     */
+    public void applyTargetPosition(double x, double y, double z, float yaw, float pitch) {
+        HostDriver d = driver;
+        if (closed || d == null || !d.isInGame()) {
+            return;
+        }
+        d.updateTargetPosition(x, y, z, yaw, pitch);
+        // The first position is also the point at which the viewer has both terrain and somewhere
+        // to stand, so it is when the loading screen can be released.
+        if (sentAnyPacket) {
+            d.announceChunksLoaded();
+        }
+    }
+
     /** Flushes packets queued while the client was still logging in. */
     private void drainPending() {
         byte[] queued;
@@ -234,6 +268,7 @@ public final class ViewerSession {
                 gameCodec = codec;
             }
             serverSide.send(PacketWire.decode(codec, wire));
+            sentAnyPacket = true;
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.debug("spectate: dropped undecodable packet", e);
         }
@@ -251,17 +286,47 @@ public final class ViewerSession {
         return d != null && d.isInGame();
     }
 
-    /** Tears the session down. Idempotent, safe from any thread. */
+    /**
+     * Tears the session down. Idempotent, safe from any thread.
+     *
+     * <p>Closing the loopback is not enough on its own: the client would be left holding a world
+     * whose connection is gone, with no screen to fall back to, which is what a vanilla disconnect
+     * exists to handle. So when this session is the client's current world, teardown goes through
+     * {@code Minecraft.disconnect}, which unloads the level and puts a real screen up. That must
+     * happen on the client thread, hence the schedule.
+     */
     public void close() {
         if (closed) {
             return;
         }
         closed = true;
+        camera.release();
         pending.clear();
         Connection conn = viewerSide;
         viewerSide = null;
         gameCodec = null;
+        boolean wasInGame = driver != null && driver.isInGame();
         driver = null;
+
+        if (wasInGame) {
+            Minecraft mc = Minecraft.getInstance();
+            mc.execute(() -> {
+                // Only if the client is still in the session's world: the user may already have
+                // left it, in which case tearing down again would drop a world we do not own.
+                if (mc.level != null) {
+                    // The title screen is the right destination because a session is only ever
+                    // started from the menu -- see SpectateManager.beginViewing, which refuses one
+                    // from a client already in a world. There is therefore nothing to return to.
+                    mc.disconnect(new TitleScreen(), false);
+                }
+                finishClose(conn);
+            });
+            return;
+        }
+        finishClose(conn);
+    }
+
+    private void finishClose(Connection conn) {
         if (conn != null && conn.isConnected()) {
             conn.disconnect(Component.literal("Spectate session ended"));
         }

@@ -40,6 +40,8 @@ public final class Wire {
     public static final byte TYPE_GAME_PACKET = 0x21;
     public static final byte TYPE_STREAM_END = 0x22;
     public static final byte TYPE_LOGIN_PACKET = 0x23;
+    public static final byte TYPE_TARGET_POSITION = 0x24;
+    public static final byte TYPE_CAPTURE_UNAVAILABLE = 0x25;
 
     // relay -> target
     public static final byte TYPE_CAPTURE_START = 0x30;

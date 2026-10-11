@@ -59,7 +59,9 @@ public final class SpectateLang {
             Map.entry("deny.revoked", "%s revoked your access."),
             Map.entry("deny.busy", "You are already spectating someone."),
             Map.entry("error.no_service", "The spectate service is not configured."),
-            Map.entry("error.failed", "The spectate session could not start."));
+            Map.entry("error.failed", "The spectate session could not start."),
+            Map.entry("error.in_world", "Leave your world first -- spectating replaces it."),
+            Map.entry("error.not_connected", "Not connected to the spectate service."));
 
     public static boolean hasKeybind(String key) {
         return KEYBINDS.containsKey(key);

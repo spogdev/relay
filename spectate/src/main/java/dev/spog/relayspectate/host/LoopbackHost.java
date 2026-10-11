@@ -11,6 +11,9 @@ import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.network.EventLoopGroupHolder;
 
 import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,6 +41,26 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class LoopbackHost {
     /** Distinguishes concurrent hosts; a session is torn down and rebuilt on reconnect. */
     private static final AtomicLong COUNTER = new AtomicLong();
+
+    /**
+     * Every connection belonging to a loopback session, so the capture tap can ignore them.
+     *
+     * <p>Needed because the viewer's end of the loopback reads {@code CLIENTBOUND}, exactly like a
+     * connection to a real server -- {@code connectToLocalServer} constructs it that way. Without
+     * this the capture tap would treat the replayed handshake arriving over the loopback as if the
+     * target's own server had sent it, overwriting the real recording and, if that client were also
+     * being watched, forwarding a session's own stream back out through it.
+     *
+     * <p>Weakly keyed so a finished session's connections do not pin themselves in memory, and
+     * synchronized because connections are registered on the client thread and read on Netty's.
+     */
+    private static final Set<Connection> LOOPBACK =
+            Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
+    /** True if this connection is part of a spectate loopback rather than a real server. */
+    public static boolean isLoopback(Connection connection) {
+        return LOOPBACK.contains(connection);
+    }
 
     /**
      * How long {@link #connectViewer()} waits for the server end to be initialised. The two ends
@@ -83,6 +106,7 @@ public final class LoopbackHost {
                                 });
                         ch.pipeline().addLast("packet_handler", conn);
                         serverSide = conn;
+                        LOOPBACK.add(conn);
                         attached.countDown();
                     }
                 });
@@ -103,6 +127,9 @@ public final class LoopbackHost {
      */
     public Connection connectViewer() {
         Connection client = Connection.connectToLocalServer(address);
+        // Register before waiting: the client end reads CLIENTBOUND, so the capture tap must know
+        // to skip it before the host starts replaying packets into it.
+        LOOPBACK.add(client);
         try {
             if (!attached.await(ATTACH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                 return null;

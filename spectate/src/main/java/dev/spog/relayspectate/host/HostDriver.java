@@ -1,6 +1,7 @@
 package dev.spog.relayspectate.host;
 
 import dev.spog.relayspectate.SpectateClient;
+import dev.spog.relayspectate.capture.PacketWire;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.Connection;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -9,51 +10,61 @@ import net.minecraft.network.protocol.configuration.ConfigurationProtocols;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import net.minecraft.network.protocol.game.GameProtocols;
 import net.minecraft.network.protocol.login.LoginProtocols;
+import net.minecraft.world.level.ChunkPos;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * Walks the host's connection through login, configuration and into the game phase, then hands
- * control to the live stream.
+ * Walks the host's connection through handshake, login, configuration and into the game phase,
+ * then puts the viewer in the target's world.
  *
- * <p>The phase transitions are the fiddly part and the reason this is its own class. Each phase has
- * its own packet codec, and both ends must switch at the same point in the stream: the server
- * switches its outbound codec immediately after sending the packet that ends a phase, and its
- * inbound codec when the client acknowledges. Getting that order wrong decodes the next packet
- * against the wrong table, which surfaces as an opaque decoder error rather than anything that
- * names the real problem.
+ * <p>Each phase has its own packet-id table, and both ends must switch at the same point in the
+ * stream. The order matters and is taken from what the vanilla server does, not inferred: outbound
+ * is switched immediately after the packet that ends a phase, inbound when the client acknowledges.
+ * Getting it wrong decodes the next packet against the wrong table, which surfaces as an opaque
+ * decoder error naming neither the phase nor the cause.
  *
  * <p>Sequence, with who drives each step:
  * <ol>
+ *   <li>client sends Intention -&gt; {@link HostHandshakeListener}; host switches to login</li>
  *   <li>client sends Hello -&gt; {@link HostLoginListener} answers LoginFinished</li>
- *   <li>client acknowledges -&gt; this class switches both ends to configuration</li>
+ *   <li>client acknowledges -&gt; host switches to configuration</li>
  *   <li>{@link HostConfigurationListener} replays the target's registries, then FinishConfiguration</li>
- *   <li>client acknowledges -&gt; this class switches both ends to game and sends the login packet</li>
+ *   <li>client acknowledges -&gt; host switches to game and sends the join sequence</li>
  *   <li>live packets flow</li>
  * </ol>
+ *
+ * <p>The handshake phase is the one that is easy to skip, because a client connecting to a real
+ * server is doing it before anything interesting happens. Skipping it does not degrade gracefully:
+ * the intention packet's {@code handle} casts the listener, so a login listener in that slot throws
+ * immediately.
  */
 public final class HostDriver {
     private final Connection connection;
     private final List<Packet<?>> handshake;
+    private final byte[] loginWire;
     private final Supplier<RegistryAccess> registries;
 
     private volatile boolean inGame;
+    private volatile boolean announcedChunksLoaded;
 
     /**
-     * @param handshake the target's recorded handshake, configuration packets and login packet
-     *     together, in the order they were received
+     * @param handshake the target's recorded configuration-phase packets, in order
+     * @param loginWire the target's login packet, still encoded. It is decoded only once the
+     *     client has built the target server's registries from {@code handshake}, because its
+     *     first field is a dimension-type holder that resolves against them.
      * @param registries the registries the game-phase codec encodes against. These must be the set
      *     the <em>viewer's client</em> built from the replayed configuration, not the viewer's own
-     *     server's: the ids in the target's packets are resolved against the target server's
-     *     registries, and the client has just been handed exactly those. Supplied lazily because
-     *     they do not exist until the client finishes configuration.
+     *     server's: the ids in the target's packets resolve against the target server's registries,
+     *     and the client has just been handed exactly those. Supplied lazily because they do not
+     *     exist until the client finishes configuration.
      */
-    public HostDriver(Connection connection, List<Packet<?>> handshake,
+    public HostDriver(Connection connection, List<Packet<?>> handshake, byte[] loginWire,
                       Supplier<RegistryAccess> registries) {
         this.connection = connection;
         this.handshake = handshake;
+        this.loginWire = loginWire;
         this.registries = registries;
     }
 
@@ -62,40 +73,38 @@ public final class HostDriver {
         return inGame;
     }
 
-    /**
-     * Attaches the login listener and begins the sequence. The client has already connected and is
-     * about to send its Hello.
-     */
+    /** Attaches the handshake listener. The client is about to send its intention packet. */
     public void begin() {
+        connection.setupInboundProtocol(
+                net.minecraft.network.protocol.handshake.HandshakeProtocols.SERVERBOUND,
+                new HostHandshakeListener(connection, intention -> enterLogin()));
+    }
+
+    /** Switches to the login phase. */
+    private void enterLogin() {
+        // Outbound before inbound, as the vanilla server does: the client has sent its intention
+        // and the next thing it reads must already be a login packet.
+        connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
         connection.setupInboundProtocol(
                 LoginProtocols.SERVERBOUND,
                 new HostLoginListener(connection, profile -> enterConfiguration()));
-        connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
     }
 
-    /**
-     * Switches to the configuration phase and replays the target's registries.
-     *
-     * <p>Outbound first: the client has acknowledged login, so from here the next thing it reads
-     * must be a configuration packet.
-     */
+    /** Switches to the configuration phase and replays the target's registries. */
     private void enterConfiguration() {
-        List<Packet<?>> configuration = new ArrayList<>();
-        for (Packet<?> packet : handshake) {
-            // The login packet is a game-phase packet. It was recorded with the rest but belongs
-            // after the phase switch, so it is held back for enterGame().
-            if (!(packet instanceof ClientboundLoginPacket)) {
-                configuration.add(packet);
-            }
-        }
         HostConfigurationListener listener =
-                new HostConfigurationListener(connection, configuration, c -> enterGame());
+                new HostConfigurationListener(connection, handshake, c -> enterGame());
         connection.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND);
         connection.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener);
         listener.begin();
     }
 
-    /** Switches to the game phase and sends the target's login packet. */
+    /**
+     * Switches to the game phase and sends the join sequence.
+     *
+     * <p>The login packet is rebuilt rather than replayed -- see {@link JoinSequence} for why
+     * replaying the target's is wrong in three separate ways.
+     */
     private void enterGame() {
         RegistryAccess access = registries.get();
         if (access == null) {
@@ -104,27 +113,92 @@ public final class HostDriver {
                     "Spectate: registry sync failed"));
             return;
         }
-        connection.setupOutboundProtocol(
-                GameProtocols.CLIENTBOUND_TEMPLATE.bind(
-                        RegistryFriendlyByteBuf.decorator(access)));
-        ClientboundLoginPacket login = findLogin();
-        if (login == null) {
-            SpectateClient.LOGGER.warn("spectate host: no login packet recorded; cannot enter game");
+        ClientboundLoginPacket targetLogin = decodeLogin(access);
+        if (targetLogin == null) {
             connection.disconnect(net.minecraft.network.chat.Component.literal(
                     "Spectate: target handshake incomplete"));
             return;
         }
-        connection.send(login);
+
+        connection.setupOutboundProtocol(
+                GameProtocols.CLIENTBOUND_TEMPLATE.bind(
+                        RegistryFriendlyByteBuf.decorator(access)));
+        connection.setupInboundProtocol(
+                GameProtocols.SERVERBOUND_TEMPLATE.bind(
+                        RegistryFriendlyByteBuf.decorator(access),
+                        new GameProtocols.Context() {
+                            @Override
+                            public boolean hasInfiniteMaterials() {
+                                // The viewer is a spectator; this only gates a creative-mode packet
+                                // it can never send.
+                                return false;
+                            }
+                        }),
+                new HostGameListener(connection));
+
+        connection.send(JoinSequence.spectatorLogin(targetLogin));
+        connection.send(JoinSequence.chunkRadius());
         inGame = true;
         SpectateClient.LOGGER.info("spectate host: viewer entered game phase");
     }
 
-    private ClientboundLoginPacket findLogin() {
-        for (Packet<?> packet : handshake) {
-            if (packet instanceof ClientboundLoginPacket login) {
+    /**
+     * Points the viewer's camera and chunk cache at the target.
+     *
+     * <p>The cache centre is the part that cannot be skipped: chunks outside it are discarded by
+     * the client, and it starts at 0,0, so until this is sent every forwarded chunk is thrown away.
+     */
+    public void updateTargetPosition(double x, double y, double z, float yaw, float pitch) {
+        if (!inGame || !connection.isConnected()) {
+            return;
+        }
+        ChunkPos chunk = new ChunkPos(
+                net.minecraft.core.SectionPos.blockToSectionCoord(x),
+                net.minecraft.core.SectionPos.blockToSectionCoord(z));
+        connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
+        connection.send(JoinSequence.position(x, y, z, yaw, pitch));
+    }
+
+    /**
+     * Releases the client's loading screen, once.
+     *
+     * <p>Called after the first chunks have been forwarded rather than immediately on entering the
+     * game phase: the client goes on to wait for its own chunk to be renderable, and announcing
+     * before any terrain exists just moves the wait rather than removing it.
+     */
+    public void announceChunksLoaded() {
+        if (!inGame || announcedChunksLoaded || !connection.isConnected()) {
+            return;
+        }
+        announcedChunksLoaded = true;
+        connection.send(JoinSequence.levelChunksLoaded());
+        SpectateClient.LOGGER.info("spectate host: announced level chunks loaded");
+    }
+
+    /**
+     * Decodes the target's login packet against the registries the client just built.
+     *
+     * <p>This is why the packet travelled as bytes: its dimension-type holder resolves against the
+     * target server's registries, which only exist once the replayed configuration has been
+     * applied. Decoding it any earlier would resolve against the wrong set, or against none at all
+     * when the session was started from the main menu.
+     */
+    private ClientboundLoginPacket decodeLogin(RegistryAccess access) {
+        if (loginWire == null) {
+            SpectateClient.LOGGER.warn("spectate host: no login packet recorded");
+            return null;
+        }
+        try {
+            Packet<?> decoded = PacketWire.decode(PacketWire.gameCodec(access), loginWire);
+            if (decoded instanceof ClientboundLoginPacket login) {
                 return login;
             }
+            SpectateClient.LOGGER.warn("spectate host: handshake login slot held {}",
+                    decoded.getClass().getSimpleName());
+            return null;
+        } catch (RuntimeException e) {
+            SpectateClient.LOGGER.warn("spectate host: could not decode the login packet", e);
+            return null;
         }
-        return null;
     }
 }

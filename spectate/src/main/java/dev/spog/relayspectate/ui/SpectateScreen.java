@@ -114,6 +114,12 @@ public final class SpectateScreen extends Screen {
             status = active.isInGame()
                     ? SpectateLang.string("status.watching", shortId(active.target()))
                     : SpectateLang.string("status.loading", shortId(active.target()));
+        } else if (minecraft != null && minecraft.level != null) {
+            // Spectating replaces the client's world, so it cannot start from in-game. Said here
+            // rather than on a failed click, which would look like the button did nothing.
+            status = SpectateLang.string("error.in_world");
+        } else if (!manager.canStartSession()) {
+            status = SpectateLang.string("error.not_connected");
         } else if (candidates().isEmpty()) {
             status = SpectateLang.string("menu.empty");
         } else {

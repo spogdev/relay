@@ -145,8 +145,9 @@ public final class SpectateRelayServer extends WebSocketServer {
         switch (Wire.typeOf(frame)) {
             case Wire.TYPE_SESSION_REQUEST -> handleSessionRequest(session, frame);
             case Wire.TYPE_SESSION_STOP -> endAsViewer(session);
-            case Wire.TYPE_HANDSHAKE, Wire.TYPE_LOGIN_PACKET, Wire.TYPE_GAME_PACKET ->
-                    forwardToViewers(session, frame);
+            case Wire.TYPE_HANDSHAKE, Wire.TYPE_LOGIN_PACKET, Wire.TYPE_GAME_PACKET,
+                 Wire.TYPE_TARGET_POSITION -> forwardToViewers(session, frame);
+            case Wire.TYPE_CAPTURE_UNAVAILABLE -> denyViewersOf(session);
             case Wire.TYPE_STREAM_END -> endAsTarget(session);
             default -> { }
         }
@@ -280,6 +281,23 @@ public final class SpectateRelayServer extends WebSocketServer {
             if (viewer != null && viewer.conn().isOpen()
                     && target.uuid().equals(viewer.watching())) {
                 viewer.conn().send(frame.duplicate());
+            }
+        }
+    }
+
+    /**
+     * The target has no world to share, so every viewer waiting on it is told rather than left
+     * waiting for a handshake that is never coming.
+     */
+    private void denyViewersOf(SpectateSession target) {
+        for (UUID viewerId : target.viewers()) {
+            SpectateSession viewer = byUuid.get(viewerId);
+            if (viewer != null && viewer.conn().isOpen()) {
+                viewer.conn().send(Wire.deny(Wire.DENY_OFFLINE, "Target is not in a world"));
+            }
+            target.removeViewer(viewerId);
+            if (viewer != null) {
+                viewer.setWatching(null);
             }
         }
     }

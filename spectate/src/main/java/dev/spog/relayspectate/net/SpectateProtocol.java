@@ -106,6 +106,29 @@ public final class SpectateProtocol {
     /** The target stopped sharing (revoked, disconnected, or left the radius). No payload. */
     public static final byte TYPE_STREAM_END = 0x22;
 
+    /**
+     * Where the target is, so the viewer can follow it:
+     * {@code [double x][double y][double z][float yaw][float pitch]}.
+     *
+     * <p>Sent on a timer rather than derived from the forwarded stream. The target's own position
+     * does not arrive in its inbound packets at all -- a client knows where it is because it moved
+     * itself there, and the server only corrects it occasionally -- so there is nothing in the
+     * relayed stream to read it from.
+     *
+     * <p>The viewer needs it for two separate reasons: to place the camera, and to set the client
+     * chunk cache's view centre. The second is not optional. {@code ClientChunkCache} discards any
+     * chunk outside its centre, and the centre starts at 0,0, so without this every forwarded
+     * chunk is dropped on arrival and the viewer sees an empty world however much terrain is sent.
+     */
+    public static final byte TYPE_TARGET_POSITION = 0x24;
+
+    /**
+     * The target has no world to share -- it is in a menu or between servers. Answered to a
+     * capture request so the service can deny the session rather than leaving the viewer waiting
+     * for a handshake that will never come. No payload.
+     */
+    public static final byte TYPE_CAPTURE_UNAVAILABLE = 0x25;
+
     // ---- relay -> target ----
 
     /**

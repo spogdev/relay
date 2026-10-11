@@ -182,6 +182,25 @@ public final class SpectateClientSocket {
         sendBinary(Frames.of(SpectateProtocol.TYPE_LOGIN_PACKET, wire));
     }
 
+    /**
+     * Reports where the target is, so the viewer can follow it.
+     *
+     * <p>Sent on a timer because the target's own position is not in its inbound stream: a client
+     * knows where it is because it moved itself there. Without this the viewer's chunk cache stays
+     * centred on 0,0 and discards every chunk that arrives.
+     */
+    public void sendTargetPosition(double x, double y, double z, float yaw, float pitch) {
+        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2);
+        buf.put(SpectateProtocol.TYPE_TARGET_POSITION);
+        buf.putDouble(x).putDouble(y).putDouble(z).putFloat(yaw).putFloat(pitch);
+        sendBinary(buf.flip());
+    }
+
+    /** Tells the service this client has no world to share, so waiting viewers can be denied. */
+    public void sendCaptureUnavailable() {
+        sendBinary(Frames.of(SpectateProtocol.TYPE_CAPTURE_UNAVAILABLE));
+    }
+
     /** Signals that this client has stopped streaming. */
     public void sendStreamEnd() {
         sendBinary(Frames.of(SpectateProtocol.TYPE_STREAM_END));

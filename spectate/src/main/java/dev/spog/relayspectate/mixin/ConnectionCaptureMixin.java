@@ -1,6 +1,7 @@
 package dev.spog.relayspectate.mixin;
 
 import dev.spog.relayspectate.capture.CaptureHooks;
+import dev.spog.relayspectate.host.LoopbackHost;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
@@ -22,17 +23,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * otherwise untouched. A spectate session must not change what the target's own client does with
  * its traffic.
  *
- * <p>Filtered to {@link PacketFlow#CLIENTBOUND} connections via the public {@code getReceiving()}
- * rather than a {@code @Shadow} of the backing field. The same class serves the loopback host's
- * server end (see {@code LoopbackHost}), whose inbound flow is SERVERBOUND -- capturing there would
- * feed a viewer's own input back into its session.
+ * <p>Two connections are excluded. The loopback host's server end reads SERVERBOUND, so the flow
+ * check skips it -- capturing there would feed a viewer's own input back into its session. The
+ * loopback's <em>client</em> end is the subtle one: it reads CLIENTBOUND, exactly like a real
+ * server connection, because that is how {@code connectToLocalServer} builds it. Capturing it
+ * would record the replayed handshake as if this client's own server had sent it, overwriting the
+ * real recording. {@link LoopbackHost#isLoopback} is what tells them apart.
  */
 @Mixin(Connection.class)
 public abstract class ConnectionCaptureMixin {
     @Inject(method = "channelRead0", at = @At("HEAD"))
     private void relayspectate$capture(ChannelHandlerContext ctx, Packet<?> packet,
                                        CallbackInfo ci) {
-        if (((Connection) (Object) this).getReceiving() == PacketFlow.CLIENTBOUND) {
+        Connection self = (Connection) (Object) this;
+        if (self.getReceiving() == PacketFlow.CLIENTBOUND && !LoopbackHost.isLoopback(self)) {
             CaptureHooks.onInboundPacket(packet);
         }
     }

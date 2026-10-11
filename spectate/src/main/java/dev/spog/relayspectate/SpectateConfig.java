@@ -24,10 +24,15 @@ import java.nio.file.Path;
  */
 public final class SpectateConfig {
     /**
-     * Default service host. Derived from Relay's configured address rather than hard-coded, on the
-     * assumption that whoever runs one runs the other; {@link #serviceAddress} overrides it.
+     * The path the spectate service is served on.
+     *
+     * <p>The default deployment puts the service behind the same reverse proxy as Relay, on this
+     * path, rather than on a port of its own. That is what Relay itself does -- it connects to
+     * {@code wss://<host>} with no port and lets the proxy route it -- and it matters because a
+     * bare port would have to be open to the internet and serve its own TLS. Sharing the proxy
+     * means the service binds to localhost and the existing certificate covers it.
      */
-    private static final int DEFAULT_PORT = 8081;
+    private static final String SERVICE_PATH = "/spectate";
 
     private static SpectateConfig instance;
 
@@ -81,9 +86,19 @@ public final class SpectateConfig {
     /**
      * The service's WebSocket URL, or null if no address can be determined.
      *
-     * <p>Mirrors Relay's scheme choice: {@code wss://} unless the host is plainly local, so a
-     * default deployment is encrypted and a developer testing against localhost is not forced to
-     * set up TLS.
+     * <p>Defaults to Relay's own host, unchanged -- same host, same port, different path -- because
+     * the service is expected to sit behind the same reverse proxy. An earlier version appended a
+     * port here, which produced {@code wss://host:8090/spectate}: that bypasses the proxy, so it
+     * needed the port open to the internet and serving its own certificate, and against a
+     * localhost-bound service it simply could not connect.
+     *
+     * <p>{@link #serviceAddress} overrides the host, and may carry its own port
+     * ({@code host:port}) for a service that really is exposed directly -- a local dev instance,
+     * most usefully.
+     *
+     * <p>Scheme follows Relay's: {@code wss://} unless the host is plainly local, so a default
+     * deployment is encrypted while a developer testing against localhost is not forced to set up
+     * TLS.
      */
     public String serviceWebSocketUrl() {
         String address = serviceAddress == null ? "" : serviceAddress.trim();
@@ -92,16 +107,10 @@ public final class SpectateConfig {
             if (relay == null || relay.isBlank()) {
                 return null;
             }
-            // Relay's address may carry its own port; take only the host and apply our default.
-            String host = relay.trim();
-            int colon = host.indexOf(':');
-            if (colon >= 0) {
-                host = host.substring(0, colon);
-            }
-            address = host + ":" + DEFAULT_PORT;
+            address = relay.trim();
         }
         String scheme = isLocal(address) ? "ws://" : "wss://";
-        return scheme + address + "/spectate";
+        return scheme + address + SERVICE_PATH;
     }
 
     private static boolean isLocal(String address) {

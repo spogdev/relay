@@ -2,6 +2,7 @@ package dev.spog.relayspectate;
 
 import dev.spog.relayspectate.capture.CaptureHooks;
 import dev.spog.relayspectate.capture.CaptureSession;
+import dev.spog.relayspectate.capture.ChunkSweep;
 import dev.spog.relayspectate.capture.HandshakeRecorder;
 import dev.spog.relayspectate.capture.PacketWire;
 import dev.spog.relayspectate.host.ViewerSession;
@@ -223,11 +224,6 @@ public final class SpectateManager {
             return;
         }
         positionTicks = 0;
-        // Only once terrain is on its way: a position with no chunks would release the viewer's
-        // loading screen into an empty world.
-        if (!session.hasSentChunks()) {
-            return;
-        }
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYRot(), mc.player.getXRot());
     }
@@ -343,6 +339,11 @@ public final class SpectateManager {
             s.sendHandshake(encoded.configuration());
             s.sendLoginPacket(encoded.login());
             session.markHandshakeSent();
+            // Position before terrain, not after. The viewer's chunk cache discards anything
+            // outside its view centre, and that centre starts at 0,0 -- so chunks sent before the
+            // first position would be thrown away on arrival.
+            sendPositionNow(s);
+            sendLoadedTerrain(s, session);
         }
         SpectateClient.LOGGER.info("spectate: streaming to {}", viewer);
     }
@@ -362,6 +363,44 @@ public final class SpectateManager {
             }
         }
         SpectateClient.LOGGER.info("spectate: stopped streaming to {}", viewer);
+    }
+
+    /** Reports this client's position immediately, outside the usual 5 Hz cadence. */
+    private void sendPositionNow(SpectateClientSocket s) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+                mc.player.getYRot(), mc.player.getXRot());
+    }
+
+    /**
+     * Sends the viewer the terrain the target is already standing in.
+     *
+     * <p>The passive capture cannot supply this: a target that has been connected for more than a
+     * few seconds already holds its chunks, and a server does not re-send them. So the first
+     * terrain a viewer sees has to be rebuilt from the target's own chunk cache. See
+     * {@link ChunkSweep}.
+     */
+    private void sendLoadedTerrain(SpectateClientSocket s, CaptureSession session) {
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener listener = mc.getConnection();
+        if (listener == null) {
+            return;
+        }
+        StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
+                PacketWire.gameCodec(listener.registryAccess());
+        int sent = 0;
+        for (var chunk : ChunkSweep.loadedChunksAround(mc)) {
+            try {
+                s.sendGamePacket(PacketWire.encode(codec, chunk));
+                sent++;
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.debug("spectate: could not send a packed chunk", e);
+            }
+        }
+        SpectateClient.LOGGER.info("spectate: sent {} chunks of initial terrain", sent);
     }
 
     /** A handshake encoded for the wire: configuration packets, then the login packet. */

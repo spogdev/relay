@@ -270,7 +270,16 @@ public final class ViewerSession {
                 gameCodec = codec;
             }
             serverSide.send(PacketWire.decode(codec, wire));
-            sentAnyPacket = true;
+            if (!sentAnyPacket) {
+                sentAnyPacket = true;
+                // Terrain has reached the client, so the loading screen can go. Done here rather
+                // than on the next position report because the position now arrives before the
+                // terrain, and waiting for another would stall the viewer for no reason.
+                HostDriver d = driver;
+                if (d != null) {
+                    d.announceChunksLoaded();
+                }
+            }
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.debug("spectate: dropped undecodable packet", e);
         }

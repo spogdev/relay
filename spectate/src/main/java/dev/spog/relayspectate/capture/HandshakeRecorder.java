@@ -76,9 +76,43 @@ public final class HandshakeRecorder {
         return List.copyOf(packets);
     }
 
-    /** True once a login packet has been seen, meaning the handshake is complete enough to replay. */
+    /**
+     * True once everything a viewer needs has been recorded.
+     *
+     * <p>All three parts are required, and checking only for the login packet was not enough: a
+     * replay missing the tag packet produced a viewer that disconnected with dozens of
+     * "Missing tag: 'minecraft:enchantable/...' in 'minecraft:item'" errors, because the
+     * enchantment registry entries reference item tags and cannot be parsed without them. The
+     * registry data has the same dependency the other way round, so neither is optional.
+     *
+     * <p>The usual reason for an incomplete recording is that the addon started recording after
+     * the target's configuration phase had already passed -- it only sees packets from the moment
+     * the mixin is live, and those packets are never sent again on an established connection. That
+     * is a reconnect away from fixed, which {@link #describe()} is there to make diagnosable
+     * rather than mysterious.
+     */
     public synchronized boolean isComplete() {
+        return hasLogin() && hasRegistries() && hasTags();
+    }
+
+    private boolean hasLogin() {
         return packets.stream().anyMatch(r -> r.packet() instanceof ClientboundLoginPacket);
+    }
+
+    private boolean hasRegistries() {
+        return packets.stream().anyMatch(r -> r.packet() instanceof ClientboundRegistryDataPacket);
+    }
+
+    private boolean hasTags() {
+        return packets.stream().anyMatch(r -> r.packet() instanceof ClientboundUpdateTagsPacket);
+    }
+
+    /** What was and was not recorded, for a log line when a session cannot start. */
+    public synchronized String describe() {
+        long registries = packets.stream()
+                .filter(r -> r.packet() instanceof ClientboundRegistryDataPacket).count();
+        return "login=" + hasLogin() + " registries=" + registries + " tags=" + hasTags()
+                + " total=" + packets.size();
     }
 
     /** Clears the recording; called when the target's own connection drops. */

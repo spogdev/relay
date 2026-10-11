@@ -51,6 +51,9 @@ public final class SpectateManager {
     private int positionTicks;
     private boolean reportedUnavailable;
 
+    /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
+    private volatile String lastDenial;
+
     private SpectateManager() {
     }
 
@@ -115,7 +118,13 @@ public final class SpectateManager {
             SpectateClient.LOGGER.info("spectate: refused, leave your world first");
             return;
         }
+        lastDenial = null;
         s.requestSession(target);
+    }
+
+    /** The most recent denial's message, or null if the last attempt was not refused. */
+    public String lastDenial() {
+        return lastDenial;
     }
 
     /** True if a session can be started right now. Drives the menu's own messaging. */
@@ -234,6 +243,10 @@ public final class SpectateManager {
                 byte reason = Frames.readDenyReason(frame);
                 String detail = Frames.readDenyDetail(frame);
                 SpectateClient.LOGGER.info("spectate denied ({}): {}", reason, detail);
+                // Keep it for the screen: a denial that only reached the log looked to the user
+                // like the button had silently done nothing.
+                lastDenial = detail == null || detail.isBlank()
+                        ? SpectateLang.string("error.failed") : detail;
                 pendingMainThread.add(this::discardViewing);
             }
             case SpectateProtocol.TYPE_HANDSHAKE -> {
@@ -318,12 +331,18 @@ public final class SpectateManager {
         if (!session.handshakeSent()) {
             EncodedHandshake encoded = encodeHandshake();
             if (encoded.isEmpty()) {
-                SpectateClient.LOGGER.warn("spectate: no handshake to send; viewer will not load");
-            } else {
-                s.sendHandshake(encoded.configuration());
-                s.sendLoginPacket(encoded.login());
-                session.markHandshakeSent();
+                // Deny rather than send a partial handshake. A viewer given registries without
+                // tags does not fail gracefully: its registry load throws on every enchantment
+                // that references an item tag, and it disconnects with a wall of
+                // "Missing tag" errors that say nothing about spectating.
+                SpectateClient.LOGGER.warn("spectate: refusing {} -- no usable handshake", viewer);
+                session.removeViewer(viewer);
+                s.sendCaptureUnavailable();
+                return;
             }
+            s.sendHandshake(encoded.configuration());
+            s.sendLoginPacket(encoded.login());
+            session.markHandshakeSent();
         }
         SpectateClient.LOGGER.info("spectate: streaming to {}", viewer);
     }
@@ -370,6 +389,11 @@ public final class SpectateManager {
         }
         HandshakeRecorder recorder = CaptureHooks.handshake();
         if (!recorder.isComplete()) {
+            // Almost always because this client was already in-game when the addon loaded, so the
+            // configuration packets had been and gone. Reconnecting to the server records them.
+            SpectateClient.LOGGER.warn(
+                    "spectate: handshake incomplete, cannot serve a viewer ({}). "
+                            + "Reconnect to the server to record it.", recorder.describe());
             return new EncodedHandshake(List.of(), null);
         }
         StreamCodec<ByteBuf, Packet<? super ClientConfigurationPacketListener>> configCodec =

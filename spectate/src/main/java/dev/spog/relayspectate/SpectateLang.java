@@ -56,6 +56,8 @@ public final class SpectateLang {
             Map.entry("deny.not_trusted", "%s does not have you trusted."),
             Map.entry("deny.no_addon", "%s is not running the spectate addon."),
             Map.entry("deny.offline", "%s is not available to spectate."),
+            Map.entry("deny.no_handshake",
+                    "%s needs to rejoin their server before they can be spectated."),
             Map.entry("deny.revoked", "%s revoked your access."),
             Map.entry("deny.busy", "You are already spectating someone."),
             Map.entry("error.no_service", "The spectate service is not configured."),

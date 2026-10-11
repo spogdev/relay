@@ -293,6 +293,48 @@ public final class ViewerSession {
         }
     }
 
+    /**
+     * Removes the viewer's own entry from a forwarded tab list.
+     *
+     * <p>A client reads its own game mode from its tab-list entry --
+     * {@code AbstractClientPlayer.gameMode()} is {@code PlayerInfo.getGameMode()} -- and
+     * {@code Player.tick} then sets {@code noPhysics = isSpectator()} from it every tick. The
+     * forwarded list is the target's, listing its players with their real game modes, so if the
+     * viewer is also on the target's server its own entry arrives saying survival. That drops the
+     * viewer out of spectator: collision comes back and it can no longer fly through blocks.
+     *
+     * <p>The login packet already told the client it is a spectator, and that is the only thing
+     * that should decide it. Dropping the entry leaves the viewer's own game mode untouched while
+     * still listing everyone else.
+     *
+     * <p>Rebuilt through the codec rather than by mutating the packet, which is immutable, and
+     * only when the entry is actually present, so the ordinary case costs one scan of a short
+     * list.
+     */
+    private Packet<?> withoutOwnTabListEntry(Packet<?> decoded) {
+        if (!(decoded instanceof net.minecraft.network.protocol.game
+                .ClientboundPlayerInfoUpdatePacket info)) {
+            return decoded;
+        }
+        java.util.UUID self = Minecraft.getInstance().getUser().getProfileId();
+        boolean present = info.entries().stream()
+                .anyMatch(e -> self.equals(e.profileId()));
+        if (!present) {
+            return decoded;
+        }
+        java.util.List<net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket.Entry>
+                kept = info.entries().stream()
+                        .filter(e -> !self.equals(e.profileId()))
+                        .toList();
+        if (kept.isEmpty()) {
+            // Nothing left to say. A packet with an empty entry list is valid but pointless, and
+            // returning the original would reinstate the entry this method exists to remove.
+            return null;
+        }
+        return dev.spog.relayspectate.capture.TabList.rebuild(
+                info.actions(), kept, Minecraft.getInstance());
+    }
+
     /** Flushes packets queued while the client was still logging in. */
     private void drainPending() {
         byte[] queued;
@@ -350,7 +392,10 @@ public final class ViewerSession {
                 }
                 chunksReceived++;
             }
-            serverSide.send(decoded);
+            Packet<?> forward = withoutOwnTabListEntry(decoded);
+            if (forward != null) {
+                serverSide.send(forward);
+            }
             if (!sentAnyPacket) {
                 sentAnyPacket = true;
                 // Terrain has reached the client, so the loading screen can go. Done here rather

@@ -141,7 +141,21 @@ public final class CaptureFilter {
 
     /** True if this packet kind may be forwarded at all. */
     public static boolean isForwardable(Packet<?> packet) {
-        return FORWARDED.contains(packet.getClass());
+        if (!FORWARDED.contains(packet.getClass())) {
+            return false;
+        }
+        // One event on an otherwise forwardable packet has to be dropped. CHANGE_GAME_MODE is
+        // carried by ClientboundGameEventPacket, the same packet as the weather events and
+        // LEVEL_CHUNKS_LOAD_START, so the class cannot simply be removed from the list above.
+        // Forwarding it made the target changing game mode change the viewer's: the client
+        // applies it to its own local player through setLocalMode, which took the viewer out of
+        // spectator -- restoring collision, so it could no longer fly through blocks, and
+        // mislabelling its HUD. The viewer's game mode is set once, by the login packet, and
+        // nothing in the target's stream has any business altering it.
+        if (packet instanceof ClientboundGameEventPacket p) {
+            return p.getEvent() != ClientboundGameEventPacket.CHANGE_GAME_MODE;
+        }
+        return true;
     }
 
     /**

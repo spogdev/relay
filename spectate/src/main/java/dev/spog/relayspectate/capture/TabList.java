@@ -233,6 +233,32 @@ public final class TabList {
     }
 
     /**
+     * Rebuilds a tab-list packet from a modified entry list.
+     *
+     * <p>Used by the viewer to drop its own entry from a forwarded list, which it must do because
+     * a client takes its game mode from its tab-list entry and would otherwise be pulled out of
+     * spectator by the target's. The packet is immutable, and the same encode-then-decode route
+     * {@link #of} uses is the only public way to build one.
+     *
+     * @param actions the action set from the original packet, written in the original's order
+     * @param entries the entries to keep
+     * @return the packet, or null if it could not be built
+     */
+    public static ClientboundPlayerInfoUpdatePacket rebuild(
+            EnumSet<Action> actions, List<Entry> entries, Minecraft mc) {
+        ClientPacketListener connection = mc.getConnection();
+        if (connection == null || entries.isEmpty()) {
+            return null;
+        }
+        try {
+            return encodeThenDecode(connection, actions, entries);
+        } catch (RuntimeException e) {
+            SpectateClient.LOGGER.warn("spectate: could not rebuild the tab list", e);
+            return null;
+        }
+    }
+
+    /**
      * The actions this class writes.
      *
      * <p>Only these are ever put in the set, so an action added by a future version cannot end up
@@ -259,13 +285,19 @@ public final class TabList {
      */
     private static ClientboundPlayerInfoUpdatePacket encodeThenDecode(
             ClientPacketListener connection, List<Entry> entries) {
+        return encodeThenDecode(connection, ACTIONS, entries);
+    }
+
+    /** As above, for a caller that must preserve an existing packet's action set. */
+    private static ClientboundPlayerInfoUpdatePacket encodeThenDecode(
+            ClientPacketListener connection, EnumSet<Action> actions, List<Entry> entries) {
         RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(
                 Unpooled.buffer(), connection.registryAccess());
-        buf.writeEnumSet(ACTIONS, Action.class);
+        buf.writeEnumSet(actions, Action.class);
         buf.writeCollection(entries, (out, entry) -> {
             RegistryFriendlyByteBuf typed = (RegistryFriendlyByteBuf) out;
             typed.writeUUID(entry.profileId());
-            for (Action action : ACTIONS) {
+            for (Action action : actions) {
                 writeField(typed, action, entry);
             }
         });

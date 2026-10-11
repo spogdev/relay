@@ -11,6 +11,8 @@ import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.network.EventLoopGroupHolder;
 
 import java.net.SocketAddress;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -30,14 +32,25 @@ import java.util.concurrent.atomic.AtomicLong;
  * mod that re-derives them would need updating for each one. Here the only things that must match
  * the game version are the few class names referenced above.
  *
- * <p>Threading: the bind happens on the caller's thread and blocks; everything after that runs on
- * the local event loop. {@link #close()} is safe from any thread.
+ * <p>Threading: {@link #bind()} and {@link #connectViewer()} block on the caller's thread;
+ * everything after that runs on the local event loop. {@link #close()} is safe from any thread.
  */
 public final class LoopbackHost {
     /** Distinguishes concurrent hosts; a session is torn down and rebuilt on reconnect. */
     private static final AtomicLong COUNTER = new AtomicLong();
 
+    /**
+     * How long {@link #connectViewer()} waits for the server end to be initialised. The two ends
+     * attach on the same local event loop within microseconds; this bound exists so a failure
+     * surfaces as a refused session rather than a hung client thread.
+     */
+    private static final long ATTACH_TIMEOUT_MS = 5_000L;
+
     private final LocalAddress address;
+
+    /** Released once {@code initChannel} has published {@link #serverSide}. */
+    private final CountDownLatch attached = new CountDownLatch(1);
+
     private volatile Channel serverChannel;
     private volatile Connection serverSide;
 
@@ -61,23 +74,44 @@ public final class LoopbackHost {
                         // the viewer's client sends us. We write CLIENTBOUND packets back.
                         Connection conn = new Connection(PacketFlow.SERVERBOUND);
                         Connection.configureInMemoryPipeline(ch.pipeline(), PacketFlow.SERVERBOUND);
-                        ch.pipeline().addLast("relay_spectate_host", new ChannelInboundHandlerAdapter() {
-                            @Override
-                            public void channelInactive(ChannelHandlerContext ctx) {
-                                serverSide = null;
-                            }
-                        });
+                        ch.pipeline().addLast("relay_spectate_host",
+                                new ChannelInboundHandlerAdapter() {
+                                    @Override
+                                    public void channelInactive(ChannelHandlerContext ctx) {
+                                        serverSide = null;
+                                    }
+                                });
                         ch.pipeline().addLast("packet_handler", conn);
                         serverSide = conn;
+                        attached.countDown();
                     }
                 });
         this.serverChannel = boot.bind(address).syncUninterruptibly().channel();
         return address;
     }
 
-    /** Opens the viewer-side half of the pair. The caller drives login on it as usual. */
+    /**
+     * Opens the viewer-side half of the pair and waits for the server end to exist.
+     *
+     * <p>The wait is the point. {@code connectToLocalServer} syncs on the <em>client</em> channel's
+     * connect future, which says nothing about whether the server side's {@code initChannel} has
+     * run -- that happens independently on the local event loop. Returning without waiting left
+     * {@link #serverSide()} legitimately null for the caller that immediately needs it, which would
+     * have shown up as an intermittently failing session rather than anything reproducible.
+     *
+     * @return the viewer-side connection, or null if the server end never attached
+     */
     public Connection connectViewer() {
-        return Connection.connectToLocalServer(address);
+        Connection client = Connection.connectToLocalServer(address);
+        try {
+            if (!attached.await(ATTACH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                return null;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        return client;
     }
 
     /** The server end, or null before a client has connected or after it dropped. */
@@ -96,6 +130,7 @@ public final class LoopbackHost {
         Channel ch = serverChannel;
         serverChannel = null;
         serverSide = null;
+        attached.countDown();
         if (ch != null) {
             ch.close();
         }

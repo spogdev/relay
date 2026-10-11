@@ -4,7 +4,9 @@
   "package": "dev.spog.relayspectate.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "ConnectionCaptureMixin"
+    "ConnectionCaptureMixin",
+    "SpectateKeybindMixin",
+    "SpectateLanguageMixin"
   ],
   "injectors": {
     "defaultRequire": 1

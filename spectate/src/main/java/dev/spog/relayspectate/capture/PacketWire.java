@@ -7,29 +7,37 @@ import net.minecraft.network.ProtocolInfo;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.configuration.ClientConfigurationPacketListener;
+import net.minecraft.network.protocol.configuration.ConfigurationProtocols;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.GameProtocols;
 
 /**
- * Encodes and decodes whole game packets using the game's own protocol codec.
+ * Encodes and decodes whole packets using the game's own protocol codecs.
  *
  * <p>This is what keeps the addon from having to know any packet's shape.
  * {@link ProtocolInfo#codec()} is a {@code StreamCodec<ByteBuf, Packet<? super T>>} covering every
- * clientbound play packet, including the packet id -- so a captured packet round-trips through
- * these two methods without this mod ever naming its fields. Chunk formats, entity data types and
- * the rest change between versions; none of that reaches this class.
+ * packet of a phase, including the packet id -- so a captured packet round-trips without this mod
+ * ever naming its fields. Chunk formats, entity data types and the rest change between versions;
+ * none of that reaches this class.
  *
- * <p>The registry access matters: many packets (items, block entities, biomes) encode registry ids
- * resolved against the connection's registries. On the capture side that is the target's own
- * server-provided registries, and on the host side it is the set replayed from the target, so both
- * ends agree.
+ * <p><b>There are two codecs, not one, and they are not interchangeable.</b> A session replays
+ * configuration-phase packets (registries, tags, feature flags) and then streams game-phase
+ * packets, and each phase has its own packet-id table. The configuration codec also takes a plain
+ * {@code FriendlyByteBuf} while the game codec needs one decorated with the connection's
+ * registries, because game packets encode registry ids and configuration packets are what
+ * establish those registries in the first place.
+ *
+ * <p>Using the wrong one does not fail to compile -- generics erase to the same thing -- it fails
+ * at runtime with an unhelpful error about an unknown packet type, which is why the two are
+ * separate named methods here rather than one parameterised call.
  */
 public final class PacketWire {
     private PacketWire() {
     }
 
-    /** The clientbound play codec bound to one connection's registries. */
-    public static StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec(
+    /** The clientbound game-phase codec, bound to one connection's registries. */
+    public static StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> gameCodec(
             RegistryAccess registries) {
         ProtocolInfo<ClientGamePacketListener> info =
                 GameProtocols.CLIENTBOUND_TEMPLATE.bind(
@@ -37,9 +45,20 @@ public final class PacketWire {
         return info.codec();
     }
 
+    /**
+     * The clientbound configuration-phase codec.
+     *
+     * <p>Needs no registries: the configuration phase is where registries are sent, so its packets
+     * cannot depend on them.
+     */
+    public static StreamCodec<ByteBuf, Packet<? super ClientConfigurationPacketListener>>
+            configurationCodec() {
+        return ConfigurationProtocols.CLIENTBOUND.codec();
+    }
+
     /** Serializes one packet to its wire bytes, id included. */
-    public static byte[] encode(StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec,
-                                Packet<? super ClientGamePacketListener> packet) {
+    public static <T extends net.minecraft.network.PacketListener> byte[] encode(
+            StreamCodec<ByteBuf, Packet<? super T>> codec, Packet<? super T> packet) {
         ByteBuf buf = Unpooled.buffer();
         try {
             codec.encode(buf, packet);
@@ -52,8 +71,8 @@ public final class PacketWire {
     }
 
     /** Reads one packet back from wire bytes produced by {@link #encode}. */
-    public static Packet<? super ClientGamePacketListener> decode(
-            StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec, byte[] bytes) {
+    public static <T extends net.minecraft.network.PacketListener> Packet<? super T> decode(
+            StreamCodec<ByteBuf, Packet<? super T>> codec, byte[] bytes) {
         ByteBuf buf = Unpooled.wrappedBuffer(bytes);
         try {
             return codec.decode(buf);

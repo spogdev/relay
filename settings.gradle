@@ -20,3 +20,7 @@ include 'relay'
 // Relay Spectate: an optional addon mod. Separate jar so a user can run Relay without it; it
 // depends on Relay for the trust list and relay connection and adds nothing to the base mod.
 include 'spectate'
+
+// The spectate addon's routing service. A separate process from the main relay so a bug in the
+// (much heavier) stream forwarding cannot take down position and alert routing.
+include 'spectate-relay'

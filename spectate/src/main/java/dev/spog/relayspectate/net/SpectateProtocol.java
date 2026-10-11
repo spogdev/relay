@@ -90,6 +90,19 @@ public final class SpectateProtocol {
      */
     public static final byte TYPE_GAME_PACKET = 0x21;
 
+    /**
+     * The target's login packet, which is a game-phase packet but belongs to the handshake rather
+     * than the live stream: {@code [bytes]}.
+     *
+     * <p>Separate from {@link #TYPE_HANDSHAKE} because the two are encoded with different codecs.
+     * Configuration-phase packets use a plain buffer and the configuration packet-id table; the
+     * login packet uses the game table and needs the registries the configuration just established.
+     * Sending both under one type would leave the receiver guessing which codec to decode with, and
+     * guessing wrong fails with an unhelpful unknown-packet error rather than anything that names
+     * the cause.
+     */
+    public static final byte TYPE_LOGIN_PACKET = 0x23;
+
     /** The target stopped sharing (revoked, disconnected, or left the radius). No payload. */
     public static final byte TYPE_STREAM_END = 0x22;
 

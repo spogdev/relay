@@ -1,0 +1,94 @@
+package dev.spog.relayspectate;
+
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+
+import java.util.Map;
+
+/**
+ * The addon's private string table, and the reason it exists.
+ *
+ * <p>Relay keeps its strings out of the game's translation table because a server can probe that
+ * table to detect mods (MC-265322: plant a sign of {@code {"translate":"key"}} components, read
+ * back what the client resolved -- an unchanged key means the mod is absent, anything else means it
+ * is present). An addon that registered ordinary lang keys would hand back exactly the fingerprint
+ * the base mod went to some trouble to remove, and it would be a worse one: {@code relayspectate}
+ * keys identify not just Relay but Relay-with-spectating.
+ *
+ * <p>So the same approach applies here. Strings live in this class, are resolved to literal
+ * components, and never enter {@code Language}. Keybinds are the one unavoidable exception -- they
+ * must be registered to be bindable, and a registered keybind answers a {@code {"keybind":"key"}}
+ * probe through {@code KeyMapping.ALL} regardless of the translation table -- which is what
+ * {@code KeybindContentsMixin} handles on the Relay side and
+ * {@link dev.spog.relayspectate.mixin.SpectateKeybindMixin} handles here.
+ *
+ * <p>No per-language files, unlike Relay's: this addon is private and English-only, so a single
+ * table avoids the resource loading and language-switch plumbing for no loss.
+ */
+public final class SpectateLang {
+    private SpectateLang() {
+    }
+
+    /**
+     * Keybind names, the only strings the game's own screens look up by key.
+     *
+     * <p>Held separately from the UI strings for the same reason Relay does it: this is the set
+     * that has to be answerable through {@code ClientLanguage}, so it is kept small and explicit.
+     */
+    private static final Map<String, String> KEYBINDS = Map.of(
+            "key.category.relayspectate.main", "Relay Spectate",
+            "key.relayspectate.open_menu", "Open Spectate Menu",
+            "key.relayspectate.stop", "Stop Spectating");
+
+    /** UI strings, never looked up by the game. */
+    private static final Map<String, String> STRINGS = Map.ofEntries(
+            Map.entry("menu.title", "Spectate"),
+            Map.entry("menu.empty", "No teammates are available to spectate."),
+            Map.entry("menu.hint", "Only players who trust you and run this addon appear here."),
+            Map.entry("menu.stop", "Stop Spectating"),
+            Map.entry("menu.close", "Close"),
+            Map.entry("status.connecting", "Connecting to the spectate service..."),
+            Map.entry("status.loading", "Loading %s's view..."),
+            Map.entry("status.watching", "Spectating %s"),
+            Map.entry("status.ended", "The spectate session ended."),
+            Map.entry("status.watched", "%s is watching you"),
+            Map.entry("status.watched_many", "%d players are watching you"),
+            Map.entry("deny.not_trusted", "%s does not have you trusted."),
+            Map.entry("deny.no_addon", "%s is not running the spectate addon."),
+            Map.entry("deny.offline", "%s is not available to spectate."),
+            Map.entry("deny.revoked", "%s revoked your access."),
+            Map.entry("deny.busy", "You are already spectating someone."),
+            Map.entry("error.no_service", "The spectate service is not configured."),
+            Map.entry("error.failed", "The spectate session could not start."));
+
+    public static boolean hasKeybind(String key) {
+        return KEYBINDS.containsKey(key);
+    }
+
+    /** A keybind's display name. */
+    public static String keybind(String key) {
+        return KEYBINDS.getOrDefault(key, key);
+    }
+
+    /** A UI string as a literal component, so it never touches the translation table. */
+    public static MutableComponent text(String key, Object... args) {
+        return Component.literal(string(key, args));
+    }
+
+    /** A UI string, formatted. */
+    public static String string(String key, Object... args) {
+        String raw = STRINGS.get(key);
+        if (raw == null) {
+            return key;
+        }
+        if (args.length == 0) {
+            return raw;
+        }
+        try {
+            return String.format(raw, args);
+        } catch (RuntimeException e) {
+            // A format mismatch is a bug in the caller, not something to crash a render pass over.
+            return raw;
+        }
+    }
+}

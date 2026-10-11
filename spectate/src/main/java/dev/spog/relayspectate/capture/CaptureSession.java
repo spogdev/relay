@@ -89,7 +89,7 @@ public final class CaptureSession {
         try {
             StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> c = codec;
             if (c == null) {
-                c = PacketWire.codec(listener.registryAccess());
+                c = PacketWire.gameCodec(listener.registryAccess());
                 codec = c;
             }
             @SuppressWarnings("unchecked")

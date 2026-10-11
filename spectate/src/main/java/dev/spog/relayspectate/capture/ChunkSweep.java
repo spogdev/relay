@@ -138,7 +138,11 @@ public final class ChunkSweep {
                 out.add(new ClientboundSetEntityDataPacket(entity.getId(), data));
             }
         } catch (RuntimeException e) {
-            SpectateClient.LOGGER.debug("spectate: could not pack entity {}",
+            // At warn, not debug. Three separate failures in this project were invisible because
+            // the only record of them was a debug line nobody sees by default; an entity that
+            // cannot be packed is exactly the kind of thing that presents as "no entities" with
+            // no explanation anywhere.
+            SpectateClient.LOGGER.warn("spectate: could not pack entity {}",
                     entity.getClass().getSimpleName(), e);
         }
     }

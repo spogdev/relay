@@ -5,6 +5,7 @@ import dev.spog.relayspectate.capture.CaptureSession;
 import dev.spog.relayspectate.capture.ChunkSweep;
 import dev.spog.relayspectate.capture.HandshakeRecorder;
 import dev.spog.relayspectate.capture.PacketWire;
+import dev.spog.relayspectate.capture.TabList;
 import dev.spog.relayspectate.host.ViewerSession;
 import dev.spog.relayspectate.net.Frames;
 import dev.spog.relayspectate.net.SpectateClientSocket;
@@ -493,8 +494,21 @@ public final class SpectateManager {
                 terrainBacklog.add(PacketWire.encode(codec, chunk));
                 chunks++;
             } catch (RuntimeException e) {
-                SpectateClient.LOGGER.debug("spectate: could not send a packed chunk", e);
+                SpectateClient.LOGGER.warn("spectate: could not encode a packed chunk", e);
             }
+        }
+        // The tab list before any entity. createEntityFromPacket returns null for a player with
+        // no tab-list entry, discarding the spawn entirely -- so without this there are no
+        // players, including the target, and the camera has nothing to attach to.
+        var tabList = TabList.of(mc);
+        if (tabList != null) {
+            try {
+                terrainBacklog.add(PacketWire.encode(codec, tabList));
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.warn("spectate: could not encode the tab list", e);
+            }
+        } else {
+            SpectateClient.LOGGER.warn("spectate: no tab list to send; players will not render");
         }
         // Entities after terrain: the client drops an entity whose chunk it does not have.
         int entities = 0;
@@ -506,7 +520,7 @@ public final class SpectateManager {
                 terrainBacklog.add(PacketWire.encode(codec, game));
                 entities++;
             } catch (RuntimeException e) {
-                SpectateClient.LOGGER.debug("spectate: could not send a packed entity", e);
+                SpectateClient.LOGGER.warn("spectate: could not encode a packed entity", e);
             }
         }
         SpectateClient.LOGGER.info("spectate: queued {} chunks and {} entity packets",

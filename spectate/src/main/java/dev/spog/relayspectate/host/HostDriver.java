@@ -56,6 +56,13 @@ public final class HostDriver {
 
     private volatile boolean inGame;
     private volatile boolean announcedChunksLoaded;
+
+    /**
+     * Whether the viewer has been placed in the world yet.
+     *
+     * <p>Only the first position report moves the viewer. See {@link #applyPosition}.
+     */
+    private volatile boolean sentInitialPosition;
     private int registryWaitTicks;
 
     /**
@@ -231,8 +238,33 @@ public final class HostDriver {
         ChunkPos chunk = new ChunkPos(
                 net.minecraft.core.SectionPos.blockToSectionCoord(x),
                 net.minecraft.core.SectionPos.blockToSectionCoord(z));
+        // The centre follows the target always: it decides which forwarded chunks the client will
+        // accept, and the capture is clipped to a radius around the target, so centring anywhere
+        // else would reject the very chunks being sent.
         connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
-        connection.send(JoinSequence.position(x, y, z, yaw, pitch));
+        // The position is sent once, not on every report. A position packet moves the viewer's
+        // player, and these arrive five times a second -- so resending it holds the viewer on top
+        // of the target and makes flying impossible, since every input is undone within four
+        // ticks. One is still required, to put the viewer somewhere the streamed terrain actually
+        // is rather than at the origin.
+        if (!sentInitialPosition) {
+            sentInitialPosition = true;
+            connection.send(JoinSequence.position(x, y, z, yaw, pitch));
+        }
+    }
+
+    /**
+     * Forces the viewer back onto the target's position.
+     *
+     * <p>Used by the locked camera when it re-attaches, and when a session starts, so the viewer
+     * does not stay wherever a previous free-flight left it.
+     */
+    public void recentreOnTarget() {
+        if (!inGame || !connection.isConnected() || !hasPendingPosition) {
+            return;
+        }
+        connection.send(JoinSequence.position(
+                pendingX, pendingY, pendingZ, pendingYaw, pendingPitch));
     }
 
     /**

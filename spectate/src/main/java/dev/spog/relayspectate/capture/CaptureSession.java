@@ -40,6 +40,9 @@ public final class CaptureSession {
     /** Set once at least one chunk has been forwarded, so the viewer can be let into the world. */
     private volatile boolean sentAnyChunk;
 
+    /** Counts packets this session could not re-encode, so a burst reports once. */
+    private volatile long encodeFailures;
+
     public CaptureSession(Consumer<byte[]> sink) {
         this.sink = sink;
     }
@@ -107,8 +110,11 @@ public final class CaptureSession {
         } catch (RuntimeException e) {
             // A packet this mod cannot re-encode must not break the target's own game: drop it and
             // keep the session running. The viewer sees a gap rather than the target disconnecting.
-            SpectateClient.LOGGER.debug("spectate: dropped un-encodable packet {}",
-                    packet.getClass().getSimpleName(), e);
+            long n = ++encodeFailures;
+            if (n == 1 || n % 100 == 0) {
+                SpectateClient.LOGGER.warn("spectate: {} un-encodable packet(s), latest {}",
+                        n, packet.getClass().getSimpleName(), e);
+            }
         }
     }
 

@@ -45,6 +45,20 @@ public final class SpectateConfig {
     /** Whether to show the indicator when someone is watching. */
     public boolean showWatchedIndicator = true;
 
+    /**
+     * Whether the viewer may fly freely instead of riding the target's camera.
+     *
+     * <p>Free movement shows more than the target can see: the viewer holds whole chunks, so a free
+     * camera can be moved behind a wall or underground and read terrain the target has no line of
+     * sight to. That is a reasonable thing for a server operator to call an exploit, which is why
+     * the locked camera exists and remains available.
+     *
+     * <p>Default is free movement, at the request of the only people who can start a session: a
+     * spectate session requires standing trust from the target, and this build is for a private
+     * server whose operator permits it.
+     */
+    public boolean freeCamera = true;
+
     public static synchronized SpectateConfig get() {
         if (instance == null) {
             instance = load();

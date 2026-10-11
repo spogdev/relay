@@ -46,6 +46,17 @@ public final class SpectateCamera {
         if (mc.level == null || mc.player == null) {
             return;
         }
+        if (dev.spog.relayspectate.SpectateConfig.get().freeCamera) {
+            // Free movement: the viewer flies its own spectator player and the camera stays on it.
+            // Release once rather than every tick, so a viewer who was attached before the setting
+            // changed is handed back control exactly once.
+            if (attached) {
+                mc.setCameraEntity(mc.player);
+                attached = false;
+                SpectateClient.LOGGER.info("spectate: free camera; released from target");
+            }
+            return;
+        }
         Entity current = mc.getCameraEntity();
         AbstractClientPlayer entity = findTarget(mc);
         if (entity == null) {

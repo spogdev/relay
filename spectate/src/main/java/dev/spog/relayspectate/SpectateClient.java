@@ -2,6 +2,7 @@ package dev.spog.relayspectate;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.spog.relayspectate.capture.CaptureHooks;
+import dev.spog.relayspectate.ui.MenuButton;
 import dev.spog.relayspectate.ui.SpectateScreen;
 import dev.spog.relayspectate.ui.WatchedIndicator;
 import dev.spog.teamlocator.client.TeamLocatorClient;
@@ -50,6 +51,9 @@ public final class SpectateClient implements ClientModInitializer {
                 "key.relayspectate.stop", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(WatchedIndicator.ID, new WatchedIndicator());
+        // The menu button, not the keybind, is how a session is started: see MenuButton for why
+        // a keybind cannot reach this feature at all.
+        MenuButton.register();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         LOGGER.info("Relay Spectate loaded");
@@ -59,8 +63,13 @@ public final class SpectateClient implements ClientModInitializer {
         SpectateManager manager = SpectateManager.get();
         manager.tick();
 
+        // Both keybinds only reach this feature while a session is live, because that is the only
+        // time this addon has a world for Minecraft to dispatch keys in. Starting a session is the
+        // menu button's job; see MenuButton.
         while (openMenuKey.consumeClick()) {
-            client.setScreen(new SpectateScreen(client.screen));
+            if (manager.viewing() != null) {
+                client.setScreen(new SpectateScreen(client.screen));
+            }
         }
         while (stopKey.consumeClick()) {
             manager.stopViewing();

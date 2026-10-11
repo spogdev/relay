@@ -37,7 +37,7 @@ public final class SpectateLang {
      */
     private static final Map<String, String> KEYBINDS = Map.of(
             "key.category.relayspectate.main", "Relay Spectate",
-            "key.relayspectate.open_menu", "Open Spectate Menu",
+            "key.relayspectate.open_menu", "Spectate Menu (while spectating)",
             "key.relayspectate.stop", "Stop Spectating");
 
     /** UI strings, never looked up by the game. */

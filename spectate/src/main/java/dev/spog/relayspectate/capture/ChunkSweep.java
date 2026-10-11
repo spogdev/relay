@@ -112,6 +112,10 @@ public final class ChunkSweep {
             return out;
         }
         int blockRadius = SpectateProtocol.SWEEP_RADIUS_CHUNKS * 16;
+        // Logged on entry, not just on completion. The completion line not appearing at all is
+        // itself a finding -- it means this never ran, or ran and threw -- and that cannot be told
+        // apart from a missing line when there is only one.
+        SpectateClient.LOGGER.info("spectate: sweeping entities within {} blocks", blockRadius);
         // Players counted separately from everything else. "Players are invisible" has been
         // diagnosed several times from the viewer's end alone, and the one fact that would have
         // localised it immediately -- whether the target even swept any other players, and
@@ -120,6 +124,7 @@ public final class ChunkSweep {
         int playersOutOfRange = 0;
         int items = 0;
         int itemsWithoutStack = 0;
+        int itemPackets = 0;
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof net.minecraft.world.entity.player.Player && entity != self) {
                 if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
@@ -137,6 +142,18 @@ public final class ChunkSweep {
                 if (item.getItem().isEmpty()) {
                     itemsWithoutStack++;
                 }
+                int before = out.size();
+                addEntity(out, item);
+                // Two packets per entity -- the spawn and its data -- so anything less means the
+                // data was judged empty and the item will render as nothing.
+                if (out.size() - before == 2) {
+                    itemPackets++;
+                } else {
+                    SpectateClient.LOGGER.warn(
+                            "spectate: item {} packed {} packet(s), not 2; stack={}",
+                            item.getId(), out.size() - before, item.getItem());
+                }
+                continue;
             }
             if (entity == self) {
                 // The target's own player entity is not in its client's entity list as something
@@ -154,8 +171,9 @@ public final class ChunkSweep {
         SpectateClient.LOGGER.info(
                 "spectate: packed {} entity packets, including {} other player(s)"
                         + " ({} beyond the {}-block sweep radius) and {} dropped item(s)"
-                        + " ({} with an empty stack)",
-                out.size(), players, playersOutOfRange, blockRadius, items, itemsWithoutStack);
+                        + " ({} with an empty stack, {} fully packed)",
+                out.size(), players, playersOutOfRange, blockRadius, items, itemsWithoutStack,
+                itemPackets);
         return out;
     }
 

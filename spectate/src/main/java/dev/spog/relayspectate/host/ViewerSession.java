@@ -106,7 +106,31 @@ public final class ViewerSession {
      */
     public void tickCamera() {
         if (!closed && isInGame()) {
+            enforceSpectator();
             camera.tick();
+        }
+    }
+
+    /**
+     * Keeps the viewer's client in spectator, every tick, from its own state.
+     *
+     * <p>This does not depend on any packet, and that is the point. A viewer is never in the
+     * target's tab list -- it is not on that server -- so the game mode a client reads from its own
+     * tab-list entry is null for the whole session, and a spectate session cannot rely on entries
+     * that will never exist. Rewriting the login and respawn packets fixed two ways of being
+     * knocked out of spectator, but both were patches on a source of truth the viewer does not
+     * have.
+     *
+     * <p>{@code MultiPlayerGameMode.localPlayerMode} is what actually decides it:
+     * {@code Minecraft.gameMode.isSpectator()} reads it, and that governs no-clip and whether the
+     * local player is drawn -- a viewer appearing as a body in third person was this being wrong.
+     * Setting it directly each tick makes the viewer a spectator regardless of what arrives, and
+     * nothing in the stream can take it away for longer than a tick.
+     */
+    private void enforceSpectator() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameMode != null && !mc.gameMode.isSpectator()) {
+            mc.gameMode.setLocalMode(net.minecraft.world.level.GameType.SPECTATOR);
         }
     }
 

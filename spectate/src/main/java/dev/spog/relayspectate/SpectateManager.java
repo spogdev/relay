@@ -391,16 +391,30 @@ public final class SpectateManager {
         }
         StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
                 PacketWire.gameCodec(listener.registryAccess());
-        int sent = 0;
+        int chunks = 0;
         for (var chunk : ChunkSweep.loadedChunksAround(mc)) {
             try {
                 s.sendGamePacket(PacketWire.encode(codec, chunk));
-                sent++;
+                chunks++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.debug("spectate: could not send a packed chunk", e);
             }
         }
-        SpectateClient.LOGGER.info("spectate: sent {} chunks of initial terrain", sent);
+        // Entities after terrain: the client drops an entity whose chunk it does not have.
+        int entities = 0;
+        for (var packet : ChunkSweep.entitiesAround(mc)) {
+            try {
+                @SuppressWarnings("unchecked")
+                Packet<? super ClientGamePacketListener> game =
+                        (Packet<? super ClientGamePacketListener>) packet;
+                s.sendGamePacket(PacketWire.encode(codec, game));
+                entities++;
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.debug("spectate: could not send a packed entity", e);
+            }
+        }
+        SpectateClient.LOGGER.info("spectate: sent {} chunks and {} entity packets",
+                chunks, entities);
     }
 
     /** A handshake encoded for the wire: configuration packets, then the login packet. */

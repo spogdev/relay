@@ -148,4 +148,19 @@ public final class SpectateProtocol {
      * locked to the target, so the far edge is rarely what is being looked at.
      */
     public static final int CAPTURE_RADIUS_CHUNKS = 10;
+
+    /**
+     * How far from the target the initial sweep actually sends, in chunks.
+     *
+     * <p>One less than {@link #CAPTURE_RADIUS_CHUNKS}, because the viewer's chunk cache rejects a
+     * chunk that sits outside its view range at the moment it arrives -- and the whole sweep is
+     * sent in one burst, before the target has moved and before anything can widen that range. The
+     * first attempt sent the full radius and the client logged
+     * "Ignoring chunk since it's not in the view range" for precisely the outermost ring, which is
+     * what pointed at this.
+     *
+     * <p>Costing the view one chunk of distance is the right trade: the alternative is a ring of
+     * chunks that are always discarded, which is bandwidth spent to produce a log warning.
+     */
+    public static final int SWEEP_RADIUS_CHUNKS = CAPTURE_RADIUS_CHUNKS - 1;
 }

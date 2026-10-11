@@ -58,6 +58,14 @@ public final class HostDriver {
     private volatile boolean announcedChunksLoaded;
     private int registryWaitTicks;
 
+    /** The target's last reported position, applied as soon as the game phase is reached. */
+    private volatile boolean hasPendingPosition;
+    private volatile double pendingX;
+    private volatile double pendingY;
+    private volatile double pendingZ;
+    private volatile float pendingYaw;
+    private volatile float pendingPitch;
+
     /**
      * @param handshake the target's recorded configuration-phase packets, in order
      * @param loginWire the target's login packet, still encoded. It is decoded only once the
@@ -172,6 +180,12 @@ public final class HostDriver {
         connection.send(JoinSequence.spectatorLogin(targetLogin));
         connection.send(JoinSequence.chunkRadius());
         inGame = true;
+        // Before any queued terrain is flushed: the cache centre has to be right first, or the
+        // client discards every chunk as out of view range.
+        if (hasPendingPosition) {
+            applyPosition(pendingX, pendingY, pendingZ, pendingYaw, pendingPitch);
+            SpectateClient.LOGGER.info("spectate host: applied pending target position");
+        }
         SpectateClient.LOGGER.info("spectate host: viewer entered game phase");
     }
 
@@ -182,9 +196,24 @@ public final class HostDriver {
      * the client, and it starts at 0,0, so until this is sent every forwarded chunk is thrown away.
      */
     public void updateTargetPosition(double x, double y, double z, float yaw, float pitch) {
+        // Remembered even when it cannot be applied yet. The target sends its position before the
+        // terrain, but that position can arrive before the viewer's client has finished login --
+        // and dropping it then left the chunk cache centred on 0,0, so every chunk that followed
+        // was rejected with "Ignoring chunk since it's not in the view range". The pending value
+        // is applied by enterGame().
+        pendingX = x;
+        pendingY = y;
+        pendingZ = z;
+        pendingYaw = yaw;
+        pendingPitch = pitch;
+        hasPendingPosition = true;
         if (!inGame || !connection.isConnected()) {
             return;
         }
+        applyPosition(x, y, z, yaw, pitch);
+    }
+
+    private void applyPosition(double x, double y, double z, float yaw, float pitch) {
         ChunkPos chunk = new ChunkPos(
                 net.minecraft.core.SectionPos.blockToSectionCoord(x),
                 net.minecraft.core.SectionPos.blockToSectionCoord(z));

@@ -4,7 +4,10 @@ import dev.spog.relayspectate.SpectateClient;
 import dev.spog.relayspectate.net.SpectateProtocol;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -56,7 +59,7 @@ public final class ChunkSweep {
             return out;
         }
         ChunkPos center = player.chunkPosition();
-        int radius = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
+        int radius = SpectateProtocol.SWEEP_RADIUS_CHUNKS;
         var lightEngine = level.getLightEngine();
 
         for (int dx = -radius; dx <= radius; dx++) {
@@ -84,5 +87,59 @@ public final class ChunkSweep {
         SpectateClient.LOGGER.info("spectate: packed {} loaded chunks around {},{}",
                 out.size(), center.x(), center.z());
         return out;
+    }
+
+    /**
+     * Rebuilds spawn packets for the entities already around the target.
+     *
+     * <p>Needed for the same reason as the chunk sweep: entity spawns are only sent once, when an
+     * entity comes into range, so a viewer joining later is told about nothing that is already
+     * there -- including the target itself, which is the one entity the camera needs.
+     *
+     * <p>Each entity needs two packets, not one. The spawn packet carries position and type; the
+     * data packet carries the synced entity data, without which a player renders with no skin,
+     * no pose and no name. {@code ClientboundSetEntityDataPacket} is built from a full snapshot
+     * rather than the usual dirty-only delta, since the viewer has no prior state to apply a
+     * delta to.
+     *
+     * <p>Must run on the client thread.
+     */
+    public static List<Packet<?>> entitiesAround(Minecraft mc) {
+        List<Packet<?>> out = new ArrayList<>();
+        ClientLevel level = mc.level;
+        Entity self = mc.player;
+        if (level == null || self == null) {
+            return out;
+        }
+        int blockRadius = SpectateProtocol.SWEEP_RADIUS_CHUNKS * 16;
+        for (Entity entity : level.entitiesForRendering()) {
+            if (entity == self) {
+                // The target's own player entity is not in its client's entity list as something
+                // to spawn for others; it is handled as the local player. It is sent below.
+                continue;
+            }
+            if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
+                continue;
+            }
+            addEntity(out, entity);
+        }
+        // The target itself, last, so the camera has something to attach to even if the list above
+        // was empty.
+        addEntity(out, self);
+        SpectateClient.LOGGER.info("spectate: packed {} entity packets", out.size());
+        return out;
+    }
+
+    private static void addEntity(List<Packet<?>> out, Entity entity) {
+        try {
+            out.add(new ClientboundAddEntityPacket(entity, 0, entity.blockPosition()));
+            var data = entity.getEntityData().getNonDefaultValues();
+            if (data != null && !data.isEmpty()) {
+                out.add(new ClientboundSetEntityDataPacket(entity.getId(), data));
+            }
+        } catch (RuntimeException e) {
+            SpectateClient.LOGGER.debug("spectate: could not pack entity {}",
+                    entity.getClass().getSimpleName(), e);
+        }
     }
 }

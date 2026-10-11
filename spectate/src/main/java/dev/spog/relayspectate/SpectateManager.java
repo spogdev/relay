@@ -193,8 +193,23 @@ public final class SpectateManager {
             // One summary a few seconds in, so a blank world can be told apart from a world whose
             // terrain never arrived without needing a packet-by-packet log.
             if (++viewerTicks == 100) {
-                SpectateClient.LOGGER.info("spectate: {} chunk packets delivered after 5s",
-                        session.chunksReceived());
+                int chunks = session.chunksReceived();
+                if (chunks > 0) {
+                    SpectateClient.LOGGER.info("spectate: {} chunk packets delivered after 5s",
+                            chunks);
+                } else {
+                    // Zero is a distinct failure from "some", and the difference decides where to
+                    // look. Vanilla only reports it as "Timed out while waiting for the client to
+                    // load chunks" 30 seconds later, which names neither spectating nor the stage
+                    // that failed -- and reading it as the fault rather than the symptom costs a
+                    // round of debugging. So say which side went quiet, and whether the target
+                    // ever sent a position, since terrain is sent immediately after one.
+                    SpectateClient.LOGGER.warn(
+                            "spectate: no terrain after 5s -- inGame={} positionSeen={}; "
+                            + "the target sent no chunk frames, so check its log for "
+                            + "\"packed N loaded chunks\"",
+                            session.isInGame(), session.hasSeenPosition());
+                }
             }
         } else {
             viewerTicks = 0;

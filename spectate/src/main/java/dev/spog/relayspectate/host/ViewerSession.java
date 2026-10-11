@@ -80,6 +80,7 @@ public final class ViewerSession {
      * still null. Dropping it there left the chunk cache centred on 0,0 and every swept chunk was
      * rejected on arrival as out of view range.
      */
+    private volatile boolean seenPosition;
     private volatile boolean hasEarlyPosition;
     private volatile double earlyX;
     private volatile double earlyY;
@@ -252,6 +253,7 @@ public final class ViewerSession {
         if (closed) {
             return;
         }
+        seenPosition = true;
         HostDriver d = driver;
         if (d == null) {
             // The driver does not exist yet; hold the position for start() to pass on.
@@ -340,6 +342,17 @@ public final class ViewerSession {
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.debug("spectate: dropped undecodable packet", e);
         }
+    }
+
+    /**
+     * True once the target has reported a position.
+     *
+     * <p>Worth distinguishing from "no chunks": the target sends its position immediately before
+     * its terrain, so a session with neither failed before the sweep, while a session with a
+     * position but no terrain failed inside it.
+     */
+    public boolean hasSeenPosition() {
+        return hasEarlyPosition || seenPosition;
     }
 
     /** How many chunk packets this session has delivered to the client. */

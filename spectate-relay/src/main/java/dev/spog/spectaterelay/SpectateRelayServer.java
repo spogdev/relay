@@ -181,11 +181,14 @@ public final class SpectateRelayServer extends WebSocketServer {
             session.conn().close();
             return;
         }
-        var ip = session.conn().getRemoteSocketAddress();
+        // Skip Mojang's optional IP cross-check by passing null, exactly as the main relay does
+        // and as vanilla does by default. Behind a reverse proxy the remote address is always
+        // 127.0.0.1, while Mojang recorded the player's real public IP at joinServer time, so the
+        // check fails for every player -- which presents as "unverified" and is indistinguishable
+        // from a genuinely bad session.
         authPool.submit(() -> {
             try {
-                UUID verified = verifier.verify(name, serverId,
-                        ip == null ? null : ip.getAddress());
+                UUID verified = verifier.verify(name, serverId, null);
                 if (verified == null) {
                     send(session, "{\"type\":\"auth-fail\",\"reason\":\"unverified\"}");
                     session.conn().close();

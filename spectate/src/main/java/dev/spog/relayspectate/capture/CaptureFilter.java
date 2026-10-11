@@ -125,6 +125,14 @@ public final class CaptureFilter {
             // LEVEL_CHUNKS_LOAD_START rather than relying on one arriving here; forwarding the
             // target's copy is harmless because the client treats it as idempotent.
             ClientboundGameEventPacket.class,
+            // Particles and weather are forwarded only as these packets -- the ones a server
+            // actually sends. The much larger set a client spawns for itself is deliberately not
+            // captured: the viewer has a real ClientLevel holding the streamed blocks, so its own
+            // animateTick generates torch smoke, dripping, spawner flames and the like, and its
+            // own weather renderer generates rain and snow from the forwarded weather state. Those
+            // particles therefore already appear for a viewer without being sent, and forwarding
+            // the target's copies would duplicate them while putting weather -- hundreds of
+            // particles per tick during a storm -- onto the wire for no gain.
             ClientboundLevelEventPacket.class,
             ClientboundLevelParticlesPacket.class,
             ClientboundExplodePacket.class,

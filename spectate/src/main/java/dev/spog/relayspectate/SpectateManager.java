@@ -51,6 +51,21 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     private int positionTicks;
     private int viewerTicks;
+
+    /**
+     * How many terrain frames to hand the socket per tick.
+     *
+     * <p>The sweep produces several hundred frames at once, and queueing them all in a single tick
+     * delivered none of them: the target logged "sent 421 chunks and 21 entity packets" while the
+     * viewer received zero and nothing reported a failure, because the send chain's error handler
+     * discarded them silently. A burst that large outruns what the JDK's WebSocket will buffer, so
+     * it is spread over ticks instead -- 32 per tick clears 440 in under three quarters of a
+     * second, which is well inside the client's own 30-second chunk-loading timeout.
+     */
+    private static final int TERRAIN_FRAMES_PER_TICK = 32;
+
+    /** Terrain frames still to be handed to the socket, drained by {@link #tick()}. */
+    private final java.util.ArrayDeque<byte[]> terrainBacklog = new java.util.ArrayDeque<>();
     private boolean reportedUnavailable;
 
     /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
@@ -186,6 +201,7 @@ public final class SpectateManager {
                 SpectateClient.LOGGER.warn("spectate: main-thread task failed", e);
             }
         }
+        drainTerrainBacklog();
         reportPositionIfStreaming();
         ViewerSession session = viewing;
         if (session != null) {
@@ -213,6 +229,32 @@ public final class SpectateManager {
             }
         } else {
             viewerTicks = 0;
+        }
+    }
+
+    /**
+     * Hands a bounded slice of the swept terrain to the socket.
+     *
+     * <p>Called once per client tick. See {@link #TERRAIN_FRAMES_PER_TICK} for why the sweep is not
+     * simply sent where it is produced.
+     */
+    private void drainTerrainBacklog() {
+        if (terrainBacklog.isEmpty()) {
+            return;
+        }
+        SpectateClientSocket s = socket;
+        if (s == null) {
+            terrainBacklog.clear();
+            return;
+        }
+        int sent = 0;
+        byte[] wire;
+        while (sent < TERRAIN_FRAMES_PER_TICK && (wire = terrainBacklog.poll()) != null) {
+            s.sendGamePacket(wire);
+            sent++;
+        }
+        if (terrainBacklog.isEmpty()) {
+            SpectateClient.LOGGER.info("spectate: finished sending swept terrain");
         }
     }
 
@@ -418,7 +460,7 @@ public final class SpectateManager {
         int chunks = 0;
         for (var chunk : ChunkSweep.loadedChunksAround(mc)) {
             try {
-                s.sendGamePacket(PacketWire.encode(codec, chunk));
+                terrainBacklog.add(PacketWire.encode(codec, chunk));
                 chunks++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.debug("spectate: could not send a packed chunk", e);
@@ -431,13 +473,13 @@ public final class SpectateManager {
                 @SuppressWarnings("unchecked")
                 Packet<? super ClientGamePacketListener> game =
                         (Packet<? super ClientGamePacketListener>) packet;
-                s.sendGamePacket(PacketWire.encode(codec, game));
+                terrainBacklog.add(PacketWire.encode(codec, game));
                 entities++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.debug("spectate: could not send a packed entity", e);
             }
         }
-        SpectateClient.LOGGER.info("spectate: sent {} chunks and {} entity packets",
+        SpectateClient.LOGGER.info("spectate: queued {} chunks and {} entity packets",
                 chunks, entities);
     }
 

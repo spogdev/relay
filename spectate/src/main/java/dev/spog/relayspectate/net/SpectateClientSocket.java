@@ -60,6 +60,10 @@ public final class SpectateClientSocket {
     /** Serializes sends; the JDK WebSocket rejects overlapping send operations. */
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
 
+    /** Counts failed frame sends, so a burst reports once rather than per frame. */
+    private final java.util.concurrent.atomic.AtomicLong sendFailures =
+            new java.util.concurrent.atomic.AtomicLong();
+
     public SpectateClientSocket(String url, Consumer<ByteBuffer> onBinary) {
         this.url = url;
         this.onBinary = onBinary;
@@ -225,12 +229,28 @@ public final class SpectateClientSocket {
         if (ws == null) {
             return;
         }
+        // The payload is snapshotted here rather than inside the lambda. The lambda runs when the
+        // previous send completes, which for a burst is long after this call returned, and a
+        // ByteBuffer's position and limit are mutable state -- so reading it later is a race with
+        // whatever else touches it in the meantime.
+        ByteBuffer payload = frame.duplicate();
         synchronized (this) {
             sendChain = sendChain.thenCompose(ignored -> {
                 WebSocket current = socket;
                 return current == null ? CompletableFuture.completedFuture(null)
-                        : current.sendBinary(frame.duplicate(), true);
-            }).exceptionally(e -> null);
+                        : current.sendBinary(payload.duplicate(), true);
+            }).exceptionally(e -> {
+                // Counted and logged once per burst rather than per frame. Swallowing these
+                // silently hid a complete terrain failure: the target reported "sent 421 chunks"
+                // while the viewer received none and nothing anywhere said a send had failed.
+                long n = sendFailures.incrementAndGet();
+                if (n == 1 || n % 100 == 0) {
+                    SpectateClient.LOGGER.warn("spectate: {} frame send(s) failed; latest", n,
+                            e instanceof java.util.concurrent.CompletionException && e.getCause() != null
+                                    ? e.getCause() : e);
+                }
+                return null;
+            });
         }
     }
 

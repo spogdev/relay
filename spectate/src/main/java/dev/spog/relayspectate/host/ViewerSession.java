@@ -8,6 +8,7 @@ import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.multiplayer.LevelLoadTracker;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
@@ -88,6 +89,7 @@ public final class ViewerSession {
     private volatile float earlyYaw;
     private volatile float earlyPitch;
     private volatile int chunksReceived;
+    private volatile long decodeFailures;
     private volatile int dropped;
 
     public ViewerSession(UUID target) {
@@ -308,11 +310,19 @@ public final class ViewerSession {
         try {
             StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec = gameCodec;
             if (codec == null) {
-                ClientPacketListener listener = Minecraft.getInstance().getConnection();
-                if (listener == null) {
+                // The same registries the host encodes against, taken from the same place. This
+                // used to read Minecraft.getConnection().registryAccess(), which is a different
+                // route to what is usually the same set -- but it resolves through mc.player, so
+                // during login it can return the viewer's own stale registries or none, and the
+                // codec is cached on the first call. A codec built from the wrong tables decodes
+                // ids against the wrong registry and throws on nearly every packet.
+                Connection viewer = viewerSide;
+                RegistryAccess access =
+                        viewer == null ? null : LoopbackRegistries.of(viewer);
+                if (access == null) {
                     return;
                 }
-                codec = PacketWire.gameCodec(listener.registryAccess());
+                codec = PacketWire.gameCodec(access);
                 gameCodec = codec;
             }
             Packet<?> decoded = PacketWire.decode(codec, wire);
@@ -340,7 +350,14 @@ public final class ViewerSession {
                 }
             }
         } catch (RuntimeException e) {
-            SpectateClient.LOGGER.debug("spectate: dropped undecodable packet", e);
+            // Logged at warn, not debug. At debug this was invisible by default, and 808 of 818
+            // packets failing to decode produced no output at all -- the session looked like a
+            // delivery problem for three rounds when it was a decode problem all along. Counted
+            // so a burst reports once per hundred rather than once per packet.
+            long n = ++decodeFailures;
+            if (n == 1 || n % 100 == 0) {
+                SpectateClient.LOGGER.warn("spectate: {} packet(s) failed to decode; latest", n, e);
+            }
         }
     }
 

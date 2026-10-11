@@ -1,0 +1,55 @@
+plugins {
+    // Same Loom plugin and version as the root mod: this module is a second Fabric mod jar built
+    // against the same unobfuscated Minecraft, so nothing is remapped and 'jar' is the artifact.
+    id 'net.fabricmc.fabric-loom'
+}
+
+version = "${project.spectate_version}+${project.minecraft_version}"
+group = project.maven_group
+
+base {
+    archivesName = 'relay-spectate'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // The addon reads the main mod's trust list and relay connection. compileOnly because at
+    // runtime Relay is a separate jar loaded by Fabric, declared as a hard dependency in
+    // fabric.mod.json -- bundling it would put two copies of every class on the classpath.
+    //
+    // This takes Relay's compiled classes rather than `rootProject`, which would also drag in its
+    // published dependencies (Mod Menu, the Xaero builds) that the addon never touches and that
+    // would otherwise have to resolve for this module to configure at all.
+    compileOnly rootProject.sourceSets.main.output
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filteringCharset 'UTF-8'
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+def targetJavaVersion = 25
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = targetJavaVersion
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+}
+
+jar {
+    from(rootProject.file('LICENSE')) {
+        rename { "${it}_relay-spectate" }
+    }
+}

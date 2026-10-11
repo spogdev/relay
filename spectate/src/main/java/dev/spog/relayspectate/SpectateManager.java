@@ -60,6 +60,9 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     /** Set once the first sweep has fully drained, so the log line is not repeated per tick. */
     private boolean reportedSweepDone;
+    /** Set once the capture summary has been logged for this session. */
+    private boolean reportedCapture;
+    private int captureTicks;
     private int positionTicks;
     private int viewerTicks;
     /** Swing time seen on the previous report, to detect a restarted swing. */
@@ -265,6 +268,7 @@ public final class SpectateManager {
         drainTerrainBacklog();
         reportPositionIfStreaming();
         resendTabListIfTexturesArrived();
+        reportCaptureOnce();
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
@@ -593,6 +597,8 @@ public final class SpectateManager {
             session = new CaptureSession(this::queueCaptured);
             CaptureHooks.setSession(session);
             reportedSweepDone = false;
+            reportedCapture = false;
+            captureTicks = 0;
         }
         session.addViewer(viewer);
 
@@ -689,6 +695,24 @@ public final class SpectateManager {
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.warn("spectate: could not resend the tab list", e);
         }
+    }
+
+    /**
+     * Logs one capture summary a few seconds into a session.
+     *
+     * <p>The counterpart to the viewer's own summary: between them they say whether a packet kind
+     * the viewer needed was dropped before it ever left this client.
+     */
+    private void reportCaptureOnce() {
+        CaptureSession session = CaptureHooks.session();
+        if (session == null || !session.hasViewers() || reportedCapture) {
+            return;
+        }
+        if (++captureTicks < 100) {
+            return;
+        }
+        reportedCapture = true;
+        SpectateClient.LOGGER.info("spectate: capture after 5s -- {}", session.frameSummary());
     }
 
     /** Reports this client's position immediately, outside the usual 5 Hz cadence. */

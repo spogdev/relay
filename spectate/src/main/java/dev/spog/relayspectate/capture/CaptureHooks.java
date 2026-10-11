@@ -50,6 +50,20 @@ public final class CaptureHooks {
      * few dozen times per connection. The live forwarding happens only while a session is open.
      */
     public static void onInboundPacket(Packet<?> packet) {
+        // Bundles are unwrapped here, before either consumer sees them. A bundle is a container
+        // the server uses to group packets that must be applied in the same tick -- an entity's
+        // spawn together with the entity data that gives it meaning, a batch of chunks -- and
+        // channelRead0 delivers the bundle rather than its contents. Neither the handshake
+        // recorder nor the capture filter can match on what is inside one, so everything bundled
+        // was dropped: live-dropped items appeared as nothing, and chunks loaded while walking
+        // never reached a viewer at all, while the same entities and chunks swept from the level
+        // at session start were fine.
+        if (packet instanceof net.minecraft.network.protocol.BundlePacket<?> bundle) {
+            for (Packet<?> sub : bundle.subPackets()) {
+                onInboundPacket(sub);
+            }
+            return;
+        }
         if (HandshakeRecorder.isHandshake(packet)) {
             HANDSHAKE.offer(packet);
         }

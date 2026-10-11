@@ -49,6 +49,10 @@ public final class CaptureSession {
 
     /** Counts packets this session could not re-encode, so a burst reports once. */
     private volatile long encodeFailures;
+    /** Packets the filter declined, for the one-line summary. */
+    private volatile long filteredPackets;
+    /** Packets actually forwarded, for the one-line summary. */
+    private volatile long forwardedPackets;
 
     public CaptureSession(java.util.function.BiConsumer<Packet<?>, byte[]> sink) {
         this.sink = sink;
@@ -90,7 +94,24 @@ public final class CaptureSession {
         if (viewers.isEmpty()) {
             return;
         }
+        // Bundles are unwrapped by CaptureHooks before they reach here, so a bundle arriving at
+        // this point would be a programming error rather than something to forward -- it has no
+        // wire form of its own and encoding it is not possible.
+        if (packet instanceof net.minecraft.network.protocol.BundlePacket<?>) {
+            SpectateClient.LOGGER.warn("spectate: a bundle reached the session unwrapped");
+            return;
+        }
         if (!CaptureFilter.isForwardable(packet)) {
+            // Counted by class, and reported once. A packet kind that a viewer turns out to need
+            // is otherwise invisible here: dropping it is the normal case for most of the stream,
+            // so there is nothing to warn about, and the only symptom is something missing in the
+            // viewer's world with no record of what. Bundled packets were dropped this way for
+            // the whole of this feature's development.
+            long n = ++filteredPackets;
+            if (n == 1 || n % 10000 == 0) {
+                SpectateClient.LOGGER.debug("spectate: {} packet(s) not forwarded, latest {}",
+                        n, packet.getClass().getSimpleName());
+            }
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -111,6 +132,7 @@ public final class CaptureSession {
             Packet<? super ClientGamePacketListener> game =
                     (Packet<? super ClientGamePacketListener>) packet;
             sink.accept(packet, PacketWire.encode(c, game));
+            forwardedPackets++;
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;
             }
@@ -134,6 +156,12 @@ public final class CaptureSession {
     private static ChunkPos localChunk(Minecraft mc) {
         Player player = mc.player;
         return player == null ? null : player.chunkPosition();
+    }
+
+    /** Forwarded, filtered and failed counts, for one summary line per session. */
+    public String frameSummary() {
+        return forwardedPackets + " forwarded, " + filteredPackets + " filtered, "
+                + encodeFailures + " failed to encode";
     }
 
     public boolean handshakeSent() {

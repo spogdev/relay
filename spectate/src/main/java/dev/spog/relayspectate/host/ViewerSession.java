@@ -69,6 +69,23 @@ public final class ViewerSession {
 
     private volatile boolean started;
     private volatile boolean sentAnyPacket;
+
+    /**
+     * The target's position, held here until a {@link HostDriver} exists to receive it.
+     *
+     * <p>Needed because of a thread-ordering detail that is easy to miss. The target sends its
+     * position before its terrain, and the service forwards frames in order -- but the login frame
+     * is deferred to the client thread to create the driver, while a position frame is handled
+     * inline on the socket thread. So the first position reliably arrives while {@code driver} is
+     * still null. Dropping it there left the chunk cache centred on 0,0 and every swept chunk was
+     * rejected on arrival as out of view range.
+     */
+    private volatile boolean hasEarlyPosition;
+    private volatile double earlyX;
+    private volatile double earlyY;
+    private volatile double earlyZ;
+    private volatile float earlyYaw;
+    private volatile float earlyPitch;
     private volatile int chunksReceived;
     private volatile int dropped;
 
@@ -171,7 +188,17 @@ public final class ViewerSession {
         // exist until the login packet the host is about to encode has been received.
         HostDriver hostDriver = new HostDriver(serverSide, List.copyOf(handshake), loginWire,
                 () -> LoopbackRegistries.of(connection));
+        // Drain the queue the moment the game phase opens. Without this the queued terrain was
+        // never delivered: feed() only drains when a NEW packet arrives, and the initial sweep is
+        // the last thing the target sends -- so the 361 chunks sat in the queue and the viewer
+        // rendered an empty world while every stage of the log looked correct.
+        hostDriver.onEnteredGame(this::drainPending);
         this.driver = hostDriver;
+        if (hasEarlyPosition) {
+            // Arrived before the driver existed; hand it over now so the chunk cache is centred
+            // before any queued terrain is flushed.
+            hostDriver.updateTargetPosition(earlyX, earlyY, earlyZ, earlyYaw, earlyPitch);
+        }
         hostDriver.begin();
 
         // Null ServerData and null parent screen: there is no real server behind this, and the
@@ -222,10 +249,26 @@ public final class ViewerSession {
      * every chunk from a target standing anywhere else is thrown away on receipt.
      */
     public void applyTargetPosition(double x, double y, double z, float yaw, float pitch) {
-        HostDriver d = driver;
-        if (closed || d == null || !d.isInGame()) {
+        if (closed) {
             return;
         }
+        HostDriver d = driver;
+        if (d == null) {
+            // The driver does not exist yet; hold the position for start() to pass on.
+            earlyX = x;
+            earlyY = y;
+            earlyZ = z;
+            earlyYaw = yaw;
+            earlyPitch = pitch;
+            hasEarlyPosition = true;
+            return;
+        }
+        // Deliberately not gated on isInGame(). The target reports its position before it sends
+        // terrain -- which is the right order -- so the first report almost always arrives while
+        // the viewer's client is still logging in. Dropping it here left the chunk cache centred
+        // on 0,0, and every one of the several hundred swept chunks was then rejected on arrival
+        // with "Ignoring chunk since it's not in the view range". HostDriver stores a position it
+        // cannot apply yet and applies it when the game phase opens, so this must reach it.
         d.updateTargetPosition(x, y, z, yaw, pitch);
         // The first position is also the point at which the viewer has both terrain and somewhere
         // to stand, so it is when the loading screen can be released.

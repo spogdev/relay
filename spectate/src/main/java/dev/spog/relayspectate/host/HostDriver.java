@@ -58,6 +58,13 @@ public final class HostDriver {
     private volatile boolean announcedChunksLoaded;
     private int registryWaitTicks;
 
+    /**
+     * Run once the game phase opens, so whatever queued up while the client was still logging in
+     * can be flushed. Nothing else triggers that flush: the queue is drained by the arrival of a
+     * later packet, and the initial terrain sweep is the last thing the target sends.
+     */
+    private volatile Runnable onEnteredGame = () -> { };
+
     /** The target's last reported position, applied as soon as the game phase is reached. */
     private volatile boolean hasPendingPosition;
     private volatile double pendingX;
@@ -83,6 +90,11 @@ public final class HostDriver {
         this.handshake = handshake;
         this.loginWire = loginWire;
         this.registries = registries;
+    }
+
+    /** Sets the callback run when the game phase opens. Called before {@link #begin()}. */
+    public void onEnteredGame(Runnable callback) {
+        this.onEnteredGame = callback;
     }
 
     /** True once the client is in the game phase and live packets can be sent. */
@@ -187,6 +199,8 @@ public final class HostDriver {
             SpectateClient.LOGGER.info("spectate host: applied pending target position");
         }
         SpectateClient.LOGGER.info("spectate host: viewer entered game phase");
+        // After the position, so the queued chunks land against a correct view centre.
+        onEnteredGame.run();
     }
 
     /**

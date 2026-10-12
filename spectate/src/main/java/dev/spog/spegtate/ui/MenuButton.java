@@ -53,13 +53,42 @@ public final class MenuButton {
      * and the GUI scale instead of drifting off-screen or into the vanilla row at other sizes.
      */
     private static void addTo(Screen screen, int scaledWidth, int scaledHeight) {
+        java.util.List<ClickableWidget> widgets = Screens.getButtons(screen);
+        int x = scaledWidth - WIDTH - MARGIN;
+        int y = scaledHeight - HEIGHT - MARGIN;
+
+        // AFTER_INIT can fire more than once for the same screen -- resizing was the case that
+        // showed it, stacking a new button on every event until the corner was a wall of them.
+        // Vanilla's own re-init is guarded, so the repeat comes from elsewhere in the pack;
+        // reusing whatever is already there is independent of which path fired.
+        ClickableWidget existing = find(widgets);
+        if (existing != null) {
+            // Moved rather than left alone: if the screen kept its widgets through a resize,
+            // the old button is still sitting in what used to be the corner.
+            existing.setPosition(x, y);
+            return;
+        }
         ButtonWidget button = ButtonWidget.builder(
                         SpectateLang.text("menu.title"),
                         b -> Screens.getClient(screen).setScreen(new SpectateScreen(screen)))
-                .dimensions(scaledWidth - WIDTH - MARGIN, scaledHeight - HEIGHT - MARGIN,
-                        WIDTH, HEIGHT)
+                .dimensions(x, y, WIDTH, HEIGHT)
                 .build();
-        java.util.List<ClickableWidget> widgets = Screens.getButtons(screen);
         widgets.add(button);
+    }
+
+    /**
+     * This screen's existing spectate button, or null.
+     *
+     * <p>Identified by its label: the list holds the screen's vanilla widgets too, and this is
+     * the only one carrying that text.
+     */
+    private static ClickableWidget find(java.util.List<ClickableWidget> widgets) {
+        String label = SpectateLang.text("menu.title").getString();
+        for (ClickableWidget widget : widgets) {
+            if (widget.getMessage() != null && label.equals(widget.getMessage().getString())) {
+                return widget;
+            }
+        }
+        return null;
     }
 }

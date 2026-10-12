@@ -36,7 +36,7 @@ public abstract class ConnectionCaptureMixin {
     private void relayspectate$capture(ChannelHandlerContext ctx, Packet<?> packet,
                                        CallbackInfo ci) {
         ClientConnection self = (ClientConnection) (Object) this;
-        if (self.getReceiving() == NetworkSide.CLIENTBOUND && !LoopbackHost.isLoopback(self)) {
+        if (self.getSide() == NetworkSide.CLIENTBOUND && !LoopbackHost.isLoopback(self)) {
             CaptureHooks.onInboundPacket(packet);
         }
     }

@@ -67,7 +67,7 @@ public final class HostLoginListener implements ServerLoginPacketListener {
     }
 
     @Override
-    public void handleCookieResponse(CookieResponseC2SPacket packet) {
+    public void onCookieResponse(CookieResponseC2SPacket packet) {
         // Unreachable: no cookie requests are sent.
     }
 

@@ -16,7 +16,7 @@ import net.minecraft.network.state.PlayStateFactories;
  * Encodes and decodes whole packets using the game's own protocol codecs.
  *
  * <p>This is what keeps the addon from having to know any packet's shape.
- * {@link ProtocolInfo#codec()} is a {@code PacketCodec<ByteBuf, Packet<? super T>>} covering every
+ * {@link NetworkState#codec()} is a {@code PacketCodec<ByteBuf, Packet<? super T>>} covering every
  * packet of a phase, including the packet id -- so a captured packet round-trips without this mod
  * ever naming its fields. Chunk formats, entity data types and the rest change between versions;
  * none of that reaches this class.
@@ -39,7 +39,7 @@ public final class PacketWire {
     /** The clientbound game-phase codec, bound to one connection's registries. */
     public static PacketCodec<ByteBuf, Packet<? super ClientPlayPacketListener>> gameCodec(
             DynamicRegistryManager registries) {
-        ProtocolInfo<ClientPlayPacketListener> info =
+        NetworkState<ClientPlayPacketListener> info =
                 PlayStateFactories.S2C.bind(
                         RegistryByteBuf.makeFactory(registries));
         return info.codec();
@@ -57,7 +57,7 @@ public final class PacketWire {
     }
 
     /** Serializes one packet to its wire bytes, id included. */
-    public static <T extends net.minecraft.network.PacketListener> byte[] encode(
+    public static <T extends net.minecraft.network.listener.PacketListener> byte[] encode(
             PacketCodec<ByteBuf, Packet<? super T>> codec, Packet<? super T> packet) {
         ByteBuf buf = Unpooled.buffer();
         try {
@@ -71,7 +71,7 @@ public final class PacketWire {
     }
 
     /** Reads one packet back from wire bytes produced by {@link #encode}. */
-    public static <T extends net.minecraft.network.PacketListener> Packet<? super T> decode(
+    public static <T extends net.minecraft.network.listener.PacketListener> Packet<? super T> decode(
             PacketCodec<ByteBuf, Packet<? super T>> codec, byte[] bytes) {
         ByteBuf buf = Unpooled.wrappedBuffer(bytes);
         try {

@@ -88,6 +88,11 @@ class SpectateRoutingTest {
         final List<Byte> controlTypes = Collections.synchronizedList(new ArrayList<>());
         final List<Byte> denyReasons = Collections.synchronizedList(new ArrayList<>());
 
+        /** How many roster messages this client has been sent, and the size of the last. */
+        final java.util.concurrent.atomic.AtomicInteger rosters =
+                new java.util.concurrent.atomic.AtomicInteger();
+        volatile int lastRosterSize = -1;
+
         /** The Minecraft version this client claims; two clients must match to be paired. */
         private final String gameVersion;
 
@@ -127,6 +132,10 @@ class SpectateRoutingTest {
                     send(GSON.toJson(response));
                 }
                 case "auth-ok" -> authed.countDown();
+                case "roster" -> {
+                    lastRosterSize = obj.getAsJsonArray("peers").size();
+                    rosters.incrementAndGet();
+                }
                 default -> { }
             }
         }
@@ -324,6 +333,46 @@ class SpectateRoutingTest {
         viewer.requestSession(target.uuid);
         settle();
         assertTrue(viewer.sawType(Wire.TYPE_SESSION_READY), "matching versions were refused");
+    }
+
+    /**
+     * A consent update that says what the service already knows must change nothing.
+     *
+     * <p>Clients re-send consent on a timer rather than only when it changes, so this is the
+     * common case, not an edge one. The withhold path originally rebroadcast unconditionally,
+     * which meant one client sitting with spectating turned off pushed the whole roster to every
+     * connected client every few seconds indefinitely.
+     */
+    @Test
+    void arepeatedConsentUpdateDoesNotRebroadcast() throws Exception {
+        TestClient target = connect("target");
+        TestClient viewer = connect("viewer");
+        settle();
+
+        target.sendConsent(true);
+        settle();
+        int after = viewer.rosters.get();
+        assertTrue(after > 0, "the first consent change sent no roster");
+        assertEquals(1, viewer.lastRosterSize, "target missing from the roster");
+
+        // Three more updates saying exactly what was already reported.
+        target.sendConsent(true);
+        target.sendConsent(true);
+        target.sendConsent(true);
+        settle();
+        assertEquals(after, viewer.rosters.get(), "an unchanged consent update rebroadcast");
+
+        // And the same for a client that stays off.
+        viewer.sendConsent(false);
+        viewer.sendConsent(false);
+        settle();
+        assertEquals(after, viewer.rosters.get(), "an unchanged withhold rebroadcast");
+
+        // A real change still does broadcast.
+        target.sendConsent(false);
+        settle();
+        assertTrue(viewer.rosters.get() > after, "a real consent change sent no roster");
+        assertEquals(0, viewer.lastRosterSize, "withdrawn target still listed");
     }
 
     @Test

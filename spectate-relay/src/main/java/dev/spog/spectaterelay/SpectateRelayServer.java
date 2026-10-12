@@ -268,16 +268,19 @@ public final class SpectateRelayServer extends WebSocketServer {
         }
         boolean was = session.allowsViewers();
         session.setAllowsViewers(obj.get("allowsViewers").getAsBoolean());
-        if (was != session.allowsViewers()) {
-            LOG.info("{} consent -> {}", session.uuid(), session.allowsViewers());
-        }
-        if (session.allowsViewers()) {
-            if (!was) {
-                broadcastRoster();
-            }
+
+        // Clients re-send consent on a timer, not only when it changes, so most updates say
+        // what the service already knows. Only a change is worth telling anyone about: the
+        // unguarded path here rebroadcast the whole roster to every client every few seconds
+        // for as long as one client had spectating turned off.
+        if (was == session.allowsViewers()) {
             return;
         }
+        LOG.info("{} consent -> {}", session.uuid(), session.allowsViewers());
         broadcastRoster();
+        if (session.allowsViewers()) {
+            return;
+        }
 
         // Withdrawing consent must take effect immediately, not at the next session request:
         // anyone already watching has to be cut off.

@@ -1,16 +1,15 @@
 package dev.spog.relayspectate;
 
-import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.util.InputUtil;
 import dev.spog.relayspectate.capture.CaptureHooks;
 import dev.spog.relayspectate.ui.MenuButton;
 import dev.spog.relayspectate.ui.SpectateScreen;
 import dev.spog.relayspectate.ui.WatchedIndicator;
-import dev.spog.teamlocator.client.TeamLocatorClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.MinecraftClient;
@@ -23,8 +22,11 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Separate mod jar rather than part of Relay: spectating is a niche feature with a much larger
  * surface than the rest of the mod (an in-process server, a second socket, a second service), and
- * keeping it out means a Relay user who does not want it does not ship it. The addon reads Relay's
- * trust list and config; Relay itself is unaware of the addon.
+ * keeping it out means a Relay user who does not want it does not ship it.
+ *
+ * <p>Standalone: it keeps its own trust list, service address and keybind-name window, so it runs
+ * with or without Relay. If Relay is installed its settings are imported once on first run (see
+ * {@link SpectateRelayImport}), and after that the two are unrelated.
  */
 @Environment(EnvType.CLIENT)
 public final class SpectateClient implements ClientModInitializer {
@@ -37,7 +39,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "concurrent-12";
+    public static final String BUILD_MARKER = "standalone-13+1.21.11";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -51,18 +53,18 @@ public final class SpectateClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        KeyBinding.Category category = KeyBinding.Category.register(
+        KeyBinding.Category category = KeyBinding.Category.create(
                 Identifier.of(MOD_ID, "main"));
-        int unbound = InputConstants.UNKNOWN.getValue();
+        int unbound = InputUtil.UNKNOWN_KEY.getCode();
         // Unbound by default, matching Relay's convention: binding is a deliberate choice.
-        openMenuKey = KeyMappingHelper.registerKeyMapping(new KeyBinding(
-                "key.relayspectate.open_menu", InputConstants.Type.KEYSYM, unbound, category));
-        stopKey = KeyMappingHelper.registerKeyMapping(new KeyBinding(
-                "key.relayspectate.stop", InputConstants.Type.KEYSYM, unbound, category));
+        openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relayspectate.open_menu", InputUtil.Type.KEYSYM, unbound, category));
+        stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relayspectate.stop", InputUtil.Type.KEYSYM, unbound, category));
         // Refocus puts a free-flying viewer back on the target. Unbound by default like the
         // others, so it is a deliberate choice rather than a key taken from the player.
-        refocusKey = KeyMappingHelper.registerKeyMapping(new KeyBinding(
-                "key.relayspectate.refocus", InputConstants.Type.KEYSYM, unbound, category));
+        refocusKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relayspectate.refocus", InputUtil.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(WatchedIndicator.ID, new WatchedIndicator());
         // The menu button, not the keybind, is how a session is started: see MenuButton for why
@@ -139,14 +141,19 @@ public final class SpectateClient implements ClientModInitializer {
 
         // The socket is wanted whenever this client could be either role: in-game it may be a
         // target, and in the menu it may be a viewer. So it is kept up in both cases, but only
-        // once Relay itself is configured -- the addon has no service address of its own to fall
-        // back on.
+        // once a service address is configured.
+        //
+        // The trust set is re-sent on this interval rather than only on change, so the service's
+        // view cannot drift from the config's: a dropped frame or a reconnect would otherwise
+        // leave it enforcing a stale set, which for a set that revokes access is the wrong way to
+        // fail. It is also what makes turning allowSpectators off take effect within the interval
+        // without any explicit revoke message.
         if (++tickCounter >= TRUST_INTERVAL_TICKS) {
             tickCounter = 0;
             String url = SpectateConfig.get().serviceWebSocketUrl();
             if (url != null) {
                 manager.connect(url);
-                manager.sendTrust(TeamLocatorClient.CONFIG.effectiveSharingSet());
+                manager.sendTrust(SpectateTrust.allowedViewers());
             }
         }
 

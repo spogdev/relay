@@ -7,7 +7,7 @@ import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkLoadDistanceS2CPacket;
 import net.minecraft.network.packet.s2c.play.CommonPlayerSpawnInfo;
-import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.entity.EntityPosition;
 import com.mojang.authlib.GameProfile;
 import dev.spog.relayspectate.capture.TabList;
 import net.minecraft.client.MinecraftClient;
@@ -153,7 +153,7 @@ public final class JoinSequence {
                                                            float yaw, float pitch) {
         return new PlayerPositionLookS2CPacket(
                 0,
-                new PositionMoveRotation(new Vec3d(x, y, z), Vec3d.ZERO, yaw, pitch),
+                new EntityPosition(new Vec3d(x, y, z), Vec3d.ZERO, yaw, pitch),
                 Set.of());
     }
 

@@ -6,7 +6,7 @@ import io.netty.buffer.ByteBuf;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientLoginNetworkHandler;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.multiplayer.LevelLoadTracker;
 import net.minecraft.registry.DynamicRegistryManager;
 import net.minecraft.network.ClientConnection;

@@ -3,9 +3,8 @@ package dev.spog.relayspectate.ui;
 import dev.spog.relayspectate.SpectateLang;
 import dev.spog.relayspectate.SpectateManager;
 import dev.spog.relayspectate.host.ViewerSession;
-import dev.spog.teamlocator.client.TeamLocatorClient;
-import dev.spog.teamlocator.client.config.TeamConfig;
-import dev.spog.teamlocator.client.config.TrustEntry;
+import dev.spog.relayspectate.SpectateConfig;
+import dev.spog.relayspectate.SpectateTrust;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.screen.Screen;
@@ -18,11 +17,14 @@ import java.util.UUID;
 /**
  * Lists the teammates this player can spectate, and starts a session on click.
  *
- * <p>The list comes from Relay's own trust list, which is the closest thing available to "who might
- * let me watch them". It is only a candidate list: whether a given player actually trusts this one
- * is decided by the service, which holds both sides' trust sets -- this client knows who <em>it</em>
- * trusts, not who trusts it. So a row may be clicked and refused, and the refusal arrives as a deny
- * frame rather than being predicted here.
+ * <p>The list comes from this addon's own trust list, which is the closest thing available to "who
+ * might let me watch them". It is only a candidate list: whether a given player actually trusts
+ * this one is decided by the service, which holds both sides' trust sets -- this client knows who
+ * <em>it</em> trusts, not who trusts it. So a row may be clicked and refused, and the refusal
+ * arrives as a deny frame rather than being predicted here.
+ *
+ * <p>The screen also carries the "allow others to spectate me" switch, because this is the only
+ * place the feature surfaces and a privacy control nobody can find is not much of a control.
  *
  * <p>Reachable from the main menu as well as in-game, which is the point of the feature; it reads
  * no world state.
@@ -72,30 +74,39 @@ public final class SpectateScreen extends Screen {
             }
         }
 
+        // Sits above Close, away from the target rows, so "stop people watching me" cannot be
+        // misclicked while picking who to watch.
+        addDrawableChild(ButtonWidget.builder(
+                allowLabel(),
+                b -> {
+                    SpectateConfig config = SpectateConfig.get();
+                    config.allowSpectators = !config.allowSpectators;
+                    config.save();
+                    // Pushed immediately rather than waiting for the periodic upload: this is a
+                    // revocation, and a revocation that takes effect in a few seconds' time is
+                    // not one the player would consider honoured.
+                    SpectateManager.get().sendTrust(SpectateTrust.allowedViewers());
+                    clearAndInit();
+                }).dimensions(centerX, height - 56, BUTTON_WIDTH, 20).build());
+
         addDrawableChild(ButtonWidget.builder(
                 SpectateLang.text("menu.close"),
                 b -> onClose()).dimensions(centerX, height - 32, BUTTON_WIDTH, 20).build());
     }
 
+    private static Text allowLabel() {
+        return SpectateLang.text(SpectateConfig.get().allowSpectators
+                ? "menu.allow_on" : "menu.allow_off");
+    }
+
     private record Candidate(UUID id, String name) {
     }
 
-    /** Relay's trust list for the active scope, as spectate candidates. */
+    /** This addon's trust list, as spectate candidates. */
     private List<Candidate> candidates() {
         List<Candidate> out = new ArrayList<>();
-        TeamConfig.TrustList list = TeamLocatorClient.CONFIG.activeList();
-        if (list == null) {
-            return out;
-        }
-        for (TrustEntry entry : list.trusted) {
-            try {
-                out.add(new Candidate(entry.uuid(),
-                        entry.name == null || entry.name.isBlank()
-                                ? entry.uuid().toString().substring(0, 8)
-                                : entry.name));
-            } catch (IllegalArgumentException ignored) {
-                // A malformed uuid in the config is skipped rather than failing the screen.
-            }
+        for (SpectateTrust.Entry entry : SpectateTrust.candidates()) {
+            out.add(new Candidate(entry.id(), entry.display()));
         }
         return out;
     }

@@ -2,7 +2,6 @@ package dev.spog.relayspectate;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import dev.spog.teamlocator.client.TeamLocatorClient;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -18,9 +17,9 @@ import java.nio.file.Path;
  * validates, and an older Relay reading a newer file is a compatibility question this avoids
  * entirely.
  *
- * <p>Only the service address is configurable. Everything else that could be a setting -- capture
- * radius, session limits -- is a protocol constant, because both ends have to agree on it and a
- * client-side toggle could not change what the other end sends.
+ * <p>Capture radius and session limits are deliberately not settings: both ends have to agree on
+ * them, so a client-side toggle could not change what the other end sends. What is configurable is
+ * what this client decides locally -- the service address, who may watch, and whether anyone may.
  */
 public final class SpectateConfig {
     /**
@@ -37,10 +36,45 @@ public final class SpectateConfig {
     private static SpectateConfig instance;
 
     /**
-     * The spectate service address, as {@code host} or {@code host:port}. Blank means "derive it
-     * from Relay's address and the default port".
+     * The spectate service address, as {@code host} or {@code host:port}.
+     *
+     * <p>Required. This used to fall back to Relay's configured host, which is what made Relay a
+     * hard dependency for a feature that otherwise only needed an address; the addon now asks for
+     * its own. On first run it is seeded from Relay's address if Relay happens to be installed
+     * (see {@link SpectateRelayImport}), so an existing setup keeps working without being
+     * reconfigured, but nothing afterwards consults Relay.
      */
     public String serviceAddress = "";
+
+    /**
+     * Whether anyone may spectate this client at all.
+     *
+     * <p>A master switch over {@link #trusted}, and the honest answer to "I do not want to be
+     * watched right now": it empties the set uploaded to the service, so the refusal happens at
+     * the service rather than relying on the other client to behave. Turning it off does not
+     * forget the list, so turning it back on restores exactly who was trusted before.
+     *
+     * <p>Defaults to on, matching the previous behaviour -- an upgrade should not silently revoke
+     * access that already worked.
+     */
+    public boolean allowSpectators = true;
+
+    /**
+     * Who may watch this client, and who the menu offers to watch.
+     *
+     * <p>The addon's own list rather than Relay's position-sharing set, because those answer
+     * different questions -- see {@link SpectateTrust}.
+     */
+    public java.util.List<SpectateTrust.Entry> trusted = new java.util.ArrayList<>();
+
+    /**
+     * Whether the one-time import from Relay's trust list has already run.
+     *
+     * <p>Recorded so the import happens once and not every launch. Without it, pruning someone
+     * from the spectate list would be undone at the next start by re-importing them from Relay,
+     * and there would be no way to keep a spectate list narrower than the map-sharing one.
+     */
+    public boolean importedFromRelay = false;
 
     /** Whether to show the indicator when someone is watching. */
     public boolean showWatchedIndicator = true;
@@ -61,7 +95,10 @@ public final class SpectateConfig {
 
     public static synchronized SpectateConfig get() {
         if (instance == null) {
+            // Assigned before the import runs, because the import calls save(), which would
+            // otherwise re-enter get() on a still-null instance and recurse.
             instance = load();
+            SpectateRelayImport.runOnce(instance);
         }
         return instance;
     }
@@ -77,6 +114,11 @@ public final class SpectateConfig {
                 String json = Files.readString(file, StandardCharsets.UTF_8);
                 SpectateConfig loaded = new Gson().fromJson(json, SpectateConfig.class);
                 if (loaded != null) {
+                    if (loaded.trusted == null) {
+                        // Absent from a config written before the list existed, and Gson leaves
+                        // it null rather than keeping the field initialiser.
+                        loaded.trusted = new java.util.ArrayList<>();
+                    }
                     return loaded;
                 }
             } catch (IOException | RuntimeException e) {
@@ -100,28 +142,23 @@ public final class SpectateConfig {
     /**
      * The service's WebSocket URL, or null if no address can be determined.
      *
-     * <p>Defaults to Relay's own host, unchanged -- same host, same port, different path -- because
-     * the service is expected to sit behind the same reverse proxy. An earlier version appended a
-     * port here, which produced {@code wss://host:8090/spectate}: that bypasses the proxy, so it
-     * needed the port open to the internet and serving its own certificate, and against a
-     * localhost-bound service it simply could not connect.
-     *
-     * <p>{@link #serviceAddress} overrides the host, and may carry its own port
+     * <p>The address carries no port in the usual deployment -- same host, same port, different
+     * path -- because the service is expected to sit behind the same reverse proxy as everything
+     * else. An earlier version appended a port here, which produced
+     * {@code wss://host:8090/spectate}: that bypasses the proxy, so it needed the port open to the
+     * internet and serving its own certificate, and against a localhost-bound service it simply
+     * could not connect. {@link #serviceAddress} may still carry its own port
      * ({@code host:port}) for a service that really is exposed directly -- a local dev instance,
      * most usefully.
      *
-     * <p>Scheme follows Relay's: {@code wss://} unless the host is plainly local, so a default
-     * deployment is encrypted while a developer testing against localhost is not forced to set up
-     * TLS.
+     * <p>Scheme is inferred rather than configured: {@code wss://} unless the host is plainly
+     * local, so a real deployment is encrypted by default while a developer testing against
+     * localhost is not forced to set up TLS.
      */
     public String serviceWebSocketUrl() {
         String address = serviceAddress == null ? "" : serviceAddress.trim();
         if (address.isEmpty()) {
-            String relay = TeamLocatorClient.CONFIG.relayUrl;
-            if (relay == null || relay.isBlank()) {
-                return null;
-            }
-            address = relay.trim();
+            return null;
         }
         String scheme = isLocal(address) ? "ws://" : "wss://";
         return scheme + address + SERVICE_PATH;

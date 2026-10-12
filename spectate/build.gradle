@@ -25,14 +25,10 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // The addon reads the main mod's trust list and relay connection. compileOnly because at
-    // runtime Relay is a separate jar loaded by Fabric, declared as a hard dependency in
-    // fabric.mod.json -- bundling it would put two copies of every class on the classpath.
-    //
-    // This takes Relay's compiled classes rather than `rootProject`, which would also drag in its
-    // published dependencies (Mod Menu, the Xaero builds) that the addon never touches and that
-    // would otherwise have to resolve for this module to configure at all.
-    compileOnly rootProject.sourceSets.main.output
+    // No dependency on Relay, by design: the addon keeps its own trust list, service address and
+    // keybind-name window, and runs with or without it. The one place Relay is still named --
+    // the first-run settings import in SpectateRelayImport -- reaches it reflectively, precisely
+    // so that an absent Relay is a quiet no-op rather than a NoClassDefFoundError at launch.
 }
 
 processResources {

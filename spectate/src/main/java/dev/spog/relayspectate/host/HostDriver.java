@@ -383,7 +383,7 @@ public final class HostDriver {
         }
         connection.send(new net.minecraft.network.packet.s2c.play.EntityPositionSyncS2CPacket(
                 entityId,
-                new net.minecraft.world.entity.PositionMoveRotation(
+                new net.minecraft.entity.EntityPosition(
                         new net.minecraft.util.math.Vec3d(x, y, z),
                         net.minecraft.util.math.Vec3d.ZERO,
                         yaw, pitch),

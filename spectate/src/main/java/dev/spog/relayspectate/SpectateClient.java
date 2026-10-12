@@ -24,9 +24,8 @@ import org.slf4j.LoggerFactory;
  * surface than the rest of the mod (an in-process server, a second socket, a second service), and
  * keeping it out means a Relay user who does not want it does not ship it.
  *
- * <p>Standalone: it keeps its own trust list, service address and keybind-name window, so it runs
- * with or without Relay. If Relay is installed its settings are imported once on first run (see
- * {@link SpectateRelayImport}), and after that the two are unrelated.
+ * <p>Standalone: it keeps its own trust list, service address and keybind-name window, and reads
+ * nothing from Relay. The two share a service host and nothing else.
  */
 @Environment(EnvType.CLIENT)
 public final class SpectateClient implements ClientModInitializer {

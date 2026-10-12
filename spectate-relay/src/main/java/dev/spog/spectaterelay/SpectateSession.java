@@ -19,6 +19,15 @@ public final class SpectateSession {
     /** Set once Mojang verification succeeds; null while unauthenticated. */
     private volatile UUID uuid;
     private volatile String profileName;
+
+    /**
+     * The Minecraft version this client runs, from its hello.
+     *
+     * <p>Kept so two clients that cannot decode each other's packets are never paired; see
+     * {@code Wire.DENY_VERSION}. Null from a client too old to report it, which is treated as
+     * unknown rather than as a match.
+     */
+    private volatile String gameVersion;
     private volatile String pendingServerId;
 
     /** Who this client trusts, as reported by its own client. Used to gate inbound requests. */
@@ -36,6 +45,14 @@ public final class SpectateSession {
 
     public WebSocket conn() {
         return conn;
+    }
+
+    public String gameVersion() {
+        return gameVersion;
+    }
+
+    public void setGameVersion(String version) {
+        this.gameVersion = version;
     }
 
     public UUID uuid() {

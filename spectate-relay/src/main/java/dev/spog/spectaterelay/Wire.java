@@ -35,6 +35,12 @@ public final class Wire {
     public static final byte DENY_REVOKED = 0x03;
     public static final byte DENY_BUSY = 0x04;
 
+    /**
+     * The two clients run different Minecraft versions, so the viewer could not decode the
+     * target's packets. Checked here because the service is the only party that sees both.
+     */
+    public static final byte DENY_VERSION = 0x05;
+
     // target -> relay -> viewer
     public static final byte TYPE_HANDSHAKE = 0x20;
     public static final byte TYPE_GAME_PACKET = 0x21;

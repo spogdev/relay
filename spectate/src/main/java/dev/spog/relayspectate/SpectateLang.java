@@ -64,6 +64,8 @@ public final class SpectateLang {
                     "%s needs to rejoin their server before they can be spectated."),
             Map.entry("deny.revoked", "%s revoked your access."),
             Map.entry("deny.busy", "You are already spectating someone."),
+            Map.entry("deny.version",
+                    "%s is on a different Minecraft version -- spectating needs the same one."),
             Map.entry("error.no_service", "The spectate service is not configured."),
             Map.entry("error.failed", "The spectate session could not start."),
             Map.entry("error.in_world", "Leave your world first -- spectating replaces it."),

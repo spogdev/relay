@@ -164,6 +164,8 @@ public final class SpectateRelayServer extends WebSocketServer {
             session.conn().close();
             return;
         }
+        session.setGameVersion(obj.has("gameVersion")
+                ? obj.get("gameVersion").getAsString() : null);
         String name = obj.has("profileName") ? obj.get("profileName").getAsString() : null;
         if (name == null || name.isBlank()) {
             session.conn().close();
@@ -259,6 +261,19 @@ public final class SpectateRelayServer extends WebSocketServer {
         }
         if (!target.trusts(viewer.uuid())) {
             viewer.conn().send(Wire.deny(Wire.DENY_NOT_TRUSTED, "Target does not trust you"));
+            return;
+        }
+        // Checked after trust, so a viewer the target does not trust learns nothing about what
+        // the target is running.
+        String viewerVersion = viewer.gameVersion();
+        String targetVersion = target.gameVersion();
+        if (viewerVersion == null || targetVersion == null
+                || !viewerVersion.equals(targetVersion)) {
+            LOG.info("refused {} -> {}: versions {} and {}",
+                    viewer.uuid(), targetId, viewerVersion, targetVersion);
+            viewer.conn().send(Wire.deny(Wire.DENY_VERSION,
+                    targetVersion == null ? "Target is on a different Minecraft version"
+                            : "Target is on Minecraft " + targetVersion));
             return;
         }
         target.addViewer(viewer.uuid());

@@ -113,6 +113,9 @@ public final class SpectateClientSocket {
         JsonObject hello = new JsonObject();
         hello.addProperty("type", "hello");
         hello.addProperty("version", SpectateProtocol.VERSION);
+        // The Minecraft version, so the service can refuse to pair two clients that cannot
+        // understand each other's packets. See SpectateProtocol.DENY_VERSION.
+        hello.addProperty("gameVersion", net.minecraft.SharedConstants.getCurrentVersion().name());
         hello.addProperty("profileName", mc.getUser().getName());
         sendText(gson.toJson(hello));
     }

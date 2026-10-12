@@ -70,6 +70,31 @@ public final class SpectateProtocol {
     public static final byte DENY_REVOKED = 0x03;
     public static final byte DENY_BUSY = 0x04;
 
+    /**
+     * The two clients are running different Minecraft versions.
+     *
+     * <p>Spectating cannot work across them, and the reason is structural rather than a missing
+     * feature. A viewer decodes the target's captured packets with its own version's protocol
+     * codec: packet ids, field layouts, chunk formats and entity data types all change between
+     * versions, so the bytes a 1.21.11 target produces do not mean the same thing to a 26.x
+     * viewer. The failure is also not clean -- an id that is still valid in the other version
+     * decodes as a different packet rather than erroring -- so the viewer would get a corrupted
+     * world or a crash with nothing naming the cause.
+     *
+     * <p>Denied up front, by the service, because it is the only party that sees both clients
+     * before anything is streamed.
+     *
+     * <p>A protocol translator such as ViaFabricPlus does not bridge this, for three separate
+     * reasons. It installs its pipeline on a client's outbound connection to a remote server, and
+     * the viewer's connection here is an in-process Netty LocalChannel this mod creates, which is
+     * not in that path. Its direction is also wrong: it adapts a newer client joining an older
+     * server, whereas these packets arrive as opaque bytes over a WebSocket rather than through a
+     * connection it manages. And translation at the viewer would not be enough on its own, since
+     * the registries replayed in the handshake carry the target's own block, item and biome ids,
+     * which differ between versions -- so entity data and block states would still not line up.
+     */
+    public static final byte DENY_VERSION = 0x05;
+
     // ---- target -> relay -> viewer ----
 
     /**

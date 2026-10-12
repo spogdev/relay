@@ -89,10 +89,18 @@ class SpectateRoutingTest {
         final List<Byte> controlTypes = Collections.synchronizedList(new ArrayList<>());
         final List<Byte> denyReasons = Collections.synchronizedList(new ArrayList<>());
 
+        /** The Minecraft version this client claims; two clients must match to be paired. */
+        private final String gameVersion;
+
         TestClient(String name) throws Exception {
+            this(name, "26.1.2");
+        }
+
+        TestClient(String name, String gameVersion) throws Exception {
             super(new URI("ws://127.0.0.1:" + port));
             this.name = name;
             this.uuid = uuidOf(name);
+            this.gameVersion = gameVersion;
         }
 
         @Override
@@ -102,6 +110,7 @@ class SpectateRoutingTest {
             // Track the real constant: a version bump should not silently fail every test with an
             // auth rejection, which is what a hardcoded number here produces.
             hello.addProperty("version", Wire.VERSION);
+            hello.addProperty("gameVersion", gameVersion);
             hello.addProperty("profileName", name);
             send(GSON.toJson(hello));
         }
@@ -181,7 +190,11 @@ class SpectateRoutingTest {
     }
 
     private TestClient connect(String name) throws Exception {
-        TestClient client = new TestClient(name);
+        return connect(name, "26.1.2");
+    }
+
+    private TestClient connect(String name, String gameVersion) throws Exception {
+        TestClient client = new TestClient(name, gameVersion);
         clients.add(client);
         assertTrue(client.connectBlocking(5, TimeUnit.SECONDS), name + " did not connect");
         client.awaitAuth();
@@ -260,6 +273,33 @@ class SpectateRoutingTest {
         viewer.requestSession(viewer.uuid);
         settle();
         assertFalse(viewer.sawType(Wire.TYPE_SESSION_READY), "self-spectate was allowed");
+    }
+
+    @Test
+    void aTargetOnAnotherVersionIsRefused() throws Exception {
+        // A viewer decodes the target's packets with its own version's protocol codec, so pairing
+        // across versions produces a corrupted world rather than a clean failure. The service is
+        // the only party that sees both clients before anything is streamed.
+        TestClient target = connect("target", "1.21.11");
+        TestClient viewer = connect("viewer", "26.1.2");
+        target.sendTrust(viewer.uuid);
+        settle();
+        viewer.requestSession(target.uuid);
+        settle();
+        assertTrue(viewer.denyReasons.contains(Wire.DENY_VERSION), "no version denial");
+        assertFalse(viewer.sawType(Wire.TYPE_SESSION_READY), "cross-version session started");
+    }
+
+    @Test
+    void matchingVersionsArePaired() throws Exception {
+        // The companion to the test above: the version gate must not refuse a legitimate pair.
+        TestClient target = connect("target", "26.3");
+        TestClient viewer = connect("viewer", "26.3");
+        target.sendTrust(viewer.uuid);
+        settle();
+        viewer.requestSession(target.uuid);
+        settle();
+        assertTrue(viewer.sawType(Wire.TYPE_SESSION_READY), "matching versions were refused");
     }
 
     @Test

@@ -203,9 +203,15 @@ public final class SpectateManager {
      * the session at the service, use {@link #discardViewing()}.
      */
     public void stopViewing() {
-        boolean had = discardViewing();
+        discardViewing();
         SpectateClientSocket s = socket;
-        if (had && s != null && s.isConnected()) {
+        // Sent whether or not a session was still held locally. The stream ending -- the target
+        // leaving, or a STREAM_END -- discards the session here, and the old guard then skipped
+        // the frame, so the service went on believing this client was watching and refused the
+        // next request as busy. That is the restart that does nothing until the menu is reopened
+        // and stop pressed a second time. The service is the authority on what it holds, and a
+        // stop for a session it has already forgotten is ignored there.
+        if (s != null && s.isConnected()) {
             s.stopSession();
         }
     }
@@ -589,6 +595,8 @@ public final class SpectateManager {
             session = new CaptureSession(this::queueCaptured);
             CaptureHooks.setSession(session);
             reportedSweepDone = false;
+            // A fresh viewer holds no terrain, whatever the last one was sent.
+            forgetSentTerrain();
         }
         session.addViewer(viewer);
 
@@ -626,6 +634,13 @@ public final class SpectateManager {
         session.removeViewer(viewer);
         if (!session.hasViewers()) {
             CaptureHooks.setSession(null);
+            forgetSentTerrain();
+            // Queued frames belong to the viewer that just left. Left in place they would be
+            // delivered to the next one ahead of its own opening sweep -- stale entity spawns
+            // among them -- and would spend its frame budget re-sending terrain it is about to
+            // be sent properly.
+            terrainBacklog.clear();
+            priorityBacklog.clear();
             SpectateClientSocket s = socket;
             if (s != null) {
                 s.sendStreamEnd();
@@ -803,9 +818,7 @@ public final class SpectateManager {
             // Forgotten when nobody is watching, so the next session starts from a clean slate
             // rather than believing it has already sent terrain to a viewer that never saw it.
             if (!sentChunks.isEmpty()) {
-                sentChunks.clear();
-                sweptCentreX = Integer.MIN_VALUE;
-                sweptCentreZ = Integer.MIN_VALUE;
+                forgetSentTerrain();
             }
             return;
         }
@@ -929,9 +942,7 @@ public final class SpectateManager {
         // Forgotten first: the viewer is asking precisely because it no longer has the terrain,
         // so what was sent before is not what it holds, and sendLoadedTerrain would otherwise be
         // free to skip nothing while the trailing sweep skipped everything.
-        sentChunks.clear();
-        sweptCentreX = Integer.MIN_VALUE;
-        sweptCentreZ = Integer.MIN_VALUE;
+        forgetSentTerrain();
         sendLoadedTerrain(s, session);
     }
 
@@ -1077,5 +1088,21 @@ public final class SpectateManager {
             }
         }
         return viewer.toString().substring(0, 8);
+    }
+
+    /**
+     * Forgets what terrain a viewer has been sent.
+     *
+     * <p>Called when a capture starts and when one ends, rather than left to
+     * {@link #sweepNewTerrain()} noticing later that no session exists: {@link #tick()} drains
+     * every queued main-thread task before that check runs, so a stop and a start arriving
+     * together never present a session-less moment and the new session would inherit the old
+     * one's record. A chunk is sent once, so an inherited record is terrain the new viewer
+     * never receives.
+     */
+    private void forgetSentTerrain() {
+        sentChunks.clear();
+        sweptCentreX = Integer.MIN_VALUE;
+        sweptCentreZ = Integer.MIN_VALUE;
     }
 }

@@ -1,6 +1,5 @@
 package dev.spog.relayspectate.host;
 
-import dev.spog.relayspectate.SpectateClient;
 import dev.spog.relayspectate.net.SpectateProtocol;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -60,8 +59,6 @@ public final class ChunkRepair {
     private final Map<Long, Integer> asked = new HashMap<>();
 
     private int ticks;
-    private int requested;
-    private int repaired;
 
     /**
      * Returns chunks to request, or an empty list when there is nothing to ask for.
@@ -122,12 +119,6 @@ public final class ChunkRepair {
                 missing.add(new ChunkPos(x, z));
             }
         }
-        if (!missing.isEmpty()) {
-            requested += missing.size();
-            SpectateClient.LOGGER.info(
-                    "spectate: requesting {} missing chunk(s) around {},{} ({})",
-                    missing.size(), centreX, centreZ, summary());
-        }
         // Expired entries dropped, so a session that walks a long way does not accumulate one
         // entry per chunk it ever passed through.
         asked.entrySet().removeIf(e -> ticks - e.getValue() > REASK_COOLDOWN_TICKS);
@@ -135,16 +126,14 @@ public final class ChunkRepair {
     }
 
     /**
-     * Notes that a requested chunk arrived, for the session summary.
+     * Notes that a requested chunk arrived, so it is not asked for again.
      *
-     * <p>Counted because "the repair loop is running" and "the repair loop is working" are
-     * different claims and only the second matters. A session that keeps requesting and never
-     * records a fill means the target is not answering, which is a different fault from the holes.
+     * <p>Called before the packet is handed on, so a chunk that arrives and is then rejected by
+     * the cache still counts as answered -- otherwise one the target supplied but the viewer
+     * discarded would be requested forever.
      */
     public void onChunkArrived(int x, int z) {
-        if (asked.remove(key(x, z)) != null) {
-            repaired++;
-        }
+        asked.remove(key(x, z));
     }
 
     /**
@@ -158,8 +147,4 @@ public final class ChunkRepair {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
 
-    /** Requested and filled counts, for the periodic summary. */
-    public String summary() {
-        return requested + " requested, " + repaired + " filled";
-    }
 }

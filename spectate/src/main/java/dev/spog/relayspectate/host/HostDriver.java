@@ -222,9 +222,9 @@ public final class HostDriver {
         // client discards every chunk as out of view range.
         if (hasPendingPosition) {
             applyPosition(pendingX, pendingY, pendingZ, pendingYaw, pendingPitch);
-            SpectateClient.LOGGER.info("spectate host: applied pending target position");
+            SpectateClient.LOGGER.debug("spectate host: applied pending target position");
         }
-        SpectateClient.LOGGER.info("spectate host: viewer entered game phase");
+        SpectateClient.LOGGER.debug("spectate host: viewer entered game phase");
         // After the position, so the queued chunks land against a correct view centre.
         onEnteredGame.run();
     }
@@ -447,7 +447,7 @@ public final class HostDriver {
         }
         announcedChunksLoaded = true;
         connection.send(JoinSequence.levelChunksLoaded());
-        SpectateClient.LOGGER.info("spectate host: announced level chunks loaded");
+        SpectateClient.LOGGER.debug("spectate host: announced level chunks loaded");
     }
 
     /**

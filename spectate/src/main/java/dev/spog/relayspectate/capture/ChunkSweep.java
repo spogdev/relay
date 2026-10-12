@@ -84,8 +84,6 @@ public final class ChunkSweep {
                 }
             }
         }
-        SpectateClient.LOGGER.info("spectate: packed {} loaded chunks around {},{}",
-                out.size(), center.x(), center.z());
         return out;
     }
 
@@ -110,12 +108,10 @@ public final class ChunkSweep {
             return out;
         }
         var lightEngine = level.getLightEngine();
-        int absent = 0;
         for (ChunkPos pos : wanted) {
             LevelChunk chunk = level.getChunkSource()
                     .getChunk(pos.x(), pos.z(), ChunkStatus.FULL, false);
             if (chunk == null) {
-                absent++;
                 continue;
             }
             try {
@@ -126,13 +122,6 @@ public final class ChunkSweep {
                         pos.x(), pos.z(), e);
             }
         }
-        // Both numbers reported. A request this client cannot answer at all is a different
-        // situation from one it answers fully -- the first means the viewer is asking about
-        // terrain the target no longer holds, which the viewer cannot know and would otherwise
-        // keep asking about.
-        SpectateClient.LOGGER.info(
-                "spectate: repacked {} of {} requested chunk(s); {} not held by this client",
-                out.size(), wanted.size(), absent);
         return out;
     }
 
@@ -159,55 +148,14 @@ public final class ChunkSweep {
             return out;
         }
         int blockRadius = SpectateProtocol.SWEEP_RADIUS_CHUNKS * 16;
-        // Logged on entry, not just on completion. The completion line not appearing at all is
-        // itself a finding -- it means this never ran, or ran and threw -- and that cannot be told
-        // apart from a missing line when there is only one.
-        SpectateClient.LOGGER.info("spectate: sweeping entities within {} blocks", blockRadius);
-        // Players counted separately from everything else. "Players are invisible" has been
-        // diagnosed several times from the viewer's end alone, and the one fact that would have
-        // localised it immediately -- whether the target even swept any other players, and
-        // whether distance excluded them -- was never in either log.
-        int players = 0;
-        int playersOutOfRange = 0;
-        int items = 0;
-        int itemsWithoutStack = 0;
-        int itemPackets = 0;
+        double maxDistSqr = (double) blockRadius * blockRadius;
         for (Entity entity : level.entitiesForRendering()) {
-            if (entity instanceof net.minecraft.world.entity.player.Player && entity != self) {
-                if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
-                    playersOutOfRange++;
-                } else {
-                    players++;
-                }
-            }
-            if (entity instanceof net.minecraft.world.entity.item.ItemEntity item
-                    && entity.distanceToSqr(self.position())
-                            <= (double) blockRadius * blockRadius) {
-                items++;
-                // Counted because an item entity with no stack in its synced data renders as
-                // nothing at all, which is indistinguishable from the entity never arriving.
-                if (item.getItem().isEmpty()) {
-                    itemsWithoutStack++;
-                }
-                int before = out.size();
-                addEntity(out, item);
-                // Two packets per entity -- the spawn and its data -- so anything less means the
-                // data was judged empty and the item will render as nothing.
-                if (out.size() - before == 2) {
-                    itemPackets++;
-                } else {
-                    SpectateClient.LOGGER.warn(
-                            "spectate: item {} packed {} packet(s), not 2; stack={}",
-                            item.getId(), out.size() - before, item.getItem());
-                }
-                continue;
-            }
             if (entity == self) {
                 // The target's own player entity is not in its client's entity list as something
                 // to spawn for others; it is handled as the local player. It is sent below.
                 continue;
             }
-            if (entity.distanceToSqr(self.position()) > (double) blockRadius * blockRadius) {
+            if (entity.distanceToSqr(self.position()) > maxDistSqr) {
                 continue;
             }
             addEntity(out, entity);
@@ -215,12 +163,6 @@ public final class ChunkSweep {
         // The target itself, last, so the camera has something to attach to even if the list above
         // was empty.
         addEntity(out, self);
-        SpectateClient.LOGGER.info(
-                "spectate: packed {} entity packets, including {} other player(s)"
-                        + " ({} beyond the {}-block sweep radius) and {} dropped item(s)"
-                        + " ({} with an empty stack, {} fully packed)",
-                out.size(), players, playersOutOfRange, blockRadius, items, itemsWithoutStack,
-                itemPackets);
         return out;
     }
 

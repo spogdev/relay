@@ -50,14 +50,6 @@ public final class CaptureSession {
 
     /** Counts packets this session could not re-encode, so a burst reports once. */
     private volatile long encodeFailures;
-    /** Packets the filter declined, for the one-line summary. */
-    private volatile long filteredPackets;
-    /** Packets actually forwarded, for the one-line summary. */
-    private volatile long forwardedPackets;
-    /** Chunk packets forwarded live, as opposed to swept, for the one-line summary. */
-    private volatile long liveChunks;
-    /** Chunk packets the radius filter rejected, for the one-line summary. */
-    private volatile long chunksOutOfRange;
 
     public CaptureSession(java.util.function.BiConsumer<Packet<?>, byte[]> sink) {
         this.sink = sink;
@@ -107,16 +99,6 @@ public final class CaptureSession {
             return;
         }
         if (!CaptureFilter.isForwardable(packet)) {
-            // Counted by class, and reported once. A packet kind that a viewer turns out to need
-            // is otherwise invisible here: dropping it is the normal case for most of the stream,
-            // so there is nothing to warn about, and the only symptom is something missing in the
-            // viewer's world with no record of what. Bundled packets were dropped this way for
-            // the whole of this feature's development.
-            long n = ++filteredPackets;
-            if (n == 1 || n % 10000 == 0) {
-                SpectateClient.LOGGER.debug("spectate: {} packet(s) not forwarded, latest {}",
-                        n, packet.getClass().getSimpleName());
-            }
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -125,13 +107,6 @@ public final class CaptureSession {
             return;
         }
         if (!CaptureFilter.isWithinRadius(packet, localChunk(mc))) {
-            // Counted separately from the filter's other rejections. A chunk dropped for distance
-            // is the one rejection that is expected to be rare and that a viewer notices
-            // immediately as terrain that never appears, so it needs to be distinguishable from
-            // the ordinary filtered traffic in the summary.
-            if (CaptureFilter.isChunkPacket(packet)) {
-                chunksOutOfRange++;
-            }
             return;
         }
         try {
@@ -144,10 +119,8 @@ public final class CaptureSession {
             Packet<? super ClientGamePacketListener> game =
                     (Packet<? super ClientGamePacketListener>) packet;
             sink.accept(packet, PacketWire.encode(c, game));
-            forwardedPackets++;
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;
-                liveChunks++;
             }
         } catch (RuntimeException e) {
             // A packet this mod cannot re-encode must not break the target's own game: drop it and
@@ -169,13 +142,6 @@ public final class CaptureSession {
     private static ChunkPos localChunk(Minecraft mc) {
         Player player = mc.player;
         return player == null ? null : player.chunkPosition();
-    }
-
-    /** Forwarded, filtered and failed counts, for one summary line per session. */
-    public String frameSummary() {
-        return forwardedPackets + " forwarded, " + filteredPackets + " filtered, "
-                + encodeFailures + " failed to encode, " + liveChunks + " live chunk(s), "
-                + chunksOutOfRange + " chunk(s) out of range";
     }
 
     public boolean handshakeSent() {

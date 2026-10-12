@@ -60,7 +60,6 @@ public final class SpectateManager {
     private volatile ViewerSession viewing;
     /** Set once the first sweep has fully drained, so the log line is not repeated per tick. */
     private boolean reportedSweepDone;
-    private int captureTicks;
     private int positionTicks;
     private int viewerTicks;
     /** Swing time seen on the previous report, to detect a restarted swing. */
@@ -98,31 +97,7 @@ public final class SpectateManager {
     private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> priorityBacklog =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
 
-    /**
-     * Inbound frame counts by type, for one summary line per session.
-     *
-     * <p>Worth the few lines: the loss between "the target sent 421 chunks" and "the viewer
-     * rendered nothing" has been chased across several rounds by comparing two logs that each
-     * describe only their own end, and the service in between is not visible in either. Counting
-     * what actually arrived, by type, turns that into one line.
-     */
-    private final java.util.concurrent.ConcurrentHashMap<Byte, java.util.concurrent.atomic.AtomicInteger>
-            inboundFrames = new java.util.concurrent.ConcurrentHashMap<>();
 
-    private void countInboundFrame(byte type) {
-        inboundFrames.computeIfAbsent(type,
-                ignored -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
-    }
-
-    private String inboundFrameSummary() {
-        StringBuilder out = new StringBuilder();
-        inboundFrames.entrySet().stream()
-                .sorted(java.util.Map.Entry.comparingByKey())
-                .forEach(e -> out.append(out.isEmpty() ? "" : " ")
-                        .append(String.format("0x%02x", e.getKey()))
-                        .append('=').append(e.getValue().get()));
-        return out.isEmpty() ? "none" : out.toString();
-    }
     private boolean reportedUnavailable;
 
     /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
@@ -266,39 +241,22 @@ public final class SpectateManager {
         drainTerrainBacklog();
         reportPositionIfStreaming();
         resendTabListIfTexturesArrived();
-        reportCaptureOnce();
         sweepNewTerrain();
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
             requestMissingChunks(session);
-            // One summary a few seconds in, so a blank world can be told apart from a world whose
-            // terrain never arrived without needing a packet-by-packet log.
-            // Repeated like the capture summary, and for the same reason: terrain that fails to
-            // arrive as the target walks cannot be seen in a snapshot taken at five seconds.
-            if (viewerTicks > 0 && viewerTicks % 300 == 0) {
-                SpectateClient.LOGGER.info("spectate: viewer -- {}; {}",
-                        session.chunkSummary(), session.playerSummary());
-            }
+            // Kept, unlike the periodic summaries this sat alongside: it fires only when a
+            // session has failed, and the alternative is vanilla's "Timed out while waiting for
+            // the client to load chunks" 30 seconds later, which names neither spectating nor the
+            // stage that failed.
             if (++viewerTicks == 100) {
-                int chunks = session.chunksReceived();
-                if (chunks > 0) {
-                    SpectateClient.LOGGER.info(
-                            "spectate: {} chunk packets delivered after 5s; "
-                            + "frames received by type: {}; {}",
-                            chunks, inboundFrameSummary(), session.playerSummary());
-                } else {
-                    // Zero is a distinct failure from "some", and the difference decides where to
-                    // look. Vanilla only reports it as "Timed out while waiting for the client to
-                    // load chunks" 30 seconds later, which names neither spectating nor the stage
-                    // that failed -- and reading it as the fault rather than the symptom costs a
-                    // round of debugging. So say which side went quiet, and whether the target
-                    // ever sent a position, since terrain is sent immediately after one.
+                if (session.chunksReceived() == 0) {
+                    // Which side went quiet, and whether the target ever sent a position, since
+                    // terrain is sent immediately after one.
                     SpectateClient.LOGGER.warn(
-                            "spectate: no terrain after 5s -- inGame={} positionSeen={}; "
-                            + "frames received by type: {}",
-                            session.isInGame(), session.hasSeenPosition(),
-                            inboundFrameSummary());
+                            "spectate: no terrain after 5s -- inGame={} positionSeen={}",
+                            session.isInGame(), session.hasSeenPosition());
                 }
             }
         } else {
@@ -418,7 +376,7 @@ public final class SpectateManager {
         }
         if (terrainBacklog.isEmpty() && !reportedSweepDone) {
             reportedSweepDone = true;
-            SpectateClient.LOGGER.info("spectate: finished sending swept terrain");
+            SpectateClient.LOGGER.debug("spectate: finished sending swept terrain");
         }
     }
 
@@ -502,7 +460,6 @@ public final class SpectateManager {
 
     /** Handles one frame from the service. Runs on the socket's receive thread. */
     private void onFrame(ByteBuffer frame) {
-        countInboundFrame(Frames.typeOf(frame));
         switch (Frames.typeOf(frame)) {
             case SpectateProtocol.TYPE_SESSION_READY -> {
                 UUID target = Frames.readUuid(frame);
@@ -610,7 +567,6 @@ public final class SpectateManager {
      */
     private void beginViewing(UUID target) {
         discardViewing();
-        inboundFrames.clear();
         ViewerSession session = new ViewerSession(target);
         viewing = session;
         SpectateClient.LOGGER.info("spectate: awaiting handshake from {}", target);
@@ -627,7 +583,6 @@ public final class SpectateManager {
             session = new CaptureSession(this::queueCaptured);
             CaptureHooks.setSession(session);
             reportedSweepDone = false;
-            captureTicks = 0;
         }
         session.addViewer(viewer);
 
@@ -718,7 +673,7 @@ public final class SpectateManager {
                     new net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket(
                             ids)));
             queueAhead(PacketWire.encode(codec, tabList));
-            SpectateClient.LOGGER.info(
+            SpectateClient.LOGGER.debug(
                     "spectate: resent the tab list with resolved skins for {} player(s)",
                     ids.size());
         } catch (RuntimeException e) {
@@ -726,28 +681,6 @@ public final class SpectateManager {
         }
     }
 
-    /**
-     * Logs one capture summary a few seconds into a session.
-     *
-     * <p>The counterpart to the viewer's own summary: between them they say whether a packet kind
-     * the viewer needed was dropped before it ever left this client.
-     */
-    private void reportCaptureOnce() {
-        CaptureSession session = CaptureHooks.session();
-        if (session == null || !session.hasViewers()) {
-            captureTicks = 0;
-            return;
-        }
-        // Repeated, not once. The counts that matter most are about what happens as the target
-        // moves -- chunks loaded while walking, items dropped mid-session -- and a single summary
-        // five seconds in is taken before any of that has happened. Every 15 seconds is often
-        // enough to bracket a test and rare enough not to fill the log.
-        if (++captureTicks < 300) {
-            return;
-        }
-        captureTicks = 0;
-        SpectateClient.LOGGER.info("spectate: capture -- {}", session.frameSummary());
-    }
 
     /** Reports this client's position immediately, outside the usual 5 Hz cadence. */
     private void sendPositionNow(SpectateClientSocket s) {
@@ -818,8 +751,6 @@ public final class SpectateManager {
                 SpectateClient.LOGGER.warn("spectate: could not encode a packed entity", e);
             }
         }
-        SpectateClient.LOGGER.info("spectate: queued {} chunks and {} entity packets",
-                chunks, entities);
     }
 
     /** The chunk the target was in when terrain was last swept for viewers. */
@@ -944,7 +875,6 @@ public final class SpectateManager {
     public void requestResweep() {
         SpectateClientSocket s = socket;
         if (s != null && viewing != null) {
-            SpectateClient.LOGGER.info("spectate: asking the target to sweep again");
             s.sendResweepRequest();
         }
     }
@@ -980,7 +910,6 @@ public final class SpectateManager {
         if (session == null || s == null) {
             return;
         }
-        SpectateClient.LOGGER.info("spectate: viewer asked for a resweep");
         // Forgotten first: the viewer is asking precisely because it no longer has the terrain,
         // so what was sent before is not what it holds, and sendLoadedTerrain would otherwise be
         // free to skip nothing while the trailing sweep skipped everything.
@@ -1086,7 +1015,7 @@ public final class SpectateManager {
                 return new EncodedHandshake(List.of(), null);
             }
         }
-        SpectateClient.LOGGER.info("spectate: sending handshake -- {} ({} config frames, login={}B)",
+        SpectateClient.LOGGER.debug("spectate: sending handshake -- {} ({} config frames, login={}B)",
                 recorder.describe(), configuration.size(),
                 login == null ? 0 : login.length);
         return new EncodedHandshake(configuration, login);

@@ -219,8 +219,6 @@ public final class ViewerSession {
                     PacketWire.configurationCodec();
             Packet<?> decoded = PacketWire.decode(codec, wire);
             handshake.add(decoded);
-            SpectateClient.LOGGER.info("spectate: handshake packet {} ({}B)",
-                    decoded.getClass().getSimpleName(), wire.length);
         } catch (RuntimeException e) {
             SpectateClient.LOGGER.warn("spectate: undecodable handshake packet; session will fail",
                     e);
@@ -498,48 +496,9 @@ public final class ViewerSession {
                 entry.chatSession());
     }
 
-    /** The target's most recent reported position, for the chunk summary. */
+    /** The target's most recent reported position; the repair sweep centres on it. */
     private volatile double lastTargetX;
     private volatile double lastTargetZ;
-    /** Player spawn packets received, for the summary. */
-    private int playerSpawnsReceived;
-    /** Tab-list entries received, for the summary. */
-    private int tabEntriesReceived;
-    /** The most recent player entity id received, to check whether the client kept it. */
-    private int lastPlayerSpawnId = -1;
-
-    /** How many player spawns arrived, how many tab entries, and whether the last one survived. */
-    /**
-     * Whether the chunk the target is standing in has actually loaded for the viewer.
-     *
-     * <p>The decisive fact for "chunks do not load as the target walks". A count of chunks
-     * received says only that packets arrived; this says whether the client kept one and built it,
-     * which is what distinguishes a chunk never sent from a chunk sent and rejected as out of view
-     * range -- the two have different fixes and have been confused before.
-     */
-    public String chunkSummary() {
-        Minecraft mc = Minecraft.getInstance();
-        String atTarget = "n/a";
-        if (mc.level != null && seenPosition) {
-            int cx = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetX);
-            int cz = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetZ);
-            atTarget = String.valueOf(mc.level.getChunk(cx, cz, 
-                    net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false) != null);
-        }
-        return chunksReceived + " chunk packet(s) received, target's chunk loaded: " + atTarget
-                + "; repair: " + repair.summary();
-    }
-
-    public String playerSummary() {
-        String kept = "n/a";
-        if (lastPlayerSpawnId >= 0) {
-            Minecraft mc = Minecraft.getInstance();
-            kept = mc.level == null ? "no level"
-                    : String.valueOf(mc.level.getEntity(lastPlayerSpawnId) != null);
-        }
-        return playerSpawnsReceived + " player spawn(s), " + tabEntriesReceived
-                + " tab entry/entries, last spawn still present: " + kept;
-    }
 
     /** Flushes packets queued while the client was still logging in. */
     private void drainPending() {
@@ -590,27 +549,8 @@ public final class ViewerSession {
             // and what matters is how many arrived and where the first one sat relative to the
             // centre the host set -- which is what distinguishes "not sent" from "sent and
             // rejected".
-            // Player spawns and tab-list entries counted on arrival, and the entity that results
-            // checked a moment later. This is the pair of facts that "players are invisible" needs
-            // and that no log has carried: whether the spawn arrived at all, and whether the
-            // client kept it -- createEntityFromPacket discards a player spawn outright when no
-            // tab-list entry exists for it, and says so only at warn on its own logger.
-            if (decoded instanceof net.minecraft.network.protocol.game
-                    .ClientboundAddEntityPacket add
-                    && add.getType() == net.minecraft.world.entity.EntityType.PLAYER) {
-                playerSpawnsReceived++;
-                lastPlayerSpawnId = add.getId();
-            }
-            if (decoded instanceof net.minecraft.network.protocol.game
-                    .ClientboundPlayerInfoUpdatePacket tab) {
-                tabEntriesReceived += tab.entries().size();
-            }
             if (decoded instanceof net.minecraft.network.protocol.game
                     .ClientboundLevelChunkWithLightPacket chunk) {
-                if (chunksReceived == 0) {
-                    SpectateClient.LOGGER.info("spectate: first chunk at {},{}",
-                            chunk.getX(), chunk.getZ());
-                }
                 chunksReceived++;
                 // Before the packet is handed on, so a chunk that arrives and is then rejected by
                 // the cache still counts as answered -- otherwise a chunk the target supplied but

@@ -53,7 +53,7 @@ public final class SpectateCamera {
             if (attached) {
                 mc.setCameraEntity(mc.player);
                 attached = false;
-                SpectateClient.LOGGER.info("spectate: free camera; released from target");
+                SpectateClient.LOGGER.debug("spectate: free camera; released from target");
             }
             return;
         }
@@ -76,7 +76,7 @@ public final class SpectateCamera {
         if (current != entity) {
             mc.setCameraEntity(entity);
             attached = true;
-            SpectateClient.LOGGER.info("spectate: camera attached to target");
+            SpectateClient.LOGGER.debug("spectate: camera attached to target");
         }
     }
 

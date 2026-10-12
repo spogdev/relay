@@ -110,14 +110,16 @@ public final class TabList {
         // The texture count is reported because a profile with no "textures" property yields a
         // default skin no matter how correctly the packet is built -- the client resolves skins
         // from that property alone. That is a different fault from a malformed packet and needs a
-        // different fix, so the two are worth telling apart from one log line.
-        long withTextures = entries.stream()
-                .filter(e -> e.profile().properties().containsKey("textures"))
-                .count();
-        SpectateClient.LOGGER.info(
-                "spectate: tab list has {} player(s) ({} listed), includes self: {},"
-                        + " with textures: {}",
-                entries.size(), listed.size(), includesSelf, withTextures);
+        // different fix, so the two are worth telling apart when one is being chased.
+        if (SpectateClient.LOGGER.isDebugEnabled()) {
+            long withTextures = entries.stream()
+                    .filter(e -> e.profile().properties().containsKey("textures"))
+                    .count();
+            SpectateClient.LOGGER.debug(
+                    "spectate: tab list has {} player(s) ({} listed), includes self: {},"
+                            + " with textures: {}",
+                    entries.size(), listed.size(), includesSelf, withTextures);
+        }
         try {
             return encodeThenDecode(connection, entries);
         } catch (RuntimeException e) {

@@ -53,13 +53,43 @@ public final class MenuButton {
      * window and the GUI scale instead of drifting at other sizes.
      */
     private static void addTo(Screen screen, int scaledWidth, int scaledHeight) {
+        java.util.List<AbstractWidget> widgets = Screens.getWidgets(screen);
+        int x = scaledWidth - WIDTH - MARGIN;
+        int y = scaledHeight - HEIGHT - MARGIN;
+
+        // AFTER_INIT can fire more than once for the same screen -- resizing was the
+        // case that showed it, stacking a new button on every event until the corner
+        // was a wall of them. Vanilla's own re-init is guarded, so the repeat comes
+        // from elsewhere in the pack; reusing what is already there is independent of
+        // which path fired.
+        AbstractWidget existing = find(widgets);
+        if (existing != null) {
+            // Moved rather than left alone: if the screen kept its widgets through a
+            // resize, the old button still sits in what used to be the corner.
+            existing.setPosition(x, y);
+            return;
+        }
         Button button = Button.builder(
                         SpectateLang.text("menu.title"),
                         b -> Screens.getMinecraft(screen).setScreen(new SpectateScreen(screen)))
-                .bounds(scaledWidth - WIDTH - MARGIN, scaledHeight - HEIGHT - MARGIN,
-                        WIDTH, HEIGHT)
+                .bounds(x, y, WIDTH, HEIGHT)
                 .build();
-        java.util.List<AbstractWidget> widgets = Screens.getWidgets(screen);
         widgets.add(button);
+    }
+
+    /**
+     * This screen's existing spectate button, or null.
+     *
+     * <p>Identified by its label: the list holds the screen's vanilla widgets too, and this is
+     * the only one carrying that text.
+     */
+    private static AbstractWidget find(java.util.List<AbstractWidget> widgets) {
+        String label = SpectateLang.text("menu.title").getString();
+        for (AbstractWidget widget : widgets) {
+            if (widget.getMessage() != null && label.equals(widget.getMessage().getString())) {
+                return widget;
+            }
+        }
+        return null;
     }
 }

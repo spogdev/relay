@@ -140,6 +140,41 @@ public final class SpectateProtocol {
     /** Stop capturing for a viewer: {@code [16-byte viewer UUID]}. */
     public static final byte TYPE_CAPTURE_STOP = 0x31;
 
+    // ---- viewer -> target ----
+
+    /**
+     * Chunks the viewer is missing and wants resent:
+     * {@code [short count][int chunkX][int chunkZ] * count}.
+     *
+     * <p>The only frame that travels from a viewer to a target, and it exists because terrain loss
+     * cannot be made impossible from either end alone. A chunk is sent once. If it is dropped --
+     * by the radius filter at a moment the target was moving, by the viewer's cache centre being
+     * briefly elsewhere, by a frame lost on either socket -- nothing ever sends it again, because
+     * the real server believes the target already has it and the target's client believes it has
+     * forwarded it. The result is a permanent hole, and every previous fix in this area has been
+     * an attempt to make the loss not happen rather than to repair it.
+     *
+     * <p>Repair is better than prevention here for a reason that is worth stating: the viewer is
+     * the only party that knows what it actually has. The target cannot deduce it, since it sees
+     * only what it sent, and the service forwards bytes without reading them. So the viewer finds
+     * its own holes and names them, and the target -- which holds the chunk data and can rebuild a
+     * packet for any chunk its client has, without involving its server -- answers.
+     *
+     * <p>Bounded by {@link #MAX_CHUNK_REQUESTS} per frame so a viewer that has just joined, or one
+     * whose level was cleared, cannot ask for thousands of chunks in a single message.
+     */
+    public static final byte TYPE_CHUNK_REQUEST = 0x40;
+
+    /**
+     * Most chunks one {@link #TYPE_CHUNK_REQUEST} may name.
+     *
+     * <p>A viewer with a genuine hole is asking about a handful of chunks. A viewer asking about
+     * hundreds is in a state the repair loop cannot fix -- it has no terrain at all, which is a
+     * session that failed to start rather than a session that lost a chunk -- and answering would
+     * mean rebuilding and sending a full sweep's worth of terrain on a timer.
+     */
+    public static final int MAX_CHUNK_REQUESTS = 64;
+
     /**
      * How far from the target, in chunks, the capture forwards terrain. Deliberately well under a
      * typical server view distance: chunk volume grows with the square of the radius, so trimming

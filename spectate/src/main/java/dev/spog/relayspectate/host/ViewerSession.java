@@ -89,6 +89,8 @@ public final class ViewerSession {
     private volatile float earlyYaw;
     private volatile float earlyPitch;
     private volatile int chunksReceived;
+    /** Finds holes in the viewer's terrain and names them for the target to refill. */
+    private final ChunkRepair repair = new ChunkRepair();
     private volatile long decodeFailures;
     private volatile int dropped;
 
@@ -142,6 +144,19 @@ public final class ViewerSession {
 
     public UUID target() {
         return target;
+    }
+
+    /**
+     * Chunks this viewer is missing, for the manager to request. Empty most ticks.
+     *
+     * <p>Driven from the session rather than from {@link ChunkRepair} itself so the sweep only
+     * runs while there is a live session with a position to centre on.
+     */
+    public java.util.List<net.minecraft.world.level.ChunkPos> missingChunks() {
+        if (closed || !isInGame() || !seenPosition) {
+            return java.util.List.of();
+        }
+        return repair.sweep(lastTargetX, lastTargetZ);
     }
 
     /**
@@ -490,7 +505,8 @@ public final class ViewerSession {
             atTarget = String.valueOf(mc.level.getChunk(cx, cz, 
                     net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false) != null);
         }
-        return chunksReceived + " chunk packet(s) received, target's chunk loaded: " + atTarget;
+        return chunksReceived + " chunk packet(s) received, target's chunk loaded: " + atTarget
+                + "; repair: " + repair.summary();
     }
 
     public String playerSummary() {
@@ -575,6 +591,10 @@ public final class ViewerSession {
                             chunk.getX(), chunk.getZ());
                 }
                 chunksReceived++;
+                // Before the packet is handed on, so a chunk that arrives and is then rejected by
+                // the cache still counts as answered -- otherwise a chunk the target supplied but
+                // the viewer discarded would be requested forever.
+                repair.onChunkArrived(chunk.getX(), chunk.getZ());
             }
             Packet<?> forward = withOwnEntrySpectating(decoded);
             if (forward != null) {

@@ -47,6 +47,15 @@ public final class Wire {
     public static final byte TYPE_CAPTURE_START = 0x30;
     public static final byte TYPE_CAPTURE_STOP = 0x31;
 
+    /**
+     * Viewer -> target: chunks the viewer is missing and wants resent.
+     *
+     * <p>The only frame that travels in this direction. Forwarded to the one target the sender is
+     * watching, with the same opacity as every other stream frame: the service does not read the
+     * payload.
+     */
+    public static final byte TYPE_CHUNK_REQUEST = 0x40;
+
     /** A frame's type byte without consuming it, or -1 if empty. */
     public static byte typeOf(ByteBuffer frame) {
         return frame.remaining() < 1 ? -1 : frame.get(frame.position());

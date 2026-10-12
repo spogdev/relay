@@ -90,6 +90,53 @@ public final class ChunkSweep {
     }
 
     /**
+     * Rebuilds chunk packets for a named list of chunks, for the repair loop.
+     *
+     * <p>Answers a viewer that has found holes in its terrain. Unlike the sweep above this is not
+     * bounded by a radius -- the caller names the chunks -- but it is bounded by what this client
+     * actually has: a chunk this client has itself unloaded cannot be rebuilt, and is skipped
+     * rather than fetched, because a client cannot ask its server for one chunk.
+     *
+     * <p>Must run on the client thread: it reads the chunk cache and the light engine.
+     *
+     * @param wanted chunk positions as {@code [x, z]} pairs
+     * @return packets for those of them this client holds
+     */
+    public static List<ClientboundLevelChunkWithLightPacket> chunksAt(Minecraft mc,
+                                                                      List<ChunkPos> wanted) {
+        List<ClientboundLevelChunkWithLightPacket> out = new ArrayList<>();
+        ClientLevel level = mc.level;
+        if (level == null || wanted.isEmpty()) {
+            return out;
+        }
+        var lightEngine = level.getLightEngine();
+        int absent = 0;
+        for (ChunkPos pos : wanted) {
+            LevelChunk chunk = level.getChunkSource()
+                    .getChunk(pos.x(), pos.z(), ChunkStatus.FULL, false);
+            if (chunk == null) {
+                absent++;
+                continue;
+            }
+            try {
+                out.add(new ClientboundLevelChunkWithLightPacket(
+                        chunk, lightEngine, new BitSet(), new BitSet()));
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.debug("spectate: could not repack chunk {},{}",
+                        pos.x(), pos.z(), e);
+            }
+        }
+        // Both numbers reported. A request this client cannot answer at all is a different
+        // situation from one it answers fully -- the first means the viewer is asking about
+        // terrain the target no longer holds, which the viewer cannot know and would otherwise
+        // keep asking about.
+        SpectateClient.LOGGER.info(
+                "spectate: repacked {} of {} requested chunk(s); {} not held by this client",
+                out.size(), wanted.size(), absent);
+        return out;
+    }
+
+    /**
      * Rebuilds spawn packets for the entities already around the target.
      *
      * <p>Needed for the same reason as the chunk sweep: entity spawns are only sent once, when an

@@ -147,6 +147,7 @@ public final class SpectateRelayServer extends WebSocketServer {
             case Wire.TYPE_SESSION_STOP -> endAsViewer(session);
             case Wire.TYPE_HANDSHAKE, Wire.TYPE_LOGIN_PACKET, Wire.TYPE_GAME_PACKET,
                  Wire.TYPE_TARGET_POSITION -> forwardToViewers(session, frame);
+            case Wire.TYPE_CHUNK_REQUEST -> forwardToTarget(session, frame);
             case Wire.TYPE_CAPTURE_UNAVAILABLE -> denyViewersOf(session);
             case Wire.TYPE_STREAM_END -> endAsTarget(session);
             default -> { }
@@ -264,6 +265,40 @@ public final class SpectateRelayServer extends WebSocketServer {
         target.conn().send(Wire.of(Wire.TYPE_CAPTURE_START, viewer.uuid()));
         viewer.conn().send(Wire.of(Wire.TYPE_SESSION_READY, targetId));
         LOG.info("{} began spectating {}", viewer.uuid(), targetId);
+    }
+
+    /**
+     * Forwards one frame from a viewer to the target it is watching.
+     *
+     * <p>The reverse of {@link #forwardToViewers}, and the only direction that goes this way. The
+     * recipient is not named by the sender: it is {@code viewer.watching()}, which the service set
+     * itself when the session was authorised. A viewer therefore cannot address a frame to a
+     * client that has not accepted it, which is the same rule the rest of the protocol follows --
+     * no client-supplied identity is trusted.
+     *
+     * <p>The payload is forwarded unread, like every other stream frame.
+     */
+    private void forwardToTarget(SpectateSession viewer, ByteBuffer frame) {
+        UUID targetId = viewer.watching();
+        if (targetId == null) {
+            LOG.debug("drop frame type {}: {} is not watching anyone",
+                    Wire.typeOf(frame), viewer.uuid());
+            return;
+        }
+        SpectateSession target = byUuid.get(targetId);
+        // Logged rather than silently dropped, for the same reason the other direction is: a
+        // frame lost at this hop appears in neither client's log, since each can only see what it
+        // sent or received.
+        if (target == null || !target.conn().isOpen()) {
+            LOG.warn("drop frame type {}: target {} unavailable", Wire.typeOf(frame), targetId);
+            return;
+        }
+        if (!target.viewers().contains(viewer.uuid())) {
+            LOG.warn("drop frame type {}: {} not a viewer of {}",
+                    Wire.typeOf(frame), viewer.uuid(), targetId);
+            return;
+        }
+        target.conn().send(frame.duplicate());
     }
 
     /**

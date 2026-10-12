@@ -214,6 +214,27 @@ public final class SpectateClientSocket {
     }
 
     /** Tells the service this client has no world to share, so waiting viewers can be denied. */
+    /**
+     * Asks the target to resend chunks this viewer is missing.
+     *
+     * <p>The one frame a viewer sends into a session. See
+     * {@link SpectateProtocol#TYPE_CHUNK_REQUEST} for why repair is needed at all: a chunk is sent
+     * once, so a chunk lost anywhere on the path is lost permanently unless it is asked for again.
+     */
+    public void sendChunkRequest(java.util.List<net.minecraft.world.level.ChunkPos> chunks) {
+        if (chunks.isEmpty()) {
+            return;
+        }
+        int count = Math.min(chunks.size(), SpectateProtocol.MAX_CHUNK_REQUESTS);
+        ByteBuffer buf = ByteBuffer.allocate(1 + 2 + count * 8);
+        buf.put(SpectateProtocol.TYPE_CHUNK_REQUEST);
+        buf.putShort((short) count);
+        for (int i = 0; i < count; i++) {
+            buf.putInt(chunks.get(i).x()).putInt(chunks.get(i).z());
+        }
+        sendBinary(buf.flip());
+    }
+
     public void sendCaptureUnavailable() {
         sendBinary(Frames.of(SpectateProtocol.TYPE_CAPTURE_UNAVAILABLE));
     }

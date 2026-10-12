@@ -270,6 +270,7 @@ public final class SpectateManager {
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
+            requestMissingChunks(session);
             // One summary a few seconds in, so a blank world can be told apart from a world whose
             // terrain never arrived without needing a packet-by-packet log.
             // Repeated like the capture summary, and for the same reason: terrain that fails to
@@ -567,6 +568,21 @@ public final class SpectateManager {
                 UUID viewer = Frames.readUuid(frame);
                 pendingMainThread.add(() -> beginCapture(viewer));
             }
+            case SpectateProtocol.TYPE_CHUNK_REQUEST -> {
+                frame.get(); // type
+                if (frame.remaining() >= 2) {
+                    int count = frame.getShort() & 0xFFFF;
+                    count = Math.min(count, SpectateProtocol.MAX_CHUNK_REQUESTS);
+                    List<net.minecraft.world.level.ChunkPos> wanted = new ArrayList<>(count);
+                    for (int i = 0; i < count && frame.remaining() >= 8; i++) {
+                        wanted.add(new net.minecraft.world.level.ChunkPos(
+                                frame.getInt(), frame.getInt()));
+                    }
+                    // Rebuilding a chunk reads the level and the light engine, so it has to run on
+                    // the client thread rather than here on the socket's.
+                    pendingMainThread.add(() -> answerChunkRequest(wanted));
+                }
+            }
             case SpectateProtocol.TYPE_CAPTURE_STOP -> {
                 UUID viewer = Frames.readUuid(frame);
                 pendingMainThread.add(() -> endCapture(viewer));
@@ -791,6 +807,58 @@ public final class SpectateManager {
         }
         SpectateClient.LOGGER.info("spectate: queued {} chunks and {} entity packets",
                 chunks, entities);
+    }
+
+    /**
+     * Asks the target to resend any chunks this viewer is missing. On the client thread.
+     *
+     * <p>Rate limiting lives in {@link ChunkRepair}, which returns an empty list on the ticks it
+     * does not sweep, so this runs every tick and sends on few of them.
+     */
+    private void requestMissingChunks(ViewerSession session) {
+        SpectateClientSocket s = socket;
+        if (s == null) {
+            return;
+        }
+        var missing = session.missingChunks();
+        if (!missing.isEmpty()) {
+            s.sendChunkRequest(missing);
+        }
+    }
+
+    /**
+     * Answers a viewer that asked for chunks it is missing. On the client thread.
+     *
+     * <p>Queued ahead of the ordinary terrain backlog. A repair answers a hole the viewer is
+     * looking at now, and the backlog can be hundreds of frames deep while a session is catching
+     * up -- putting the answer behind all of it would make the repair arrive long after the viewer
+     * asked again, which is how a repair loop turns into a request loop.
+     *
+     * <p>Not gated on the requesting viewer's identity beyond what the service already enforces:
+     * it forwards a chunk request only from a viewer the target has accepted, and the payload
+     * names chunks rather than a recipient, so the worst a viewer can do is ask for terrain within
+     * the radius it is already being sent.
+     */
+    private void answerChunkRequest(List<net.minecraft.world.level.ChunkPos> wanted) {
+        CaptureSession session = CaptureHooks.session();
+        SpectateClientSocket s = socket;
+        if (session == null || s == null || wanted.isEmpty()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener listener = mc.getConnection();
+        if (listener == null) {
+            return;
+        }
+        StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
+                PacketWire.gameCodec(listener.registryAccess());
+        for (var chunk : ChunkSweep.chunksAt(mc, wanted)) {
+            try {
+                queueAhead(PacketWire.encode(codec, chunk));
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.warn("spectate: could not encode a repaired chunk", e);
+            }
+        }
     }
 
     /** A handshake encoded for the wire: configuration packets, then the login packet. */

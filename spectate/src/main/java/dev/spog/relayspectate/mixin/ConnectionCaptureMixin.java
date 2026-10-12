@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>Two connections are excluded. The loopback host's server end reads SERVERBOUND, so the flow
  * check skips it -- capturing there would feed a viewer's own input back into its session. The
  * loopback's <em>client</em> end is the subtle one: it reads CLIENTBOUND, exactly like a real
- * server connection, because that is how {@code connectToLocalServer} builds it. Capturing it
+ * server connection, because that is how {@code connectLocal} builds it. Capturing it
  * would record the replayed handshake as if this client's own server had sent it, overwriting the
  * real recording. {@link LoopbackHost#isLoopback} is what tells them apart.
  */

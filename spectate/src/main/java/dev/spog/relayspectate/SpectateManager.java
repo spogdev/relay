@@ -414,7 +414,7 @@ public final class SpectateManager {
         positionTicks = 0;
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYaw(), mc.player.getPitch(),
-                mc.player.getId(), mc.player.getHeadYaw(), mc.player.onGround(),
+                mc.player.getId(), mc.player.getHeadYaw(), mc.player.isOnGround(),
                 swingAction(mc.player));
     }
 
@@ -425,35 +425,35 @@ public final class SpectateManager {
      * completes its arc.
      *
      * <p>Detecting the start is where two earlier attempts went wrong, both by reasoning about
-     * {@code swingTime}'s values instead of its transitions. {@code swing()} sets it to -1 and
-     * {@code swinging} true; {@code updateSwingTime} then increments it every tick and clears both
+     * {@code handSwingTicks}'s values instead of its transitions. {@code swing()} sets it to -1 and
+     * {@code handSwinging} true; {@code updateSwingTime} then increments it every tick and clears both
      * once the swing has run its duration. Crucially this runs in {@code ClientPlayerEntity.tick}, which
      * is <em>before</em> this sampling at {@code END_CLIENT_TICK} -- so the -1 is never observed
      * here, and neither is 0 reliably. Matching on those values made a swing register only when
      * the sampling happened to land right, which is why swings mostly went missing.
      *
      * <p>What is reliable is the transition: a swing is new if it was not running a tick ago, or if
-     * it was running and {@code swingTime} has gone down, which only happens on a restart. That
+     * it was running and {@code handSwingTicks} has gone down, which only happens on a restart. That
      * holds wherever in the tick this is sampled.
      */
     private int swingAction(net.minecraft.client.network.ClientPlayerEntity player) {
-        int time = player.swingTime;
+        int time = player.handSwingTicks;
         int previous = lastSwingTime;
         lastSwingTime = time;
         boolean wasSwinging = lastSwinging;
-        lastSwinging = player.swinging;
-        if (!player.swinging) {
+        lastSwinging = player.handSwinging;
+        if (!player.handSwinging) {
             return -1;
         }
         // A new swing is one that either was not running a tick ago, or was running and has
-        // restarted -- which shows as swingTime having gone down rather than up, since
+        // restarted -- which shows as handSwingTicks having gone down rather than up, since
         // updateSwingTime only ever increments it while a swing continues. Both cases are needed:
         // the first catches a swing after a pause, the second catches the next swing in a stream
-        // of them, where swinging never returns to false in between.
+        // of them, where handSwinging never returns to false in between.
         if (wasSwinging && time > previous) {
             return -1;
         }
-        return player.swingingArm == net.minecraft.util.Hand.OFF_HAND
+        return player.preferredHand == net.minecraft.util.Hand.OFF_HAND
                 ? net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket.SWING_OFF_HAND
                 : net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket.SWING_MAIN_HAND;
     }
@@ -665,7 +665,7 @@ public final class SpectateManager {
             // lookup once, lazily, and caches it for the object's lifetime -- so even a replaced
             // profile would not change a skin already resolved. Only a new PlayerListEntry picks up
             // new textures, and only a remove makes the client build one.
-            var ids = tabList.entries().stream()
+            var ids = tabList.getEntries().stream()
                     .map(net.minecraft.network.protocol.game
                             .ClientboundPlayerInfoUpdatePacket.Entry::profileId)
                     .toList();
@@ -690,7 +690,7 @@ public final class SpectateManager {
         }
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYaw(), mc.player.getPitch(),
-                mc.player.getId(), mc.player.getHeadYaw(), mc.player.onGround(), -1);
+                mc.player.getId(), mc.player.getHeadYaw(), mc.player.isOnGround(), -1);
     }
 
     /**

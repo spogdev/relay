@@ -455,14 +455,14 @@ public final class ViewerSession {
             return decoded;
         }
         java.util.UUID self = me;
-        boolean present = info.entries().stream()
+        boolean present = info.getEntries().stream()
                 .anyMatch(e -> self.equals(e.profileId())
                         && e.gameMode() != net.minecraft.world.GameMode.SPECTATOR);
         if (!present) {
             return decoded;
         }
         java.util.List<net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry>
-                fixed = info.entries().stream()
+                fixed = info.getEntries().stream()
                         .map(e -> self.equals(e.profileId()) ? spectating(e) : e)
                         .toList();
         var rebuilt = dev.spog.relayspectate.capture.TabList.rebuild(

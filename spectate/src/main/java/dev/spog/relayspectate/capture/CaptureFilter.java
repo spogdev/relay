@@ -98,9 +98,9 @@ public final class CaptureFilter {
             EntityAttachS2CPacket.class,
             EntityEquipmentUpdateS2CPacket.class,
             EntityPassengersSetS2CPacket.class,
-            EntityS2CPacket.Pos.class,
-            EntityS2CPacket.PosRot.class,
-            EntityS2CPacket.Rot.class,
+            EntityS2CPacket.MoveRelative.class,
+            EntityS2CPacket.RotateAndMoveRelative.class,
+            EntityS2CPacket.Rotate.class,
             MoveMinecartAlongTrackS2CPacket.class,
             VehicleMoveS2CPacket.class,
             EntityPositionS2CPacket.class,
@@ -153,7 +153,7 @@ public final class CaptureFilter {
         // mislabelling its HUD. The viewer's game mode is set once, by the login packet, and
         // nothing in the target's stream has any business altering it.
         if (packet instanceof GameStateChangeS2CPacket p) {
-            return p.getEvent() != GameStateChangeS2CPacket.CHANGE_GAME_MODE;
+            return p.getReason() != GameStateChangeS2CPacket.GAME_MODE_CHANGED;
         }
         return true;
     }
@@ -208,8 +208,8 @@ public final class CaptureFilter {
         int x;
         int z;
         if (packet instanceof ChunkDataS2CPacket p) {
-            x = p.getX();
-            z = p.getZ();
+            x = p.getChunkX();
+            z = p.getChunkZ();
         } else if (packet instanceof UnloadChunkS2CPacket p) {
             x = p.pos().x;
             z = p.pos().z;
@@ -217,6 +217,6 @@ public final class CaptureFilter {
             return true;
         }
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
-        return Math.abs(x - local.x()) <= r && Math.abs(z - local.z()) <= r;
+        return Math.abs(x - local.x) <= r && Math.abs(z - local.z) <= r;
     }
 }

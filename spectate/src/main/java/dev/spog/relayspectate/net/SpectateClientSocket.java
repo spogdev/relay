@@ -115,7 +115,7 @@ public final class SpectateClientSocket {
         hello.addProperty("version", SpectateProtocol.VERSION);
         // The MinecraftClient version, so the service can refuse to pair two clients that cannot
         // understand each other's packets. See SpectateProtocol.DENY_VERSION.
-        hello.addProperty("gameVersion", net.minecraft.SharedConstants.getCurrentVersion().name());
+        hello.addProperty("gameVersion", net.minecraft.SharedConstants.getGameVersion().name());
         hello.addProperty("profileName", mc.getSession().getName());
         sendText(gson.toJson(hello));
     }
@@ -211,7 +211,7 @@ public final class SpectateClientSocket {
         // The swing action is appended as a further optional field, for the same reason as the
         // fields above: an arm swing is an animation the server tells other clients about, so it
         // is absent from the target's own inbound stream and the target's arms never moved. -1
-        // means "not swinging"; anything else is a EntityAnimationS2CPacket action id.
+        // means "not handSwinging"; anything else is a EntityAnimationS2CPacket action id.
         buf.put((byte) swingAction);
         sendBinary(buf.flip());
     }

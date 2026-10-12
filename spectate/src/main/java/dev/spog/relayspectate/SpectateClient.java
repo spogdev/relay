@@ -89,7 +89,7 @@ public final class SpectateClient implements ClientModInitializer {
     private static String targetName(MinecraftClient client, dev.spog.relayspectate.host.ViewerSession s) {
         java.util.UUID id = s.target();
         if (client.world != null) {
-            for (var player : client.world.players()) {
+            for (var player : client.world.getPlayers()) {
                 if (id.equals(player.getUuid())) {
                     return player.getName().getString();
                 }

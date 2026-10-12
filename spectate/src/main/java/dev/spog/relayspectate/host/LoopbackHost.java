@@ -8,7 +8,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.local.LocalAddress;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.NetworkSide;
-import net.minecraft.server.network.EventLoopGroupHolder;
+import net.minecraft.network.NetworkingBackend;
 
 import java.net.SocketAddress;
 import java.util.Collections;
@@ -46,7 +46,7 @@ public final class LoopbackHost {
      * Every connection belonging to a loopback session, so the capture tap can ignore them.
      *
      * <p>Needed because the viewer's end of the loopback reads {@code CLIENTBOUND}, exactly like a
-     * connection to a real server -- {@code connectToLocalServer} constructs it that way. Without
+     * connection to a real server -- {@code connectLocal} constructs it that way. Without
      * this the capture tap would treat the replayed handshake arriving over the loopback as if the
      * target's own server had sent it, overwriting the real recording and, if that client were also
      * being watched, forwarding a session's own stream back out through it.
@@ -86,17 +86,17 @@ public final class LoopbackHost {
      * nothing is reachable from outside this process.
      */
     public SocketAddress bind() {
-        EventLoopGroupHolder holder = EventLoopGroupHolder.local();
+        NetworkingBackend holder = NetworkingBackend.local();
         ServerBootstrap boot = new ServerBootstrap()
-                .group(holder.eventLoopGroup())
-                .channel(holder.serverChannelCls())
+                .group(holder.getEventLoopGroup())
+                .channel(holder.getServerChannelClass())
                 .childHandler(new ChannelInitializer<Channel>() {
                     @Override
                     protected void initChannel(Channel ch) {
                         // The server end of the pair. SERVERBOUND is the flow it *reads*: packets
                         // the viewer's client sends us. We write CLIENTBOUND packets back.
                         ClientConnection conn = new ClientConnection(NetworkSide.SERVERBOUND);
-                        ClientConnection.configureInMemoryPipeline(ch.pipeline(), NetworkSide.SERVERBOUND);
+                        ClientConnection.addLocalValidator(ch.pipeline(), NetworkSide.SERVERBOUND);
                         ch.pipeline().addLast("relay_spectate_host",
                                 new ChannelInboundHandlerAdapter() {
                                     @Override
@@ -117,7 +117,7 @@ public final class LoopbackHost {
     /**
      * Opens the viewer-side half of the pair and waits for the server end to exist.
      *
-     * <p>The wait is the point. {@code connectToLocalServer} syncs on the <em>client</em> channel's
+     * <p>The wait is the point. {@code connectLocal} syncs on the <em>client</em> channel's
      * connect future, which says nothing about whether the server side's {@code initChannel} has
      * run -- that happens independently on the local event loop. Returning without waiting left
      * {@link #serverSide()} legitimately null for the caller that immediately needs it, which would
@@ -126,7 +126,7 @@ public final class LoopbackHost {
      * @return the viewer-side connection, or null if the server end never attached
      */
     public ClientConnection connectViewer() {
-        ClientConnection client = ClientConnection.connectToLocalServer(address);
+        ClientConnection client = ClientConnection.connectLocal(address);
         // Register before waiting: the client end reads CLIENTBOUND, so the capture tap must know
         // to skip it before the host starts replaying packets into it.
         LOOPBACK.add(client);

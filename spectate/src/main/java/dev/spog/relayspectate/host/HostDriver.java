@@ -409,7 +409,7 @@ public final class HostDriver {
                 new net.minecraft.network.PacketByteBuf(io.netty.buffer.Unpooled.buffer());
         buf.writeVarInt(entityId);
         buf.writeByte((byte) Math.floor(headYaw * 256.0F / 360.0F));
-        return net.minecraft.network.packet.s2c.play.EntitySetHeadYawS2CPacket.STREAM_CODEC
+        return net.minecraft.network.packet.s2c.play.EntitySetHeadYawS2CPacket.CODEC
                 .decode(buf);
     }
 
@@ -430,7 +430,7 @@ public final class HostDriver {
                 new net.minecraft.network.PacketByteBuf(io.netty.buffer.Unpooled.buffer());
         buf.writeVarInt(entityId);
         buf.writeByte(action);
-        connection.send(net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket.STREAM_CODEC
+        connection.send(net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket.CODEC
                 .decode(buf));
     }
 

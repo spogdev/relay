@@ -90,7 +90,7 @@ public final class SpectateCamera {
     }
 
     private AbstractClientPlayerEntity findTarget(MinecraftClient mc) {
-        for (AbstractClientPlayerEntity player : mc.world.players()) {
+        for (AbstractClientPlayerEntity player : mc.world.getPlayers()) {
             if (target.equals(player.getUuid())) {
                 return player;
             }

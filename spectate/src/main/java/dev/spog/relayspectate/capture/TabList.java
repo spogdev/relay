@@ -311,7 +311,7 @@ public final class TabList {
      *
      * <p>Writes the fields in the order the packet's own {@code write} does -- the action set, then
      * the entries as a collection, each prefixed by its profile id -- and reads the result back
-     * with {@code STREAM_CODEC}, so the decoded packet is indistinguishable from a real one.
+     * with {@code CODEC}, so the decoded packet is indistinguishable from a real one.
      */
     private static PlayerListS2CPacket encodeThenDecode(
             ClientPlayNetworkHandler connection, List<Entry> entries) {
@@ -332,7 +332,7 @@ public final class TabList {
                 writeField(typed, action, entry);
             }
         });
-        return PlayerListS2CPacket.STREAM_CODEC.decode(buf);
+        return PlayerListS2CPacket.CODEC.decode(buf);
     }
 
     /** Writes one action's payload for one entry, mirroring vanilla's per-action writers. */

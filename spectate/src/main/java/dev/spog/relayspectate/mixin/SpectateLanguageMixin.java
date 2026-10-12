@@ -1,7 +1,6 @@
 package dev.spog.relayspectate.mixin;
 
 import dev.spog.relayspectate.SpectateLang;
-import dev.spog.teamlocator.client.RelayLang;
 import net.minecraft.client.resources.language.ClientLanguage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,13 +14,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p>The Controls screen looks keybind names up through {@code ClientLanguage}, so a mod whose
  * strings are private has to answer there or its rows render as raw keys. Answering unconditionally
  * would re-open the probe this addon is avoiding, so the answer is gated on
- * {@link RelayLang#isResolvingKeybinds()} -- Relay's existing window, set only while a screen that
- * legitimately shows keybind names is building its rows.
+ * {@link SpectateLang#isResolvingKeybinds()} -- set only while a screen that legitimately shows
+ * keybind names is building its rows.
  *
- * <p>Reusing Relay's window rather than adding a second one is deliberate: Relay already owns the
- * mixins that open and close it around the keybinds screen's row building, and a parallel window
- * here would have to duplicate those injections and keep them in step. The addon declares Relay as
- * a hard dependency, so the window is always present.
+ * <p>The window is this addon's own, opened by {@link SpectateKeyBindsScreenMixin} and
+ * {@link SpectateKeyBindsListMixin}. It used to be Relay's, shared to avoid duplicating two small
+ * injections; that made Relay a hard dependency for the sake of a boolean, and without it these
+ * rows rendered as raw keys.
  */
 @Mixin(ClientLanguage.class)
 public abstract class SpectateLanguageMixin {
@@ -29,14 +28,14 @@ public abstract class SpectateLanguageMixin {
             at = @At("HEAD"), cancellable = true)
     private void relayspectate$serveKeybindName(String key, String fallback,
                                                 CallbackInfoReturnable<String> cir) {
-        if (RelayLang.isResolvingKeybinds() && SpectateLang.hasKeybind(key)) {
+        if (SpectateLang.isResolvingKeybinds() && SpectateLang.hasKeybind(key)) {
             cir.setReturnValue(SpectateLang.keybind(key));
         }
     }
 
     @Inject(method = "has(Ljava/lang/String;)Z", at = @At("HEAD"), cancellable = true)
     private void relayspectate$hasKeybindName(String key, CallbackInfoReturnable<Boolean> cir) {
-        if (RelayLang.isResolvingKeybinds() && SpectateLang.hasKeybind(key)) {
+        if (SpectateLang.isResolvingKeybinds() && SpectateLang.hasKeybind(key)) {
             cir.setReturnValue(true);
         }
     }

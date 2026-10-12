@@ -3,7 +3,7 @@
   "id": "relayspectate",
   "version": "${version}",
   "name": "Relay Spectate",
-  "description": "Watch a teammate who has you trusted, live, without joining their server. Requires Relay.",
+  "description": "Watch a teammate who has you trusted, live, without joining their server.",
   "authors": [
     "Spog"
   ],
@@ -17,11 +17,13 @@
   "mixins": [
     "relayspectate.mixins.json"
   ],
+  "suggests": {
+    "relay": ">=0.3.1"
+  },
   "depends": {
     "fabricloader": ">=0.19",
     "fabric-api": "*",
-    "relay": ">=0.3.1",
-    "minecraft": ">=26.1 <26.2",
+    "minecraft": "~26.2",
     "java": ">=25"
   }
 }

@@ -11,6 +11,8 @@
     "LoopbackNotMemoryMixin",
     "SpectateDisconnectMixin",
     "SpectateKeybindMixin",
+    "SpectateKeyBindsListMixin",
+    "SpectateKeyBindsScreenMixin",
     "SpectateNoClipMixin",
     "SpectateLanguageMixin",
     "SpectatePauseScreenMixin"

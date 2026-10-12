@@ -1,0 +1,69 @@
+plugins {
+    id 'java'
+    // Self-contained fat jar, same as the main relay: one file to drop on a VPS.
+    id 'com.gradleup.shadow' version '8.3.5'
+}
+
+// Standalone service. Deliberately no Fabric Loom and no Minecraft dependency: it forwards opaque
+// binary frames and never inspects a game packet.
+group = 'dev.spog.spectaterelay'
+version = rootProject.hasProperty('spectate_version') ? rootProject.spectate_version : '0.1.0'
+
+def mainClassName = 'dev.spog.spectaterelay.SpectateRelayMain'
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://libraries.minecraft.net/' }
+}
+
+dependencies {
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'com.mojang:authlib:7.0.63'
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+
+    // Reuses the main relay's Mojang verification rather than reimplementing it. Source-level
+    // reuse only -- the two run as separate processes, so a bug here cannot take down position
+    // routing, which was the point of splitting them.
+    implementation project(':relay')
+
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def targetJavaVersion = 25
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+}
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = targetJavaVersion
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+    }
+}
+
+tasks.named('shadowJar') {
+    archiveBaseName = 'relay-spectate-service'
+    archiveClassifier = 'all'
+    archiveVersion = ''
+    manifest {
+        attributes 'Main-Class': mainClassName
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
+}
+
+tasks.register('run', JavaExec) {
+    group = 'application'
+    description = 'Run the spectate relay locally.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = mainClassName
+}

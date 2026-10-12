@@ -1,0 +1,67 @@
+plugins {
+    // Same Loom plugin and version as the root mod. 1.21.x is obfuscated, so this module maps
+    // against yarn exactly as the root mod does and 'remapJar' produces the publishable artifact.
+    id 'fabric-loom'
+}
+
+version = "${project.spectate_version}+${project.minecraft_version}"
+group = project.maven_group
+
+base {
+    archivesName = 'relay-spectate'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    // modImplementation, not implementation: these are mod jars, and on an obfuscated version
+    // loom has to remap them. Declared as plain implementation, Fabric API's access widener
+    // reaches the jar processor still in the intermediary namespace and the build fails before
+    // any of this module's own code is compiled.
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // The addon reads the main mod's trust list and relay connection. compileOnly because at
+    // runtime Relay is a separate jar loaded by Fabric, declared as a hard dependency in
+    // fabric.mod.json -- bundling it would put two copies of every class on the classpath.
+    //
+    // This takes Relay's compiled classes rather than `rootProject`, which would also drag in its
+    // published dependencies (Mod Menu, the Xaero builds) that the addon never touches and that
+    // would otherwise have to resolve for this module to configure at all.
+    compileOnly rootProject.sourceSets.main.output
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filteringCharset 'UTF-8'
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+def targetJavaVersion = 25
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = targetJavaVersion
+    it.options.compilerArgs << '-Xmaxerrs' << '2000'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+}
+
+jar {
+    from(rootProject.file('LICENSE')) {
+        rename { "${it}_relay-spectate" }
+    }
+}
+
+// Prints the module's full compile classpath, for ad-hoc experiments against the game's own
+// codecs outside the mod (see docs/spectate-testing.md).
+tasks.register('printCp') {
+    doLast { println sourceSets.main.compileClasspath.asPath }
+}

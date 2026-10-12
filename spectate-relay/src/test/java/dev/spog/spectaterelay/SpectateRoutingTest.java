@@ -402,10 +402,17 @@ class SpectateRoutingTest {
      * Two viewers may watch one target at once, and each is told separately.
      *
      * <p>This used to assert the opposite -- that a second viewer the target had not named was
-     * refused. Consent is no longer per-player, so a second viewer is legitimate, and what
-     * matters instead is that the target is asked to capture once per viewer: the capture-start
-     * carries the viewer's id, and the target replays a handshake for each, so a viewer joining
-     * an already-running stream still gets one.
+     * refused. Consent is no longer per-player, so a second viewer is legitimate at this layer:
+     * the service keeps a set of viewers per target and forwards every frame to all of them.
+     *
+     * <p><b>This does not mean a second viewer works end to end.</b> The target is this test's
+     * stub, not the real client, so nothing here exercises SpectateManager.beginCapture -- where
+     * {@code handshakeSent} is a per-session flag rather than per-viewer. A second viewer that
+     * joins an already-running capture is added to the set and receives subsequent game packets,
+     * but is never sent the handshake, login packet, position or terrain sweep, because the
+     * target believes it has already sent them. Fixing that needs per-viewer addressing on those
+     * frame types, which is a protocol change; until then, one viewer at a time is the only
+     * combination known to work.
      */
     @Test
     void aSecondViewerIsAttachedAndAlsoReceivesTheStream() throws Exception {

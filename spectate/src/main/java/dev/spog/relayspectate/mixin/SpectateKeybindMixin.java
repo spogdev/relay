@@ -29,12 +29,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(KeybindTextContent.class)
 public abstract class SpectateKeybindMixin {
-    @Shadow @Final private String name;
+    @Shadow @Final private String key;
 
     @Inject(method = "getTranslated", at = @At("HEAD"), cancellable = true)
     private void relayspectate$hideOwnKeybinds(CallbackInfoReturnable<Text> cir) {
-        if (SpectateLang.hasKeybind(name)) {
-            cir.setReturnValue(Text.literal(name));
+        if (SpectateLang.hasKeybind(key)) {
+            cir.setReturnValue(Text.literal(key));
         }
     }
 }

@@ -26,15 +26,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(GameMenuScreen.class)
 public abstract class SpectatePauseScreenMixin {
     @Shadow
-    private ButtonWidget disconnectButton;
+    private ButtonWidget exitButton;
 
     @Inject(method = "init", at = @At("RETURN"))
     private void relayspectate$relabel(CallbackInfo ci) {
-        if (disconnectButton != null && SpectateManager.get().isViewing()) {
+        if (exitButton != null && SpectateManager.get().isViewing()) {
             // SpectateLang.text, not Text.translatable: this mod's UI strings are not
             // registered with the game's language system, so a translatable component would render
             // as its raw key. The key already exists for the spectate menu's own stop button.
-            disconnectButton.setMessage(SpectateLang.text("menu.stop"));
+            exitButton.setMessage(SpectateLang.text("menu.stop"));
         }
     }
 }

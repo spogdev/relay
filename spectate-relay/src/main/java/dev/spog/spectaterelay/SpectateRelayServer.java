@@ -121,6 +121,7 @@ public final class SpectateRelayServer extends WebSocketServer {
                 available.add(s);
             }
         }
+        int sent = 0;
         for (SpectateSession recipient : byUuid.values()) {
             if (!recipient.isAuthenticated()) {
                 continue;
@@ -140,7 +141,11 @@ public final class SpectateRelayServer extends WebSocketServer {
             msg.addProperty("type", "roster");
             msg.add("peers", peers);
             send(recipient, msg.toString());
+            sent++;
         }
+        // Logged because a client showing an empty list cannot say whether the roster arrived
+        // empty or never arrived, and neither can this end without saying what it sent.
+        LOG.info("roster: {} available, sent to {} client(s)", available.size(), sent);
     }
 
     @Override
@@ -263,6 +268,9 @@ public final class SpectateRelayServer extends WebSocketServer {
         }
         boolean was = session.allowsViewers();
         session.setAllowsViewers(obj.get("allowsViewers").getAsBoolean());
+        if (was != session.allowsViewers()) {
+            LOG.info("{} consent -> {}", session.uuid(), session.allowsViewers());
+        }
         if (session.allowsViewers()) {
             if (!was) {
                 broadcastRoster();

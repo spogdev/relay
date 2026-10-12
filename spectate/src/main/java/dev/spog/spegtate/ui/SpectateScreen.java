@@ -38,6 +38,11 @@ public final class SpectateScreen extends Screen {
     // Derived from each other rather than written as three independent offsets, which is how the
     // status text and the toggle came to be drawn on top of one another.
     private static final int BUTTON_HEIGHT = 20;
+
+    /** Status-line colours: working, broken, and neither. */
+    private static final int GOOD = 0xFF55FF55;
+    private static final int BAD = 0xFFFF5555;
+    private static final int NEUTRAL = 0xFFAAAAAA;
     private static final int CLOSE_Y = 32;
     private static final int ALLOW_Y = CLOSE_Y + BUTTON_HEIGHT + 4;
     /** Baseline of the status line, clear of the toggle above it. */
@@ -149,25 +154,38 @@ public final class SpectateScreen extends Screen {
         SpectateManager manager = SpectateManager.get();
         ViewerSession active = manager.viewing();
         String status;
+        // Chosen by the branch that picks the message, not matched against its
+        // wording afterwards: each branch already knows whether it is reporting a
+        // working state or a problem, and text matching would break the first time
+        // a string was reworded.
+        int colour;
         if (active != null) {
             status = active.isInGame()
                     ? SpectateLang.string("status.watching", shortId(active.target()))
                     : SpectateLang.string("status.loading", shortId(active.target()));
+            colour = GOOD;
         } else if (manager.lastDenial() != null) {
             status = manager.lastDenial();
+            colour = BAD;
         } else if (minecraft != null && minecraft.level != null) {
             // Spectating replaces the client's world, so it cannot start from in-game. Said here
             // rather than on a failed click, which would look like the button did nothing.
             status = SpectateLang.string("error.in_world");
+            colour = BAD;
         } else if (!manager.canStartSession()) {
             status = SpectateLang.string("error.not_connected");
+            colour = BAD;
         } else if (candidates().isEmpty()) {
             status = SpectateLang.string("menu.empty");
+            // Nobody online is not a fault -- nothing is broken and there
+            // is nothing to fix -- so it stays neutral.
+            colour = NEUTRAL;
         } else {
             status = SpectateLang.string("menu.hint");
+            colour = NEUTRAL;
         }
         graphics.text(font, status,
-                width / 2 - font.width(status) / 2, height - STATUS_Y, 0xFFAAAAAA, true);
+                width / 2 - font.width(status) / 2, height - STATUS_Y, colour, true);
     }
 
     private static String shortId(UUID id) {

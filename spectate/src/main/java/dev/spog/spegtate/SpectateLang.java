@@ -57,8 +57,6 @@ public final class SpectateLang {
             Map.entry("status.ended", "The spectate session ended"),
             Map.entry("chat.spectate_started", "%s is spectating you"),
             Map.entry("chat.spectate_stopped", "%s stopped spectating you"),
-            Map.entry("status.watched", "%s is watching you"),
-            Map.entry("status.watched_many", "%d players are watching you"),
             Map.entry("deny.not_trusted", "%s does not have you trusted"),
             Map.entry("deny.no_addon", "%s is not running the spectate addon"),
             Map.entry("deny.offline", "%s is not available to spectate"),

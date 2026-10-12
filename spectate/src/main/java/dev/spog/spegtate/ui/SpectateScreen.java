@@ -113,13 +113,32 @@ public final class SpectateScreen extends Screen {
     private record Candidate(UUID id, String name) {
     }
 
-    /** Who the service says is online and accepting viewers. */
+    /**
+     * Who the service says is online and accepting viewers, excluding this client.
+     *
+     * <p>The service already leaves each recipient out of its own roster, so this filter is a
+     * second line rather than the only one. It is here because the roster arrives over the
+     * network: a service running an older build, or one that has not yet learned this client's
+     * id, would otherwise put a self row in the menu whose click is refused with "cannot
+     * spectate yourself". Filtering locally costs nothing and does not depend on the far end
+     * being right.
+     */
     private List<Candidate> candidates() {
+        UUID self = selfId();
         List<Candidate> out = new ArrayList<>();
         for (SpectateRoster.Peer peer : SpectateRoster.peers()) {
+            if (self != null && self.equals(peer.id())) {
+                continue;
+            }
             out.add(new Candidate(peer.id(), peer.display()));
         }
         return out;
+    }
+
+    /** This client's own player id, or null if the session has none. */
+    private UUID selfId() {
+        return client == null || client.getSession() == null
+                ? null : client.getSession().getUuidOrNull();
     }
 
     @Override

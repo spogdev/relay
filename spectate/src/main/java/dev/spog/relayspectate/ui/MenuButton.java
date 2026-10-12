@@ -1,8 +1,8 @@
 package dev.spog.relayspectate.ui;
 
 import dev.spog.relayspectate.SpectateLang;
-import net.fabricmc.fabric.api.client.currentScreen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.currentScreen.v1.Screens;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
@@ -52,10 +52,10 @@ public final class MenuButton {
     private static void addTo(Screen screen, int scaledHeight) {
         ButtonWidget button = ButtonWidget.builder(
                         SpectateLang.text("menu.title"),
-                        b -> Screens.getMinecraft(screen).setScreen(new SpectateScreen(screen)))
+                        b -> Screens.getClient(screen).setScreen(new SpectateScreen(screen)))
                 .dimensions(MARGIN, MARGIN, WIDTH, HEIGHT)
                 .build();
-        java.util.List<ClickableWidget> widgets = Screens.getWidgets(screen);
+        java.util.List<ClickableWidget> widgets = Screens.getButtons(screen);
         widgets.add(button);
     }
 }

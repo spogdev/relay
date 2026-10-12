@@ -491,7 +491,7 @@ public final class ViewerSession {
                 entry.latency(),
                 net.minecraft.world.GameMode.SPECTATOR,
                 entry.displayName(),
-                entry.showHat(),
+                entry.shouldShowHat(),
                 entry.listOrder(),
                 entry.chatSession());
     }

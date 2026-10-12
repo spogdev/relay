@@ -101,7 +101,7 @@ public final class SpectateScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(
                 SpectateLang.text("menu.close"),
-                b -> onClose()).dimensions(centerX, height - CLOSE_Y, BUTTON_WIDTH,
+                b -> close()).dimensions(centerX, height - CLOSE_Y, BUTTON_WIDTH,
                         BUTTON_HEIGHT).build());
     }
 
@@ -126,7 +126,7 @@ public final class SpectateScreen extends Screen {
     public void render(DrawContext graphics, int mouseX, int mouseY,
                                    float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        graphics.text(textRenderer, title.getString(),
+        graphics.drawText(textRenderer, title.getString(),
                 width / 2 - textRenderer.getWidth(title.getString()) / 2, 16, 0xFFFFFFFF, true);
 
         SpectateManager manager = SpectateManager.get();
@@ -149,7 +149,7 @@ public final class SpectateScreen extends Screen {
         } else {
             status = SpectateLang.string("menu.hint");
         }
-        graphics.text(textRenderer, status,
+        graphics.drawText(textRenderer, status,
                 width / 2 - textRenderer.getWidth(status) / 2, height - STATUS_Y,
                 0xFFAAAAAA, true);
     }
@@ -159,7 +159,7 @@ public final class SpectateScreen extends Screen {
     }
 
     @Override
-    public void onClose() {
+    public void close() {
         client.setScreen(parent);
     }
 

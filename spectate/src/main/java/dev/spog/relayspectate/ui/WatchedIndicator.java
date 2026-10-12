@@ -35,7 +35,7 @@ public final class WatchedIndicator implements HudElement {
     @Override
     public void render(DrawContext graphics, RenderTickCounter delta) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.options.hideGui || !SpectateConfig.get().showWatchedIndicator) {
+        if (mc.options.hudHidden || !SpectateConfig.get().showWatchedIndicator) {
             return;
         }
         SpectateManager manager = SpectateManager.get();
@@ -46,7 +46,7 @@ public final class WatchedIndicator implements HudElement {
         String text = count == 1
                 ? SpectateLang.string("status.watched", "A teammate")
                 : SpectateLang.string("status.watched_many", count);
-        int x = (graphics.guiWidth() - mc.font.width(text)) / 2;
-        graphics.text(mc.font, text, x, TOP_MARGIN, COLOR, true);
+        int x = (graphics.getScaledWindowWidth() - mc.textRenderer.getWidth(text)) / 2;
+        graphics.drawText(mc.textRenderer, text, x, TOP_MARGIN, COLOR, true);
     }
 }

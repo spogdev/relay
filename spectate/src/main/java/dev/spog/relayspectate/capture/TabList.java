@@ -9,7 +9,6 @@ import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.text.TextCodecs;
-import net.minecraft.network.chat.RemoteChatSession;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Action;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry;
@@ -66,7 +65,7 @@ public final class TabList {
         }
         List<Entry> entries = new ArrayList<>();
         java.util.Set<java.util.UUID> listed = new java.util.HashSet<>();
-        for (PlayerListEntry info : connection.getListedOnlinePlayers()) {
+        for (PlayerListEntry info : connection.getListedPlayerListEntries()) {
             if (info.getProfile() != null) {
                 listed.add(info.getProfile().id());
             }
@@ -76,7 +75,7 @@ public final class TabList {
         // rendered at all -- createEntityFromPacket discards the spawn. The listed flag below
         // still distinguishes them, so an unlisted player stays out of the viewer's tab UI while
         // existing as an entity.
-        for (PlayerListEntry info : connection.getOnlinePlayers()) {
+        for (PlayerListEntry info : connection.getPlayerList()) {
             GameProfile profile = info.getProfile();
             if (profile == null) {
                 continue;
@@ -89,9 +88,9 @@ public final class TabList {
                     listed.contains(profile.id()),
                     info.getLatency(),
                     mode == null ? GameMode.SURVIVAL : mode,
-                    info.getTabListDisplayName(),
-                    info.showHat(),
-                    info.getTabListOrder(),
+                    info.getDisplayName(),
+                    info.shouldShowHat(),
+                    info.getListOrder(),
                     // No chat session. The viewer must not be handed signing data for someone
                     // else's account, and the only thing a null session disables is signature
                     // verification on chat the viewer never receives -- CaptureFilter drops all
@@ -372,14 +371,14 @@ public final class TabList {
                 }
             }
             case INITIALIZE_CHAT -> buf.writeNullable(entry.chatSession(),
-                    RemoteChatSession.Data::write);
-            case UPDATE_GAME_MODE -> buf.writeVarInt(entry.gameMode().getId());
+                    net.minecraft.network.encryption.PublicPlayerSession.Serialized::write);
+            case UPDATE_GAME_MODE -> buf.writeVarInt(entry.gameMode().getIndex());
             case UPDATE_LISTED -> buf.writeBoolean(entry.listed());
             case UPDATE_LATENCY -> buf.writeVarInt(entry.latency());
             case UPDATE_DISPLAY_NAME -> buf.writeNullable(entry.displayName(),
-                    (b, name) -> TextCodecs.TRUSTED_STREAM_CODEC
+                    (b, name) -> TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC
                             .encode((RegistryByteBuf) b, name));
-            case UPDATE_HAT -> buf.writeBoolean(entry.showHat());
+            case UPDATE_HAT -> buf.writeBoolean(entry.shouldShowHat());
             case UPDATE_LIST_ORDER -> buf.writeVarInt(entry.listOrder());
         }
     }

@@ -66,9 +66,6 @@ public final class SpectateConfig {
      */
     public boolean allowSpectators = true;
 
-    /** Whether to show the indicator when someone is watching. */
-    public boolean showWatchedIndicator = true;
-
     /**
      * Whether the viewer may fly freely instead of riding the target's camera.
      *

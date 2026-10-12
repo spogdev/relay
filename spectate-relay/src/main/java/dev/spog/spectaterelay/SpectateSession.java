@@ -30,8 +30,13 @@ public final class SpectateSession {
     private volatile String gameVersion;
     private volatile String pendingServerId;
 
-    /** Who this client trusts, as reported by its own client. Used to gate inbound requests. */
-    private final Set<UUID> trusts = ConcurrentHashMap.newKeySet();
+    /**
+     * Whether this client allows anyone to watch it, as reported by its own client.
+     *
+     * <p>Defaults to false so a client that has authenticated but not yet sent its consent cannot
+     * be watched in the gap. Volatile because it is read by other sessions' request handlers.
+     */
+    private volatile boolean allowsViewers = false;
 
     /** Viewers currently watching this client. */
     private final Set<UUID> viewers = ConcurrentHashMap.newKeySet();
@@ -82,21 +87,25 @@ public final class SpectateSession {
     }
 
     /**
-     * Replaces this client's trust set.
+     * Records whether this client currently consents to being watched.
      *
-     * <p>The relay takes the client's word for who it trusts, which is safe in the direction that
-     * matters: a client can only ever shrink or grow the set of people allowed to watch
-     * <em>itself</em>. It cannot add itself to anyone else's set, because each session reports only
-     * its own, attributed to the UUID this relay verified.
+     * <p>The relay takes the client's word for this, which is safe in the direction that matters:
+     * a client can only ever grant or withhold access to <em>itself</em>. It cannot grant access
+     * to anyone else, because each session reports only its own consent, attributed to the UUID
+     * this relay verified.
+     *
+     * <p>This replaced a per-viewer UUID set. The mod is private and everyone holding it has
+     * agreed the others may watch them, so the set only ever held "everyone I know" and its real
+     * effect was to break whenever the list was incomplete -- a target who had simply never added
+     * you was indistinguishable from one refusing. Consent is now the single bit it always was.
      */
-    public void setTrusts(Set<UUID> next) {
-        trusts.clear();
-        trusts.addAll(next);
+    public void setAllowsViewers(boolean next) {
+        allowsViewers = next;
     }
 
-    /** True if this client has said {@code other} may watch it. */
-    public boolean trusts(UUID other) {
-        return trusts.contains(other);
+    /** True if this client currently allows others to watch it. */
+    public boolean allowsViewers() {
+        return allowsViewers;
     }
 
     public void addViewer(UUID viewer) {

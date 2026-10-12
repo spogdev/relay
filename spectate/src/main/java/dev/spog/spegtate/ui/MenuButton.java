@@ -37,23 +37,27 @@ public final class MenuButton {
     public static void register() {
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (screen instanceof JoinMultiplayerScreen) {
-                addTo(screen, scaledHeight);
+                addTo(screen, scaledWidth, scaledHeight);
             }
         });
     }
 
     /**
-     * Places the button in the top-left, clear of the vanilla row along the bottom.
+     * Places the button in the bottom-right corner.
      *
      * <p>Positioned absolutely rather than inserted into the screen's layout: the multiplayer
      * screen arranges its buttons in a fixed grid that assumes a known set, and adding to it
      * shifts every vanilla button. A corner that the screen does not use avoids touching that.
+     *
+     * <p>The corner is derived from the screen size rather than fixed, so it follows the
+     * window and the GUI scale instead of drifting at other sizes.
      */
-    private static void addTo(Screen screen, int scaledHeight) {
+    private static void addTo(Screen screen, int scaledWidth, int scaledHeight) {
         Button button = Button.builder(
                         SpectateLang.text("menu.title"),
                         b -> Screens.getMinecraft(screen).setScreen(new SpectateScreen(screen)))
-                .bounds(MARGIN, MARGIN, WIDTH, HEIGHT)
+                .bounds(scaledWidth - WIDTH - MARGIN, scaledHeight - HEIGHT - MARGIN,
+                        WIDTH, HEIGHT)
                 .build();
         java.util.List<AbstractWidget> widgets = Screens.getWidgets(screen);
         widgets.add(button);

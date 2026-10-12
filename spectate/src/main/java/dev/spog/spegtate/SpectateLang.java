@@ -55,6 +55,8 @@ public final class SpectateLang {
             Map.entry("status.loading", "Loading %s's view..."),
             Map.entry("status.watching", "Spectating %s"),
             Map.entry("status.ended", "The spectate session ended"),
+            Map.entry("chat.spectate_started", "%s is spectating you"),
+            Map.entry("chat.spectate_stopped", "%s stopped spectating you"),
             Map.entry("status.watched", "%s is watching you"),
             Map.entry("status.watched_many", "%d players are watching you"),
             Map.entry("deny.not_trusted", "%s does not have you trusted"),

@@ -880,10 +880,31 @@ public final class SpectateManager {
                 if (sentChunks.contains(chunkKey(x, z))) {
                     continue;
                 }
+                // Marked before the packing attempt, not after it, and this is the whole
+                // correctness of the sweep. Marking only what came back meant a chunk this client
+                // does not hold -- which is most of the region, since the target's own view
+                // distance may be smaller than the capture radius and chunks load progressively --
+                // was reconsidered on every single chunk boundary. Each step then repacked and
+                // requeued hundreds of chunks against a drain of a few dozen frames a tick, the
+                // backlog grew without bound, and live chunk packets queued behind a flood that
+                // never cleared. That is strictly worse than the hole it was meant to fix.
+                //
+                // A chunk that is genuinely missing is not lost by this: the viewer notices the
+                // hole and asks for it, and ChunkRepair's re-ask cooldown is what bounds the
+                // retries rather than an unbounded sweep.
+                sentChunks.add(chunkKey(x, z));
                 wanted.add(new net.minecraft.world.level.ChunkPos(x, z));
             }
         }
         if (wanted.isEmpty()) {
+            return;
+        }
+        // Skipped entirely while the backlog is already deep. The sweep is a catch-up for terrain
+        // the live stream could not carry, so it is never worth adding to a queue the viewer is
+        // still working through -- and a sweep that outruns the drain starves the live stream,
+        // which is a worse failure than the gap it fills. The chunks are not forgotten: they are
+        // marked above and, if they are genuinely missing, the viewer asks for them.
+        if (terrainBacklog.size() > TERRAIN_FRAMES_PER_TICK * 8) {
             return;
         }
         StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
@@ -892,14 +913,15 @@ public final class SpectateManager {
         for (var chunk : ChunkSweep.chunksAt(mc, wanted)) {
             try {
                 terrainBacklog.add(PacketWire.encode(codec, chunk));
-                sentChunks.add(chunkKey(chunk.getX(), chunk.getZ()));
                 sent++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.warn("spectate: could not encode a trailing chunk", e);
             }
         }
         // Entries far outside the region are dropped, so a long session does not keep one per
-        // chunk it ever passed through.
+        // chunk it ever passed through. Generously beyond the capture radius: an entry dropped
+        // while its chunk could still come back into range would have that chunk reconsidered,
+        // and reconsidering in bulk is what made an earlier version of this flood the backlog.
         int forget = r * 3;
         sentChunks.removeIf(key -> Math.abs((int) (key >> 32) - centre.x()) > forget
                 || Math.abs((int) (long) key - centre.z()) > forget);

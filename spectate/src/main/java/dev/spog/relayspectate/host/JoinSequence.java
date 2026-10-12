@@ -112,7 +112,7 @@ public final class JoinSequence {
     public static PlayerListS2CPacket selfSpectating(
             MinecraftClient mc, net.minecraft.registry.DynamicRegistryManager registries) {
         GameProfile profile = new GameProfile(
-                mc.getSession().getUuidOrNull(), mc.getSession().getName());
+                mc.getSession().getUuidOrNull(), mc.getSession().getUsername());
         return TabList.rebuild(
                 EnumSet.of(
                         PlayerListS2CPacket.Action.ADD_PLAYER,

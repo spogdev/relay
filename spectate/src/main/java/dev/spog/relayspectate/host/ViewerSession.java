@@ -303,7 +303,7 @@ public final class ViewerSession {
                                 status.getString()),
                         new ClientChunkLoadProgress(), null));
         connection.send(new LoginHelloC2SPacket(
-                mc.getSession().getName(), mc.getSession().getUuidOrNull()));
+                mc.getSession().getUsername(), mc.getSession().getUuidOrNull()));
         SpectateClient.LOGGER.info("spectate: loopback session opened for {}", target);
     }
 
@@ -436,8 +436,7 @@ public final class ViewerSession {
         // changed profile -- but while the viewer's own entry is missing, gameMode() returns null,
         // isSpectator() is false and PlayerEntity.tick turns collision back on. Other players' removes
         // pass through untouched.
-        if (decoded instanceof net.minecraft.network.protocol.game
-                .ClientboundPlayerInfoRemovePacket remove) {
+        if (decoded instanceof net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket remove) {
             java.util.List<java.util.UUID> others = remove.profileIds().stream()
                     .filter(id -> !me.equals(id))
                     .toList();
@@ -447,11 +446,9 @@ public final class ViewerSession {
             if (others.size() == remove.profileIds().size()) {
                 return decoded;
             }
-            return new net.minecraft.network.protocol.game
-                    .ClientboundPlayerInfoRemovePacket(others);
+            return new net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket(others);
         }
-        if (!(decoded instanceof net.minecraft.network.protocol.game
-                .ClientboundPlayerInfoUpdatePacket info)) {
+        if (!(decoded instanceof net.minecraft.network.packet.s2c.play.PlayerListS2CPacket info)) {
             return decoded;
         }
         java.util.UUID self = me;
@@ -482,8 +479,7 @@ public final class ViewerSession {
 
     /** The same entry with its game mode forced to spectator. */
     private static net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry
-            spectating(net.minecraft.network.protocol.game
-                    .ClientboundPlayerInfoUpdatePacket.Entry entry) {
+            spectating(net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry entry) {
         return new net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry(
                 entry.profileId(),
                 entry.profile(),
@@ -549,8 +545,7 @@ public final class ViewerSession {
             // and what matters is how many arrived and where the first one sat relative to the
             // centre the host set -- which is what distinguishes "not sent" from "sent and
             // rejected".
-            if (decoded instanceof net.minecraft.network.protocol.game
-                    .ClientboundLevelChunkWithLightPacket chunk) {
+            if (decoded instanceof net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket chunk) {
                 chunksReceived++;
                 // Before the packet is handed on, so a chunk that arrives and is then rejected by
                 // the cache still counts as answered -- otherwise a chunk the target supplied but

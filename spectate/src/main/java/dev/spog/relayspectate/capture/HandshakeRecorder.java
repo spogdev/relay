@@ -73,8 +73,8 @@ public final class HandshakeRecorder {
             // fails identically to one that carries no tag packet at all, and the two need
             // different fixes.
             SpectateClient.LOGGER.debug("spectate: recorded tags for {} registries, item tags: {}",
-                    tags.getTags().size(),
-                    tags.getTags().keySet().stream()
+                    tags.getGroups().size(),
+                    tags.getGroups().keySet().stream()
                             .anyMatch(k -> k.identifier().getPath().equals("item")));
         }
         packets.add(new Recorded(packet));

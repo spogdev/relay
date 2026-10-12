@@ -120,7 +120,7 @@ public final class HostDriver {
     /** Attaches the handshake listener. The client is about to send its intention packet. */
     public void begin() {
         connection.transitionInbound(
-                net.minecraft.network.protocol.handshake.HandshakeStates.C2S,
+                net.minecraft.network.state.HandshakeStates.C2S,
                 new HostHandshakeListener(connection, intention -> enterLogin()));
     }
 

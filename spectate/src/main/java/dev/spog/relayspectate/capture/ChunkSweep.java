@@ -155,7 +155,7 @@ public final class ChunkSweep {
                 // to spawn for others; it is handled as the local player. It is sent below.
                 continue;
             }
-            if (entity.squaredDistanceTo(self.getPos()) > maxDistSqr) {
+            if (entity.squaredDistanceTo(self.getEntityPos()) > maxDistSqr) {
                 continue;
             }
             addEntity(out, entity);
@@ -188,7 +188,7 @@ public final class ChunkSweep {
                     0,
                     entity.getVelocity(),
                     entity.getHeadYaw()));
-            var data = entity.getDataTracker().getNonDefaultValues();
+            var data = entity.getDataTracker().getChangedEntries();
             if (data != null && !data.isEmpty()) {
                 out.add(new EntityTrackerUpdateS2CPacket(entity.getId(), data));
             }

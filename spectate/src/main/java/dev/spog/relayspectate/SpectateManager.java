@@ -299,14 +299,11 @@ public final class SpectateManager {
         // Chunks the live stream delivers are recorded as sent, so the trailing sweep does not
         // rebuild and resend terrain the viewer already has. Without this every chunk inside the
         // radius would be sent twice -- once live and once by the next sweep.
-        if (packet instanceof net.minecraft.network.protocol.game
-                .ClientboundLevelChunkWithLightPacket chunk) {
+        if (packet instanceof net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket chunk) {
             sentChunks.add(chunkKey(chunk.getChunkX(), chunk.getChunkZ()));
         }
-        if (packet instanceof net.minecraft.network.protocol.game
-                .ClientboundPlayerInfoUpdatePacket
-                || packet instanceof net.minecraft.network.protocol.game
-                        .ClientboundPlayerInfoRemovePacket) {
+        if (packet instanceof net.minecraft.network.packet.s2c.play.PlayerListS2CPacket
+                || packet instanceof net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket) {
             queueAhead(wire);
             return;
         }
@@ -666,8 +663,7 @@ public final class SpectateManager {
             // profile would not change a skin already resolved. Only a new PlayerListEntry picks up
             // new textures, and only a remove makes the client build one.
             var ids = tabList.getEntries().stream()
-                    .map(net.minecraft.network.protocol.game
-                            .ClientboundPlayerInfoUpdatePacket.Entry::profileId)
+                    .map(net.minecraft.network.packet.s2c.play.PlayerListS2CPacket.Entry::profileId)
                     .toList();
             queueAhead(PacketWire.encode(codec,
                     new net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket(

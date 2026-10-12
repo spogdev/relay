@@ -116,7 +116,7 @@ public final class SpectateClientSocket {
         // The MinecraftClient version, so the service can refuse to pair two clients that cannot
         // understand each other's packets. See SpectateProtocol.DENY_VERSION.
         hello.addProperty("gameVersion", net.minecraft.SharedConstants.getGameVersion().name());
-        hello.addProperty("profileName", mc.getSession().getName());
+        hello.addProperty("profileName", mc.getSession().getUsername());
         sendText(gson.toJson(hello));
     }
 
@@ -130,7 +130,7 @@ public final class SpectateClientSocket {
         executor.execute(() -> {
             try {
                 MinecraftClient mc = MinecraftClient.getInstance();
-                mc.services().sessionService().joinServer(
+                mc.getApiServices().sessionService().joinServer(
                         mc.getSession().getUuidOrNull(), mc.getSession().getAccessToken(), serverId);
                 JsonObject response = new JsonObject();
                 response.addProperty("type", "auth-response");
@@ -233,7 +233,7 @@ public final class SpectateClientSocket {
         buf.put(SpectateProtocol.TYPE_CHUNK_REQUEST);
         buf.putShort((short) count);
         for (int i = 0; i < count; i++) {
-            buf.putInt(chunks.get(i).x()).putInt(chunks.get(i).z());
+            buf.putInt(chunks.get(i).x).putInt(chunks.get(i).z);
         }
         sendBinary(buf.flip());
     }

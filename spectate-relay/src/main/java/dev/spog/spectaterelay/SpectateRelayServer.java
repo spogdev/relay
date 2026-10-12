@@ -1,6 +1,7 @@
 package dev.spog.spectaterelay;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import dev.spog.teamlocator.relay.auth.Verifier;
@@ -12,9 +13,9 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -97,6 +98,54 @@ public final class SpectateRelayServer extends WebSocketServer {
         // to serialize a stream nobody receives.
         endAsTarget(session);
         endAsViewer(session);
+        if (id != null) {
+            broadcastRoster();
+        }
+    }
+
+    /**
+     * Tells every authenticated client who is currently available to watch.
+     *
+     * <p>The client used to build this list from its own trust config. With the trust list gone
+     * there is nothing on the client that knows who exists, and the service already does, so it
+     * says. Only sessions that consent are listed: a client that has spectating turned off is
+     * absent rather than listed-and-refused, which keeps the menu honest about what will work.
+     *
+     * <p>Each recipient is left out of its own roster, because spectating yourself is refused
+     * anyway and an unclickable row explaining that is worse than no row.
+     */
+    private void broadcastRoster() {
+        List<SpectateSession> available = new ArrayList<>();
+        for (SpectateSession s : byUuid.values()) {
+            if (s.isAuthenticated() && s.allowsViewers() && s.uuid() != null) {
+                available.add(s);
+            }
+        }
+        int sent = 0;
+        for (SpectateSession recipient : byUuid.values()) {
+            if (!recipient.isAuthenticated()) {
+                continue;
+            }
+            JsonArray peers = new JsonArray();
+            for (SpectateSession s : available) {
+                if (s.uuid().equals(recipient.uuid())) {
+                    continue;
+                }
+                JsonObject peer = new JsonObject();
+                peer.addProperty("uuid", s.uuid().toString());
+                peer.addProperty("name", s.profileName() == null ? "" : s.profileName());
+                peer.addProperty("version", s.gameVersion() == null ? "" : s.gameVersion());
+                peers.add(peer);
+            }
+            JsonObject msg = new JsonObject();
+            msg.addProperty("type", "roster");
+            msg.add("peers", peers);
+            send(recipient, msg.toString());
+            sent++;
+        }
+        // Logged because a client showing an empty list cannot say whether the roster arrived
+        // empty or never arrived, and neither can this end without saying what it sent.
+        LOG.info("roster: {} available, sent to {} client(s)", available.size(), sent);
     }
 
     @Override
@@ -203,6 +252,9 @@ public final class SpectateRelayServer extends WebSocketServer {
                 byUuid.put(verified, session);
                 send(session, "{\"type\":\"auth-ok\"}");
                 LOG.info("authenticated {} ({})", name, verified);
+                // The new client needs the current roster, and everyone else needs to learn
+                // about it -- the same message answers both, so it goes to all of them.
+                broadcastRoster();
             } catch (Verifier.Unavailable e) {
                 send(session, "{\"type\":\"auth-fail\",\"reason\":\"retry\"}");
                 session.conn().close();
@@ -211,28 +263,29 @@ public final class SpectateRelayServer extends WebSocketServer {
     }
 
     private void handleTrustUpdate(SpectateSession session, JsonObject obj) {
-        if (!session.isAuthenticated() || !obj.has("trusts")) {
+        if (!session.isAuthenticated() || !obj.has("allowsViewers")) {
             return;
         }
-        Set<UUID> next = new HashSet<>();
-        for (var el : obj.getAsJsonArray("trusts")) {
-            try {
-                next.add(UUID.fromString(el.getAsString()));
-            } catch (IllegalArgumentException ignored) {
-                // A malformed uuid in the list is skipped rather than rejecting the whole update.
-            }
+        boolean was = session.allowsViewers();
+        session.setAllowsViewers(obj.get("allowsViewers").getAsBoolean());
+        if (was != session.allowsViewers()) {
+            LOG.info("{} consent -> {}", session.uuid(), session.allowsViewers());
         }
-        session.setTrusts(next);
+        if (session.allowsViewers()) {
+            if (!was) {
+                broadcastRoster();
+            }
+            return;
+        }
+        broadcastRoster();
 
-        // Revoking trust must take effect immediately, not at the next session request: a viewer
-        // already watching has to be cut off.
+        // Withdrawing consent must take effect immediately, not at the next session request:
+        // anyone already watching has to be cut off.
         for (UUID viewer : session.viewers()) {
-            if (!session.trusts(viewer)) {
-                SpectateSession viewing = byUuid.get(viewer);
-                if (viewing != null) {
-                    viewing.conn().send(Wire.deny(Wire.DENY_REVOKED, "Trust revoked"));
-                    stopWatching(viewing, session);
-                }
+            SpectateSession viewing = byUuid.get(viewer);
+            if (viewing != null) {
+                viewing.conn().send(Wire.deny(Wire.DENY_REVOKED, "Spectating disabled"));
+                stopWatching(viewing, session);
             }
         }
     }
@@ -259,12 +312,12 @@ public final class SpectateRelayServer extends WebSocketServer {
             viewer.conn().send(Wire.deny(Wire.DENY_OFFLINE, "Target unavailable"));
             return;
         }
-        if (!target.trusts(viewer.uuid())) {
-            viewer.conn().send(Wire.deny(Wire.DENY_NOT_TRUSTED, "Target does not trust you"));
+        if (!target.allowsViewers()) {
+            viewer.conn().send(Wire.deny(Wire.DENY_NOT_TRUSTED, "Target is not accepting viewers"));
             return;
         }
-        // Checked after trust, so a viewer the target does not trust learns nothing about what
-        // the target is running.
+        // Checked after consent, so a viewer the target is not accepting learns nothing about
+        // what the target is running.
         String viewerVersion = viewer.gameVersion();
         String targetVersion = target.gameVersion();
         if (viewerVersion == null || targetVersion == null

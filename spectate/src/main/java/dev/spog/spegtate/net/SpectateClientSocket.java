@@ -386,8 +386,13 @@ public final class SpectateClientSocket {
                     }
                     case "roster" -> {
                         if (obj.has("peers")) {
-                            SpectateRoster.set(
-                                    SpectateRoster.parse(obj.getAsJsonArray("peers")));
+                            var peers = SpectateRoster.parse(obj.getAsJsonArray("peers"));
+                            SpectateRoster.set(peers);
+                            // Logged because an empty menu otherwise cannot be told apart from
+                            // a service that never sent a roster at all -- which is the first
+                            // question asked when the menu says nobody is online.
+                            SpectateClient.LOGGER.info(
+                                    "spectate roster: {} player(s) available", peers.size());
                         }
                     }
                     case "auth-fail" -> {

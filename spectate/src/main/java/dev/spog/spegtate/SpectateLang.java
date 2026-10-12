@@ -37,8 +37,6 @@ public final class SpectateLang {
      */
     private static final Map<String, String> KEYBINDS = Map.of(
             "key.category.spegtate.main", "Spegtate",
-            "key.spegtate.open_menu", "Spectate Menu (while spectating)",
-            "key.spegtate.stop", "Stop Spectating",
             "key.spegtate.refocus", "Refocus");
 
     /** UI strings, never looked up by the game. */

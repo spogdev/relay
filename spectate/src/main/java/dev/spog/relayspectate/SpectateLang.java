@@ -44,10 +44,12 @@ public final class SpectateLang {
     /** UI strings, never looked up by the game. */
     private static final Map<String, String> STRINGS = Map.ofEntries(
             Map.entry("menu.title", "Spectate"),
-            Map.entry("menu.empty", "No teammates are available to spectate."),
-            Map.entry("menu.hint", "Only players who trust you and run this addon appear here."),
+            Map.entry("menu.empty", "Your spectate list is empty."),
+            Map.entry("menu.hint", "Only players on your spectate list who also trust you can be watched."),
             Map.entry("menu.stop", "Stop Spectating"),
             Map.entry("menu.close", "Close"),
+            Map.entry("menu.allow_on", "Others may spectate you: ON"),
+            Map.entry("menu.allow_off", "Others may spectate you: OFF"),
             Map.entry("status.refocused", "Refocused on %s"),
             Map.entry("status.refocused_loading", "Refocused on %s -- loading terrain..."),
             Map.entry("status.refocus_waiting", "Waiting for the target's position."),
@@ -70,6 +72,29 @@ public final class SpectateLang {
             Map.entry("error.failed", "The spectate session could not start."),
             Map.entry("error.in_world", "Leave your world first -- spectating replaces it."),
             Map.entry("error.not_connected", "Not connected to the spectate service."));
+
+    /**
+     * Set while a screen that legitimately shows keybind names is building its rows.
+     *
+     * <p>The addon keeps its own window rather than borrowing Relay's, which is what it used to
+     * do. Sharing the flag meant the addon's keybind rows only rendered when Relay was installed
+     * to open the window for them -- a hard dependency for the sake of a boolean.
+     *
+     * <p>Not thread-local: lookups happen on the render thread, and the thing being guarded
+     * against is a server-sent component rendered in chat, which can land inside this window if
+     * the controls screen happens to be open. That is acceptable -- it needs the user to have the
+     * controls screen open at that moment, which no server can arrange -- and it is the narrowest
+     * window that still lets the screen render correctly.
+     */
+    private static volatile boolean resolvingKeybinds;
+
+    public static void setResolvingKeybinds(boolean resolving) {
+        resolvingKeybinds = resolving;
+    }
+
+    public static boolean isResolvingKeybinds() {
+        return resolvingKeybinds;
+    }
 
     public static boolean hasKeybind(String key) {
         return KEYBINDS.containsKey(key);

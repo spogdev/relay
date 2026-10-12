@@ -33,18 +33,24 @@ public final class SpectateConfig {
      */
     private static final String SERVICE_PATH = "/spectate";
 
+    /** The service this addon is built against; see {@link #serviceAddress}. */
+    private static final String DEFAULT_SERVICE_ADDRESS = "relay.spog.dev";
+
     private static SpectateConfig instance;
 
     /**
      * The spectate service address, as {@code host} or {@code host:port}.
      *
-     * <p>Required. This used to fall back to Relay's configured host, which is what made Relay a
-     * hard dependency for a feature that otherwise only needed an address; the addon now asks for
-     * its own. On first run it is seeded from Relay's address if Relay happens to be installed
-     * (see {@link SpectateRelayImport}), so an existing setup keeps working without being
-     * reconfigured, but nothing afterwards consults Relay.
+     * <p>Defaults to the service this addon is built for, so a fresh install connects without
+     * being configured. It stays a config field rather than a constant because a local service is
+     * the only practical way to test a change, and {@link #isLocal} exists for exactly that case.
+     *
+     * <p>This used to be blank and seeded on first run from Relay's address. That made a feature
+     * needing one string depend on another mod being installed, and it failed silently on any
+     * version Relay does not build for: the seed never ran, the address stayed empty, and the
+     * client simply never connected. A default is the same answer without the dependency.
      */
-    public String serviceAddress = "";
+    public String serviceAddress = DEFAULT_SERVICE_ADDRESS;
 
     /**
      * Whether anyone may spectate this client at all.
@@ -67,15 +73,6 @@ public final class SpectateConfig {
      */
     public java.util.List<SpectateTrust.Entry> trusted = new java.util.ArrayList<>();
 
-    /**
-     * Whether the one-time import from Relay's trust list has already run.
-     *
-     * <p>Recorded so the import happens once and not every launch. Without it, pruning someone
-     * from the spectate list would be undone at the next start by re-importing them from Relay,
-     * and there would be no way to keep a spectate list narrower than the map-sharing one.
-     */
-    public boolean importedFromRelay = false;
-
     /** Whether to show the indicator when someone is watching. */
     public boolean showWatchedIndicator = true;
 
@@ -95,10 +92,7 @@ public final class SpectateConfig {
 
     public static synchronized SpectateConfig get() {
         if (instance == null) {
-            // Assigned before the import runs, because the import calls save(), which would
-            // otherwise re-enter get() on a still-null instance and recurse.
             instance = load();
-            SpectateRelayImport.runOnce(instance);
         }
         return instance;
     }
@@ -118,6 +112,14 @@ public final class SpectateConfig {
                         // Absent from a config written before the list existed, and Gson leaves
                         // it null rather than keeping the field initialiser.
                         loaded.trusted = new java.util.ArrayList<>();
+                    }
+                    if (loaded.serviceAddress == null || loaded.serviceAddress.isBlank()) {
+                        // A field default only reaches a config Gson does not overwrite, so every
+                        // config written before the address had a default kept its empty string
+                        // and silently never connected. Blank is not a meaningful setting -- it
+                        // means "no service" -- so treat it as unset and fill it in.
+                        loaded.serviceAddress = DEFAULT_SERVICE_ADDRESS;
+                        loaded.save();
                     }
                     return loaded;
                 }

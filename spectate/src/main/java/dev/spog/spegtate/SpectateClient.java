@@ -4,13 +4,11 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.spog.spegtate.capture.CaptureHooks;
 import dev.spog.spegtate.ui.MenuButton;
 import dev.spog.spegtate.ui.SpectateScreen;
-import dev.spog.spegtate.ui.WatchedIndicator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -59,7 +57,6 @@ public final class SpectateClient implements ClientModInitializer {
         refocusKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.spegtate.refocus", InputConstants.Type.KEYSYM, unbound, category));
 
-        HudElementRegistry.addLast(WatchedIndicator.ID, new WatchedIndicator());
         // The menu button, not the keybind, is how a session is started: see MenuButton for why
         // a keybind cannot reach this feature at all.
         MenuButton.register();

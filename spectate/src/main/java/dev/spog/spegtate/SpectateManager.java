@@ -37,6 +37,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * bridges the two -- {@link #tick()} drains it from the client thread.
  */
 public final class SpectateManager {
+    /** Light grey, so a spectate notice reads as a note rather than a warning. */
+    private static final int CHAT_COLOUR = 0xBBBBBB;
+
     private static final SpectateManager INSTANCE = new SpectateManager();
 
     public static SpectateManager get() {
@@ -1049,7 +1052,7 @@ public final class SpectateManager {
         if (mc.player == null) {
             return;
         }
-        mc.player.sendSystemMessage(SpectateLang.text(key, viewerName(mc, viewer)));
+        mc.player.sendSystemMessage(SpectateLang.text(key, viewerName(mc, viewer)).withColor(CHAT_COLOUR));
     }
 
     /**

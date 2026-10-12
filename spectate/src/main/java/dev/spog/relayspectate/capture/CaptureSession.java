@@ -1,6 +1,7 @@
 package dev.spog.relayspectate.capture;
 
 import dev.spog.relayspectate.SpectateClient;
+import dev.spog.relayspectate.net.SpectateProtocol;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -123,7 +124,7 @@ public final class CaptureSession {
         if (listener == null) {
             return;
         }
-        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc))) {
+        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc), leadChunk(mc))) {
             // Counted separately from the filter's other rejections. A chunk dropped for distance
             // is the one rejection that is expected to be rare and that a viewer notices
             // immediately as terrain that never appears, so it needs to be distinguishable from
@@ -168,6 +169,42 @@ public final class CaptureSession {
     private static ChunkPos localChunk(Minecraft mc) {
         Player player = mc.player;
         return player == null ? null : player.chunkPosition();
+    }
+
+    /**
+     * A chunk ahead of this player along its travel, or null when it is not really moving.
+     *
+     * <p>This is the second centre the radius filter clips against, and it exists because a server
+     * sends terrain <em>ahead of</em> a walking player: chunks are dispatched out at the player's
+     * full view distance, well before the player is near them. A filter centred only on where the
+     * player stands rejects precisely the chunks it is walking into, which is what pinned a viewer
+     * to the terrain swept at session start.
+     *
+     * <p>Projected from the horizontal delta movement rather than from look direction, because
+     * where a player is going is what decides which chunks the server sends -- a player can walk
+     * forwards while looking behind. Below a small threshold the lead collapses to null and the
+     * filter is a single box again, so standing still costs nothing.
+     */
+    private static ChunkPos leadChunk(Minecraft mc) {
+        Player player = mc.player;
+        if (player == null) {
+            return null;
+        }
+        var motion = player.getDeltaMovement();
+        double dx = motion.x;
+        double dz = motion.z;
+        double speed = Math.sqrt(dx * dx + dz * dz);
+        // Roughly a tenth of a block per tick. Below this the projection is noise and would
+        // wander the lead box around at random.
+        if (speed < 0.05) {
+            return null;
+        }
+        double lead = (double) SpectateProtocol.CAPTURE_RADIUS_CHUNKS * 16.0;
+        double x = player.getX() + dx / speed * lead;
+        double z = player.getZ() + dz / speed * lead;
+        return new ChunkPos(
+                net.minecraft.core.SectionPos.blockToSectionCoord(x),
+                net.minecraft.core.SectionPos.blockToSectionCoord(z));
     }
 
     /** Forwarded, filtered and failed counts, for one summary line per session. */

@@ -108,6 +108,12 @@ public final class ViewerSession {
         if (!closed && isInGame()) {
             enforceSpectator();
             camera.tick();
+            // After camera.tick(), so the centre follows the camera entity this tick chose
+            // rather than the previous one.
+            HostDriver d = driver;
+            if (d != null) {
+                d.tickViewerCentre();
+            }
         }
     }
 
@@ -136,6 +142,30 @@ public final class ViewerSession {
 
     public UUID target() {
         return target;
+    }
+
+    /**
+     * Puts the viewer back on the target, for the Refocus keybind.
+     *
+     * <p>Needed because a free camera can be flown anywhere, including out of the streamed region
+     * entirely, where there is no terrain and nothing to navigate by -- and the target is a player
+     * who keeps moving, so flying back by hand is guesswork. Returning is one key.
+     *
+     * <p>Also re-centres the chunk cache immediately rather than waiting for the next tick, so the
+     * terrain around the target is being accepted again by the time the viewer arrives.
+     *
+     * @return false if there is nothing to refocus on yet, so the caller can say so
+     */
+    public boolean refocus() {
+        HostDriver d = driver;
+        if (closed || d == null || !isInGame()) {
+            return false;
+        }
+        if (!d.recentreOnTarget()) {
+            return false;
+        }
+        d.tickViewerCentre();
+        return true;
     }
 
     /**

@@ -37,7 +37,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "chunk-diag-5";
+    public static final String BUILD_MARKER = "viewer-centre-6";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -45,6 +45,7 @@ public final class SpectateClient implements ClientModInitializer {
 
     private static KeyMapping openMenuKey;
     private static KeyMapping stopKey;
+    private static KeyMapping refocusKey;
 
     private int tickCounter;
 
@@ -58,6 +59,10 @@ public final class SpectateClient implements ClientModInitializer {
                 "key.relayspectate.open_menu", InputConstants.Type.KEYSYM, unbound, category));
         stopKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relayspectate.stop", InputConstants.Type.KEYSYM, unbound, category));
+        // Refocus puts a free-flying viewer back on the target. Unbound by default like the
+        // others, so it is a deliberate choice rather than a key taken from the player.
+        refocusKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.relayspectate.refocus", InputConstants.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(WatchedIndicator.ID, new WatchedIndicator());
         // The menu button, not the keybind, is how a session is started: see MenuButton for why
@@ -71,6 +76,24 @@ public final class SpectateClient implements ClientModInitializer {
         // development. BUILD_MARKER is bumped whenever behaviour changes, so one line in the log
         // settles which jar is loaded before anything else is investigated.
         LOGGER.info("Relay Spectate loaded (build {})", BUILD_MARKER);
+    }
+
+    /**
+     * The target's display name, falling back to a short id.
+     *
+     * <p>Read from the viewer's own level, where the target is a normal player entity delivered by
+     * the stream, so this is the name the viewer can already see above them.
+     */
+    private static String targetName(Minecraft client, dev.spog.relayspectate.host.ViewerSession s) {
+        java.util.UUID id = s.target();
+        if (client.level != null) {
+            for (var player : client.level.players()) {
+                if (id.equals(player.getUUID())) {
+                    return player.getName().getString();
+                }
+            }
+        }
+        return id == null ? "?" : id.toString().substring(0, 8);
     }
 
     private void onTick(Minecraft client) {
@@ -87,6 +110,22 @@ public final class SpectateClient implements ClientModInitializer {
         }
         while (stopKey.consumeClick()) {
             manager.stopViewing();
+        }
+        while (refocusKey.consumeClick()) {
+            var active = manager.viewing();
+            if (active != null) {
+                // Reported on the action bar rather than silently, because a refocus that cannot
+                // happen yet -- no position from the target so far -- is otherwise
+                // indistinguishable from the key not being bound.
+                if (active.refocus()) {
+                    client.gui.setOverlayMessage(
+                            SpectateLang.text("status.refocused", targetName(client, active)),
+                            false);
+                } else {
+                    client.gui.setOverlayMessage(
+                            SpectateLang.text("status.refocus_waiting"), false);
+                }
+            }
         }
 
         // The socket is wanted whenever this client could be either role: in-game it may be a

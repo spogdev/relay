@@ -38,7 +38,8 @@ public final class SpectateLang {
     private static final Map<String, String> KEYBINDS = Map.of(
             "key.category.relayspectate.main", "Relay Spectate",
             "key.relayspectate.open_menu", "Spectate Menu (while spectating)",
-            "key.relayspectate.stop", "Stop Spectating");
+            "key.relayspectate.stop", "Stop Spectating",
+            "key.relayspectate.refocus", "Refocus");
 
     /** UI strings, never looked up by the game. */
     private static final Map<String, String> STRINGS = Map.ofEntries(
@@ -47,6 +48,8 @@ public final class SpectateLang {
             Map.entry("menu.hint", "Only players who trust you and run this addon appear here."),
             Map.entry("menu.stop", "Stop Spectating"),
             Map.entry("menu.close", "Close"),
+            Map.entry("status.refocused", "Refocused on %s"),
+            Map.entry("status.refocus_waiting", "Waiting for the target's position."),
             Map.entry("status.connecting", "Connecting to the spectate service..."),
             Map.entry("status.loading", "Loading %s's view..."),
             Map.entry("status.watching", "Spectating %s"),

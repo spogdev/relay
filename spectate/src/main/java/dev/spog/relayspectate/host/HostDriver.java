@@ -254,12 +254,28 @@ public final class HostDriver {
     }
 
     private void applyPosition(double x, double y, double z, float yaw, float pitch) {
-        ChunkPos chunk = new ChunkPos(
-                net.minecraft.core.SectionPos.blockToSectionCoord(x),
-                net.minecraft.core.SectionPos.blockToSectionCoord(z));
-        // The centre follows the target always: it decides which forwarded chunks the client will
-        // accept, and the capture is clipped to a radius around the target, so centring anywhere
-        // else would reject the very chunks being sent.
+        // The centre follows the VIEWER's camera when it has one, and the target otherwise.
+        //
+        // The centre decides which arriving chunks the viewer's client keeps: it discards anything
+        // further than its view radius from the centre, at the instant the chunk arrives, with no
+        // later widening to save it. Centring it on the target looks right -- the capture is
+        // clipped around the target, so that is where the chunks come from -- but it is wrong as
+        // soon as the viewer stops riding the target. With free camera on, a viewer that flies
+        // away is outside its own centre's radius, so terrain around it is thrown away on
+        // arrival, and terrain around the target that arrived while it was away was thrown away
+        // too. Flying back then showed a hole that never filled, because a server does not resend
+        // a chunk and the viewer's client believes it already decided about that one.
+        //
+        // Keyed to the viewer, chunks are kept relative to what the viewer is actually looking at,
+        // which is what the cache centre is for. The capture still sends terrain around the
+        // target, so a viewer that flies beyond the streamed region sees its edge -- but it sees
+        // everything that was sent, which it did not before.
+        ChunkPos chunk = viewerChunk();
+        if (chunk == null) {
+            chunk = new ChunkPos(
+                    net.minecraft.core.SectionPos.blockToSectionCoord(x),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(z));
+        }
         connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
         // The position is sent once, not on every report. A position packet moves the viewer's
         // player, and these arrive five times a second -- so resending it holds the viewer on top
@@ -281,18 +297,70 @@ public final class HostDriver {
         }
     }
 
+    /** The chunk centre last sent, so an unchanged centre is not resent every tick. */
+    private volatile int lastCentreX = Integer.MIN_VALUE;
+    private volatile int lastCentreZ = Integer.MIN_VALUE;
+
+    /**
+     * Re-centres the viewer's chunk cache on its own camera. Called once per client tick.
+     *
+     * <p>Per-tick rather than only when the target reports, because the two move independently:
+     * with free camera on, the viewer can fly a long way while the target stands still, and the
+     * target's position reports are the only other thing that would move the centre. Without this
+     * the centre stayed wherever the last report put it and chunks arriving around the viewer were
+     * discarded.
+     *
+     * <p>Sent only when the chunk actually changes. The centre is a packet, and this runs twenty
+     * times a second.
+     */
+    public void tickViewerCentre() {
+        if (!inGame || !connection.isConnected()) {
+            return;
+        }
+        ChunkPos chunk = viewerChunk();
+        if (chunk == null) {
+            return;
+        }
+        if (chunk.x() == lastCentreX && chunk.z() == lastCentreZ) {
+            return;
+        }
+        lastCentreX = chunk.x();
+        lastCentreZ = chunk.z();
+        connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
+    }
+
+    /**
+     * The chunk the viewer's own camera is in, or null before it has a player.
+     *
+     * <p>Read from the viewer's client rather than tracked from packets: this runs in the viewer's
+     * process, so its camera position is simply available, and a value derived from what the host
+     * last sent would be exactly the stale figure this is here to stop using.
+     */
+    private static ChunkPos viewerChunk() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        var camera = mc.getCameraEntity() != null ? mc.getCameraEntity() : mc.player;
+        return camera == null ? null : camera.chunkPosition();
+    }
+
     /**
      * Forces the viewer back onto the target's position.
      *
      * <p>Used by the locked camera when it re-attaches, and when a session starts, so the viewer
      * does not stay wherever a previous free-flight left it.
      */
-    public void recentreOnTarget() {
+    public boolean recentreOnTarget() {
         if (!inGame || !connection.isConnected() || !hasPendingPosition) {
-            return;
+            return false;
         }
+        // Offset behind the target exactly as the initial placement is, and for the same reason: a
+        // camera inside another player's model renders the inside of that model, which looks like
+        // the target having vanished.
+        double yawRad = Math.toRadians(pendingYaw);
+        double behindX = pendingX + Math.sin(yawRad) * SPAWN_OFFSET_BLOCKS;
+        double behindZ = pendingZ - Math.cos(yawRad) * SPAWN_OFFSET_BLOCKS;
         connection.send(JoinSequence.position(
-                pendingX, pendingY, pendingZ, pendingYaw, pendingPitch));
+                behindX, pendingY + 1.0, behindZ, pendingYaw, pendingPitch));
+        return true;
     }
 
     /**

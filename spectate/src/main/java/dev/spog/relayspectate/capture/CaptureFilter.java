@@ -170,15 +170,44 @@ public final class CaptureFilter {
     }
 
     /**
-     * True if this packet is inside the capture radius, or is not position-scoped.
+     * True if this packet is inside the capture radius of either the target or the viewer's
+     * camera, or is not position-scoped.
      *
      * <p>Only whole-chunk packets are clipped. Block and entity packets inside a chunk the viewer
      * never received are harmless -- the viewer's client drops an update for a chunk it does not
      * have -- and testing each one would cost more than it saves.
      *
+     * <p>Measured against the <em>chunk the packet is for</em> relative to two centres, because
+     * one centre is not enough and an earlier version used only the target's. Two things defeat
+     * it:
+     *
+     * <ul>
+     *   <li>A server sends chunks <em>ahead of</em> a walking player. The target's client asks for
+     *       terrain in its direction of travel, so the server dispatches chunks out at the
+     *       target's full view distance -- commonly 16 to 32 -- well before the target gets near
+     *       them. Tested against where the target is standing at the instant the packet arrives,
+     *       exactly the chunks the target is walking into are the ones that fail, and a viewer was
+     *       pinned to the terrain swept at session start while the target walked off its edge.
+     *       Two thirds of live chunks were being dropped this way.</li>
+     *   <li>The chunks that matter most are the ones the target is heading towards, and those
+     *       are furthest from where it currently stands.</li>
+     * </ul>
+     *
+     * <p>So the test is a union of two boxes: one on the target, and one on a point projected
+     * ahead of it along its travel. While the target stands still the two coincide and the rate is
+     * exactly what it was; while it walks, the lead box covers the terrain arriving ahead of it.
+     *
+     * <p>The viewer's own camera is deliberately <em>not</em> a third centre, though a free-flying
+     * viewer can be far from the target. The capture runs on the target's client, which has no way
+     * to learn where the viewer's camera is without a new viewer-to-target message -- and the
+     * service forwards only target-to-viewer frame types, so that would mean a protocol change and
+     * a service deploy. The viewer's side is fixed where the actual defect was instead: it was
+     * discarding chunks it had already been sent. See {@code HostDriver.applyPosition}.
+     *
      * @param local the target's own chunk, or null when there is no player yet (nothing is sent)
+     * @param lead a chunk ahead of the target along its travel, or null when it is not moving
      */
-    public static boolean isWithinRadius(Packet<?> packet, ChunkPos local) {
+    public static boolean isWithinRadius(Packet<?> packet, ChunkPos local, ChunkPos lead) {
         if (local == null) {
             return false;
         }
@@ -193,7 +222,14 @@ public final class CaptureFilter {
         } else {
             return true;
         }
+        return near(x, z, local) || near(x, z, lead);
+    }
+
+    private static boolean near(int x, int z, ChunkPos centre) {
+        if (centre == null) {
+            return false;
+        }
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
-        return Math.abs(x - local.x()) <= r && Math.abs(z - local.z()) <= r;
+        return Math.abs(x - centre.x()) <= r && Math.abs(z - centre.z()) <= r;
     }
 }

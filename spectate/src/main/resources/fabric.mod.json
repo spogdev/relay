@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "relayspectate",
+  "id": "spegtate",
   "version": "${version}",
-  "name": "Relay Spectate",
-  "description": "Watch a teammate who has you trusted, live, without joining their server.",
+  "name": "Spegtate",
+  "description": "Watch another player running this mod, live, without joining their server.",
   "authors": [
     "Spog"
   ],
@@ -11,11 +11,11 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "dev.spog.relayspectate.SpectateClient"
+      "dev.spog.spegtate.SpectateClient"
     ]
   },
   "mixins": [
-    "relayspectate.mixins.json"
+    "spegtate.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.19",

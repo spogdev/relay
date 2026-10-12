@@ -75,7 +75,7 @@ public final class HandshakeRecorder {
             SpectateClient.LOGGER.debug("spectate: recorded tags for {} registries, item tags: {}",
                     tags.getGroups().size(),
                     tags.getGroups().keySet().stream()
-                            .anyMatch(k -> k.identifier().getPath().equals("item")));
+                            .anyMatch(k -> k.getValue().getPath().equals("item")));
         }
         packets.add(new Recorded(packet));
     }

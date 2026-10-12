@@ -130,14 +130,14 @@ public final class ViewerSession {
      * have.
      *
      * <p>{@code ClientPlayerInteractionManager.localPlayerMode} is what actually decides it:
-     * {@code MinecraftClient.interactionManager.getCurrentGameMode().isSpectator()} reads it, and that governs no-clip and whether the
+     * {@code MinecraftClient.interactionManager.getCurrentGameMode() == net.minecraft.world.GameMode.SPECTATOR} reads it, and that governs no-clip and whether the
      * local player is drawn -- a viewer appearing as a body in third person was this being wrong.
      * Setting it directly each tick makes the viewer a spectator regardless of what arrives, and
      * nothing in the stream can take it away for longer than a tick.
      */
     private void enforceSpectator() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.interactionManager != null && !mc.interactionManager.getCurrentGameMode().isSpectator()) {
+        if (mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() != net.minecraft.world.GameMode.SPECTATOR) {
             mc.interactionManager.setGameMode(net.minecraft.world.GameMode.SPECTATOR);
         }
     }
@@ -463,7 +463,7 @@ public final class ViewerSession {
                         .map(e -> self.equals(e.profileId()) ? spectating(e) : e)
                         .toList();
         var rebuilt = dev.spog.relayspectate.capture.TabList.rebuild(
-                info.actions(), fixed, MinecraftClient.getInstance());
+                info.getActions(), fixed, MinecraftClient.getInstance());
         if (rebuilt != null) {
             return rebuilt;
         }
@@ -487,7 +487,7 @@ public final class ViewerSession {
                 entry.latency(),
                 net.minecraft.world.GameMode.SPECTATOR,
                 entry.displayName(),
-                entry.shouldShowHat(),
+                entry.showHat(),
                 entry.listOrder(),
                 entry.chatSession());
     }
@@ -550,7 +550,7 @@ public final class ViewerSession {
                 // Before the packet is handed on, so a chunk that arrives and is then rejected by
                 // the cache still counts as answered -- otherwise a chunk the target supplied but
                 // the viewer discarded would be requested forever.
-                repair.onChunkArrived(chunk.getX(), chunk.getZ());
+                repair.onChunkArrived(chunk.getChunkX(), chunk.getChunkZ());
             }
             Packet<?> forward = withOwnEntrySpectating(decoded);
             if (forward != null) {

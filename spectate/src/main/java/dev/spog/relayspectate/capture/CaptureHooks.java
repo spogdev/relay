@@ -58,8 +58,8 @@ public final class CaptureHooks {
         // was dropped: live-dropped items appeared as nothing, and chunks loaded while walking
         // never reached a viewer at all, while the same entities and chunks swept from the level
         // at session start were fine.
-        if (packet instanceof net.minecraft.network.packet.BundleS2CPacket<?> bundle) {
-            for (Packet<?> sub : bundle.subPackets()) {
+        if (packet instanceof net.minecraft.network.packet.s2c.play.BundleS2CPacket bundle) {
+            for (Packet<?> sub : bundle.getPackets()) {
                 onInboundPacket(sub);
             }
             return;

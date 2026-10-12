@@ -196,7 +196,7 @@ public final class SpectateManager {
     public void stopViewing() {
         boolean had = discardViewing();
         SpectateClientSocket s = socket;
-        if (had && s != null && s.isOpen()) {
+        if (had && s != null && s.isConnected()) {
             s.stopSession();
         }
     }

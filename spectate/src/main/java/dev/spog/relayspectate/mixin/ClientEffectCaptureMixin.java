@@ -44,7 +44,7 @@ public abstract class ClientEffectCaptureMixin {
      * <p>{@code PARTICLES_DESTROY_BLOCK} is the one that matters -- block breaking -- but every
      * level event raised locally is in the same position, so none is singled out.
      */
-    @Inject(method = "levelEvent", at = @At("HEAD"))
+    @Inject(method = "syncWorldEvent", at = @At("HEAD"))
     private void relaySpectateCaptureLevelEvent(Entity source, int type, BlockPos pos, int data,
                                                 CallbackInfo ci) {
         if (!CaptureHooks.isStreaming()) {
@@ -60,8 +60,11 @@ public abstract class ClientEffectCaptureMixin {
      * a locally predicted block break. The seed is passed through so a viewer hears the same
      * variant of a sound with several, rather than a different random pick.
      */
-    @Inject(method = "playSeededSound(Lnet/client/world/entity/Entity;DDDLnet/client/core/RegistryEntry;"
-            + "Lnet/client/sounds/SoundCategory;FFJ)V", at = @At("HEAD"))
+    // Descriptor pinned, and taken verbatim from javap -s: ClientWorld has several
+    // playSound overloads and an unpinned name would be ambiguous.
+    @Inject(method = "playSound(Lnet/minecraft/entity/Entity;DDD"
+            + "Lnet/minecraft/registry/entry/RegistryEntry;"
+            + "Lnet/minecraft/sound/SoundCategory;FFJ)V", at = @At("HEAD"))
     private void relaySpectateCaptureSound(Entity source, double x, double y, double z,
                                            RegistryEntry<SoundEvent> sound, SoundCategory category,
                                            float volume, float pitch, long seed,

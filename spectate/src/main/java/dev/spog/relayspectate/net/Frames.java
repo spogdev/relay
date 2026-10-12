@@ -17,7 +17,7 @@ public final class Frames {
 
     /** A frame's type byte, or -1 if the buffer is empty. */
     public static byte typeOf(ByteBuffer frame) {
-        return frame.remaining() < 1 ? -1 : frame.get(frame.getPos());
+        return frame.remaining() < 1 ? (byte) -1 : frame.get(frame.position());
     }
 
     /** A frame carrying only a type byte. */

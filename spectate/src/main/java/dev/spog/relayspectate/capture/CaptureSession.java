@@ -94,7 +94,7 @@ public final class CaptureSession {
         // Bundles are unwrapped by CaptureHooks before they reach here, so a bundle arriving at
         // this point would be a programming error rather than something to forward -- it has no
         // wire form of its own and encoding it is not possible.
-        if (packet instanceof net.minecraft.network.packet.BundleS2CPacket<?>) {
+        if (packet instanceof net.minecraft.network.packet.s2c.play.BundleS2CPacket) {
             SpectateClient.LOGGER.warn("spectate: a bundle reached the session unwrapped");
             return;
         }

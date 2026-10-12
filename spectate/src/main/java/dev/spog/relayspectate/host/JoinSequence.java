@@ -76,7 +76,7 @@ public final class JoinSequence {
         return new GameJoinS2CPacket(
                 VIEWER_ENTITY_ID,
                 false,
-                target.levels(),
+                target.dimensionIds(),
                 target.maxPlayers(),
                 SpectateProtocol.VIEWER_RADIUS_CHUNKS,
                 SpectateProtocol.VIEWER_RADIUS_CHUNKS,
@@ -168,6 +168,6 @@ public final class JoinSequence {
      */
     public static GameStateChangeS2CPacket levelChunksLoaded() {
         return new GameStateChangeS2CPacket(
-                GameStateChangeS2CPacket.LEVEL_CHUNKS_LOAD_START, 0.0f);
+                GameStateChangeS2CPacket.INITIAL_CHUNKS_COMING, 0.0f);
     }
 }

@@ -217,7 +217,7 @@ public final class TabList {
                 // profile being worked around, the filter below rejected it, and nothing was ever
                 // resolved or resent. fetchProfile goes to the service and returns the full
                 // profile, textures included.
-                var result = MinecraftClient.getInstance().services().sessionService()
+                var result = MinecraftClient.getInstance().getApiServices().sessionService()
                         .fetchProfile(id, true);
                 java.util.Optional.ofNullable(result)
                         .map(com.mojang.authlib.yggdrasil.ProfileResult::profile)
@@ -378,7 +378,7 @@ public final class TabList {
             case UPDATE_DISPLAY_NAME -> buf.writeNullable(entry.displayName(),
                     (b, name) -> TextCodecs.UNLIMITED_REGISTRY_PACKET_CODEC
                             .encode((RegistryByteBuf) b, name));
-            case UPDATE_HAT -> buf.writeBoolean(entry.shouldShowHat());
+            case UPDATE_HAT -> buf.writeBoolean(entry.showHat());
             case UPDATE_LIST_ORDER -> buf.writeVarInt(entry.listOrder());
         }
     }

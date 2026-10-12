@@ -194,9 +194,9 @@ public final class HostDriver {
         connection.transitionInbound(
                 PlayStateFactories.C2S.bind(
                         RegistryByteBuf.makeFactory(access),
-                        new PlayStateFactories.Context() {
+                        new PlayStateFactories.PacketCodecModifierContext() {
                             @Override
-                            public boolean hasInfiniteMaterials() {
+                            public boolean isInCreativeMode() {
                                 // The viewer is a spectator; this only gates a creative-mode packet
                                 // it can never send.
                                 return false;

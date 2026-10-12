@@ -128,12 +128,12 @@ public final class SpectateClient implements ClientModInitializer {
                     if (empty) {
                         SpectateManager.get().requestResweep();
                     }
-                    client.gui.setOverlayMessage(
+                    client.inGameHud.setOverlayMessage(
                             SpectateLang.text(empty ? "status.refocused_loading"
                                     : "status.refocused", targetName(client, active)),
                             false);
                 } else {
-                    client.gui.setOverlayMessage(
+                    client.inGameHud.setOverlayMessage(
                             SpectateLang.text("status.refocus_waiting"), false);
                 }
             }

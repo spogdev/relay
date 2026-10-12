@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(MinecraftClient.class)
 public abstract class SpectateDisconnectMixin {
-    @Inject(method = "disconnectFromWorld(Lnet/client/network/chat/Text;)V",
+    @Inject(method = "disconnect(Lnet/minecraft/text/Text;)V",
             at = @At("HEAD"))
     private void relayspectate$endSession(net.minecraft.text.Text reason,
                                           CallbackInfo ci) {

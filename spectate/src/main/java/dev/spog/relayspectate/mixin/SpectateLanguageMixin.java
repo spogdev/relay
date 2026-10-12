@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(TranslationStorage.class)
 public abstract class SpectateLanguageMixin {
-    @Inject(method = "getOrDefault(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    @Inject(method = "get(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
             at = @At("HEAD"), cancellable = true)
     private void relayspectate$serveKeybindName(String key, String fallback,
                                                 CallbackInfoReturnable<String> cir) {
@@ -33,7 +33,7 @@ public abstract class SpectateLanguageMixin {
         }
     }
 
-    @Inject(method = "has(Ljava/lang/String;)Z", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "hasTranslation(Ljava/lang/String;)Z", at = @At("HEAD"), cancellable = true)
     private void relayspectate$hasKeybindName(String key, CallbackInfoReturnable<Boolean> cir) {
         if (SpectateLang.isResolvingKeybinds() && SpectateLang.hasKeybind(key)) {
             cir.setReturnValue(true);

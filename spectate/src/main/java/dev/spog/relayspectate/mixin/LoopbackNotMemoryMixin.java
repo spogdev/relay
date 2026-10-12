@@ -39,7 +39,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(ClientConnection.class)
 public abstract class LoopbackNotMemoryMixin {
-    @Inject(method = "isMemoryConnection", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "isLocal", at = @At("HEAD"), cancellable = true)
     private void relayspectate$spectateIsRemote(CallbackInfoReturnable<Boolean> cir) {
         if (LoopbackHost.isLoopback((ClientConnection) (Object) this)) {
             cir.setReturnValue(false);

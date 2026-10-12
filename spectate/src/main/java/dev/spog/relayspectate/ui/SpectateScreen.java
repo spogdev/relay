@@ -34,6 +34,15 @@ public final class SpectateScreen extends Screen {
     private static final int BUTTON_WIDTH = 200;
     private static final int LIST_TOP = 40;
 
+    // The bottom of the screen stacks upward: Close, then the allow toggle, then the status line.
+    // Derived from each other rather than written as three independent offsets, which is how the
+    // status text and the toggle came to be drawn on top of one another.
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int CLOSE_Y = 32;
+    private static final int ALLOW_Y = CLOSE_Y + BUTTON_HEIGHT + 4;
+    /** Baseline of the status line, clear of the toggle above it. */
+    private static final int STATUS_Y = ALLOW_Y + BUTTON_HEIGHT + 2;
+
     private final Screen parent;
 
     public SpectateScreen(Screen parent) {
@@ -66,7 +75,7 @@ public final class SpectateScreen extends Screen {
                         rebuildWidgets();
                     }).bounds(centerX, y, BUTTON_WIDTH, 20).build());
             y += ROW_HEIGHT;
-            if (y > height - 60) {
+            if (y > height - STATUS_Y - ROW_HEIGHT) {
                 // The list is capped by the window rather than scrolled: a trust list long enough
                 // to need scrolling is not the case this addon is for, and a scroll widget here
                 // would be more code than the feature warrants.
@@ -87,11 +96,11 @@ public final class SpectateScreen extends Screen {
                     // not one the player would consider honoured.
                     SpectateManager.get().sendTrust(SpectateTrust.allowedViewers());
                     rebuildWidgets();
-                }).bounds(centerX, height - 56, BUTTON_WIDTH, 20).build());
+                }).bounds(centerX, height - ALLOW_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
 
         addRenderableWidget(Button.builder(
                 SpectateLang.text("menu.close"),
-                b -> onClose()).bounds(centerX, height - 32, BUTTON_WIDTH, 20).build());
+                b -> onClose()).bounds(centerX, height - CLOSE_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
     }
 
     private static Component allowLabel() {
@@ -139,7 +148,7 @@ public final class SpectateScreen extends Screen {
             status = SpectateLang.string("menu.hint");
         }
         graphics.text(font, status,
-                width / 2 - font.width(status) / 2, height - 48, 0xFFAAAAAA, true);
+                width / 2 - font.width(status) / 2, height - STATUS_Y, 0xFFAAAAAA, true);
     }
 
     private static String shortId(UUID id) {

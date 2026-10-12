@@ -812,48 +812,46 @@ public final class SpectateManager {
         }
         sweptCentreX = centre.x();
         sweptCentreZ = centre.z();
+        // Checked before anything is marked. An earlier version marked the whole region and
+        // then returned here, which wrote off a 29x29 block of terrain as "sent" without sending
+        // any of it -- and because a mark is permanent, every one of those chunks was lost for
+        // the rest of the session. One deep-backlog moment was enough to leave the viewer with
+        // almost nothing, which is exactly what it did.
+        //
+        // Returning before the sweep marks anything means the same region is simply reconsidered
+        // at the next chunk boundary, when the backlog has had a chance to drain.
+        if (terrainBacklog.size() > TERRAIN_FRAMES_PER_TICK * 8) {
+            // Not recorded as swept, so the next boundary retries rather than skipping ahead.
+            sweptCentreX = Integer.MIN_VALUE;
+            sweptCentreZ = Integer.MIN_VALUE;
+            return;
+        }
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
         List<net.minecraft.world.level.ChunkPos> wanted = new ArrayList<>();
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
                 int x = centre.x() + dx;
                 int z = centre.z() + dz;
-                if (sentChunks.contains(chunkKey(x, z))) {
-                    continue;
+                if (!sentChunks.contains(chunkKey(x, z))) {
+                    wanted.add(new net.minecraft.world.level.ChunkPos(x, z));
                 }
-                // Marked before the packing attempt, not after it, and this is the whole
-                // correctness of the sweep. Marking only what came back meant a chunk this client
-                // does not hold -- which is most of the region, since the target's own view
-                // distance may be smaller than the capture radius and chunks load progressively --
-                // was reconsidered on every single chunk boundary. Each step then repacked and
-                // requeued hundreds of chunks against a drain of a few dozen frames a tick, the
-                // backlog grew without bound, and live chunk packets queued behind a flood that
-                // never cleared. That is strictly worse than the hole it was meant to fix.
-                //
-                // A chunk that is genuinely missing is not lost by this: the viewer notices the
-                // hole and asks for it, and ChunkRepair's re-ask cooldown is what bounds the
-                // retries rather than an unbounded sweep.
-                sentChunks.add(chunkKey(x, z));
-                wanted.add(new net.minecraft.world.level.ChunkPos(x, z));
             }
         }
         if (wanted.isEmpty()) {
             return;
         }
-        // Skipped entirely while the backlog is already deep. The sweep is a catch-up for terrain
-        // the live stream could not carry, so it is never worth adding to a queue the viewer is
-        // still working through -- and a sweep that outruns the drain starves the live stream,
-        // which is a worse failure than the gap it fills. The chunks are not forgotten: they are
-        // marked above and, if they are genuinely missing, the viewer asks for them.
-        if (terrainBacklog.size() > TERRAIN_FRAMES_PER_TICK * 8) {
-            return;
-        }
         StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
                 PacketWire.gameCodec(listener.registryAccess());
         int sent = 0;
+        // Marked here, as each chunk is actually queued, rather than for the whole region up
+        // front. Marking up front was an attempt to stop chunks this client does not hold from
+        // being reconsidered every boundary, but it marked unsendable and unsent chunks alike and
+        // so threw away terrain permanently. The flood it was guarding against is bounded by the
+        // backlog check above and by chunksAt only returning chunks that are actually loaded.
         for (var chunk : ChunkSweep.chunksAt(mc, wanted)) {
             try {
                 terrainBacklog.add(PacketWire.encode(codec, chunk));
+                sentChunks.add(chunkKey(chunk.getX(), chunk.getZ()));
                 sent++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.warn("spectate: could not encode a trailing chunk", e);

@@ -34,7 +34,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPacketListenerRegistryMixin {
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void relayspectate$publishRegistries(MinecraftClient minecraft, ClientConnection connection,
+    private void relayspectate$publishRegistries(MinecraftClient client, ClientConnection connection,
                                                  ClientConnectionState cookie, CallbackInfo ci) {
         if (LoopbackHost.isLoopback(connection)) {
             LoopbackRegistries.publish(connection, cookie.receivedRegistries());

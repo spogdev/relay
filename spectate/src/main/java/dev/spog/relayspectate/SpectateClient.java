@@ -86,8 +86,8 @@ public final class SpectateClient implements ClientModInitializer {
      */
     private static String targetName(MinecraftClient client, dev.spog.relayspectate.host.ViewerSession s) {
         java.util.UUID id = s.target();
-        if (client.level != null) {
-            for (var player : client.level.players()) {
+        if (client.world != null) {
+            for (var player : client.world.players()) {
                 if (id.equals(player.getUuid())) {
                     return player.getName().getString();
                 }
@@ -105,7 +105,7 @@ public final class SpectateClient implements ClientModInitializer {
         // menu button's job; see MenuButton.
         while (openMenuKey.wasPressed()) {
             if (manager.viewing() != null) {
-                client.setScreen(new SpectateScreen(client.screen));
+                client.setScreen(new SpectateScreen(client.currentScreen));
             }
         }
         while (stopKey.wasPressed()) {

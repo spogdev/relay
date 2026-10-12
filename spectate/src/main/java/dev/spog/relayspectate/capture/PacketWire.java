@@ -8,9 +8,9 @@ import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.listener.ClientConfigurationPacketListener;
-import net.minecraft.network.protocol.configuration.ConfigurationProtocols;
+import net.minecraft.network.state.ConfigurationStates;
 import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.protocol.game.GameProtocols;
+import net.minecraft.network.state.PlayStateFactories;
 
 /**
  * Encodes and decodes whole packets using the game's own protocol codecs.
@@ -40,8 +40,8 @@ public final class PacketWire {
     public static PacketCodec<ByteBuf, Packet<? super ClientPlayPacketListener>> gameCodec(
             DynamicRegistryManager registries) {
         ProtocolInfo<ClientPlayPacketListener> info =
-                GameProtocols.CLIENTBOUND_TEMPLATE.bind(
-                        RegistryByteBuf.decorator(registries));
+                PlayStateFactories.S2C.bind(
+                        RegistryByteBuf.makeFactory(registries));
         return info.codec();
     }
 
@@ -53,7 +53,7 @@ public final class PacketWire {
      */
     public static PacketCodec<ByteBuf, Packet<? super ClientConfigurationPacketListener>>
             configurationCodec() {
-        return ConfigurationProtocols.CLIENTBOUND.codec();
+        return ConfigurationStates.S2C.codec();
     }
 
     /** Serializes one packet to its wire bytes, id included. */

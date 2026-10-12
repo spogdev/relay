@@ -7,10 +7,10 @@ import net.minecraft.registry.DynamicRegistryManager;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.packet.Packet;
-import net.minecraft.network.protocol.configuration.ConfigurationProtocols;
+import net.minecraft.network.state.ConfigurationStates;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
-import net.minecraft.network.protocol.game.GameProtocols;
-import net.minecraft.network.protocol.login.LoginProtocols;
+import net.minecraft.network.state.PlayStateFactories;
+import net.minecraft.network.state.LoginStates;
 import net.minecraft.util.math.ChunkPos;
 
 import java.util.List;
@@ -120,7 +120,7 @@ public final class HostDriver {
     /** Attaches the handshake listener. The client is about to send its intention packet. */
     public void begin() {
         connection.setupInboundProtocol(
-                net.minecraft.network.protocol.handshake.HandshakeProtocols.SERVERBOUND,
+                net.minecraft.network.protocol.handshake.HandshakeStates.C2S,
                 new HostHandshakeListener(connection, intention -> enterLogin()));
     }
 
@@ -128,9 +128,9 @@ public final class HostDriver {
     private void enterLogin() {
         // Outbound before inbound, as the vanilla server does: the client has sent its intention
         // and the next thing it reads must already be a login packet.
-        connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
+        connection.setupOutboundProtocol(LoginStates.S2C);
         connection.setupInboundProtocol(
-                LoginProtocols.SERVERBOUND,
+                LoginStates.C2S,
                 new HostLoginListener(connection, profile -> enterConfiguration()));
     }
 
@@ -138,8 +138,8 @@ public final class HostDriver {
     private void enterConfiguration() {
         HostConfigurationListener listener =
                 new HostConfigurationListener(connection, handshake, c -> enterGame());
-        connection.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND);
-        connection.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener);
+        connection.setupOutboundProtocol(ConfigurationStates.S2C);
+        connection.setupInboundProtocol(ConfigurationStates.C2S, listener);
         listener.begin();
     }
 
@@ -189,12 +189,12 @@ public final class HostDriver {
         }
 
         connection.setupOutboundProtocol(
-                GameProtocols.CLIENTBOUND_TEMPLATE.bind(
-                        RegistryByteBuf.decorator(access)));
+                PlayStateFactories.S2C.bind(
+                        RegistryByteBuf.makeFactory(access)));
         connection.setupInboundProtocol(
-                GameProtocols.SERVERBOUND_TEMPLATE.bind(
-                        RegistryByteBuf.decorator(access),
-                        new GameProtocols.Context() {
+                PlayStateFactories.C2S.bind(
+                        RegistryByteBuf.makeFactory(access),
+                        new PlayStateFactories.Context() {
                             @Override
                             public boolean hasInfiniteMaterials() {
                                 // The viewer is a spectator; this only gates a creative-mode packet
@@ -273,10 +273,10 @@ public final class HostDriver {
         ChunkPos chunk = viewerChunk();
         if (chunk == null) {
             chunk = new ChunkPos(
-                    net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(x),
-                    net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(z));
+                    net.minecraft.util.math.ChunkSectionPos.getSectionCoord(x),
+                    net.minecraft.util.math.ChunkSectionPos.getSectionCoord(z));
         }
-        connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
+        connection.send(JoinSequence.chunkCenter(chunk.x, chunk.z));
         // The position is sent once, not on every report. A position packet moves the viewer's
         // player, and these arrive five times a second -- so resending it holds the viewer on top
         // of the target and makes flying impossible, since every input is undone within four
@@ -321,12 +321,12 @@ public final class HostDriver {
         if (chunk == null) {
             return;
         }
-        if (chunk.x() == lastCentreX && chunk.z() == lastCentreZ) {
+        if (chunk.x == lastCentreX && chunk.z == lastCentreZ) {
             return;
         }
-        lastCentreX = chunk.x();
-        lastCentreZ = chunk.z();
-        connection.send(JoinSequence.chunkCenter(chunk.x(), chunk.z()));
+        lastCentreX = chunk.x;
+        lastCentreZ = chunk.z;
+        connection.send(JoinSequence.chunkCenter(chunk.x, chunk.z));
     }
 
     /**

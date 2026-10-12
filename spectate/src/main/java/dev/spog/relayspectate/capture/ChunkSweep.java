@@ -53,7 +53,7 @@ public final class ChunkSweep {
      */
     public static List<ChunkDataS2CPacket> loadedChunksAround(MinecraftClient mc) {
         List<ChunkDataS2CPacket> out = new ArrayList<>();
-        ClientWorld level = mc.level;
+        ClientWorld level = mc.world;
         Entity player = mc.player;
         if (level == null || player == null) {
             return out;
@@ -64,8 +64,8 @@ public final class ChunkSweep {
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                int x = center.x() + dx;
-                int z = center.z() + dz;
+                int x = center.x + dx;
+                int z = center.z + dz;
                 // load=false: only chunks the client already has. A client cannot generate terrain,
                 // so asking it to load one would do nothing useful anyway.
                 WorldChunk chunk = level.getChunkManager().getChunk(x, z, ChunkStatus.FULL, false);
@@ -103,14 +103,14 @@ public final class ChunkSweep {
     public static List<ChunkDataS2CPacket> chunksAt(MinecraftClient mc,
                                                                       List<ChunkPos> wanted) {
         List<ChunkDataS2CPacket> out = new ArrayList<>();
-        ClientWorld level = mc.level;
+        ClientWorld level = mc.world;
         if (level == null || wanted.isEmpty()) {
             return out;
         }
         var lightEngine = level.getLightingProvider();
         for (ChunkPos pos : wanted) {
             WorldChunk chunk = level.getChunkManager()
-                    .getChunk(pos.x(), pos.z(), ChunkStatus.FULL, false);
+                    .getChunk(pos.x, pos.z, ChunkStatus.FULL, false);
             if (chunk == null) {
                 continue;
             }
@@ -119,7 +119,7 @@ public final class ChunkSweep {
                         chunk, lightEngine, new BitSet(), new BitSet()));
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.debug("spectate: could not repack chunk {},{}",
-                        pos.x(), pos.z(), e);
+                        pos.x, pos.z, e);
             }
         }
         return out;
@@ -142,7 +142,7 @@ public final class ChunkSweep {
      */
     public static List<Packet<?>> entitiesAround(MinecraftClient mc) {
         List<Packet<?>> out = new ArrayList<>();
-        ClientWorld level = mc.level;
+        ClientWorld level = mc.world;
         Entity self = mc.player;
         if (level == null || self == null) {
             return out;

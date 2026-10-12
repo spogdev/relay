@@ -60,8 +60,8 @@ public abstract class ClientEffectCaptureMixin {
      * a locally predicted block break. The seed is passed through so a viewer hears the same
      * variant of a sound with several, rather than a different random pick.
      */
-    @Inject(method = "playSeededSound(Lnet/minecraft/world/entity/Entity;DDDLnet/minecraft/core/RegistryEntry;"
-            + "Lnet/minecraft/sounds/SoundCategory;FFJ)V", at = @At("HEAD"))
+    @Inject(method = "playSeededSound(Lnet/client/world/entity/Entity;DDDLnet/client/core/RegistryEntry;"
+            + "Lnet/client/sounds/SoundCategory;FFJ)V", at = @At("HEAD"))
     private void relaySpectateCaptureSound(Entity source, double x, double y, double z,
                                            RegistryEntry<SoundEvent> sound, SoundCategory category,
                                            float volume, float pitch, long seed,

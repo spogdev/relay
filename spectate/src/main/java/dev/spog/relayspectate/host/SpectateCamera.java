@@ -43,7 +43,7 @@ public final class SpectateCamera {
      */
     public void tick() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.level == null || mc.player == null) {
+        if (mc.world == null || mc.player == null) {
             return;
         }
         if (dev.spog.relayspectate.SpectateConfig.get().freeCamera) {
@@ -90,7 +90,7 @@ public final class SpectateCamera {
     }
 
     private AbstractClientPlayerEntity findTarget(MinecraftClient mc) {
-        for (AbstractClientPlayerEntity player : mc.level.players()) {
+        for (AbstractClientPlayerEntity player : mc.world.players()) {
             if (target.equals(player.getUuid())) {
                 return player;
             }

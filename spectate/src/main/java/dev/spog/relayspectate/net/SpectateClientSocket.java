@@ -131,7 +131,7 @@ public final class SpectateClientSocket {
             try {
                 MinecraftClient mc = MinecraftClient.getInstance();
                 mc.services().sessionService().joinServer(
-                        mc.getSession().getProfileId(), mc.getSession().getAccessToken(), serverId);
+                        mc.getSession().getUuidOrNull(), mc.getSession().getAccessToken(), serverId);
                 JsonObject response = new JsonObject();
                 response.addProperty("type", "auth-response");
                 sendText(gson.toJson(response));

@@ -74,7 +74,7 @@ public final class ChunkRepair {
             return List.of();
         }
         MinecraftClient mc = MinecraftClient.getInstance();
-        ClientWorld level = mc.level;
+        ClientWorld level = mc.world;
         if (level == null) {
             return List.of();
         }
@@ -82,8 +82,8 @@ public final class ChunkRepair {
         if (camera == null) {
             return List.of();
         }
-        int centreX = net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(targetX);
-        int centreZ = net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(targetZ);
+        int centreX = net.minecraft.util.math.ChunkSectionPos.getSectionCoord(targetX);
+        int centreZ = net.minecraft.util.math.ChunkSectionPos.getSectionCoord(targetZ);
         // Confined to what the capture actually streams. A chunk outside this was never going to
         // be sent, so treating it as a hole would mean asking forever for terrain that does not
         // exist as far as this session is concerned.
@@ -102,8 +102,8 @@ public final class ChunkRepair {
                 // Only chunks this client would keep if they arrived. The cache discards anything
                 // beyond its view radius of its centre, which is the camera, so asking for a chunk
                 // outside that would have it answered and then thrown away again.
-                if (Math.abs(x - cameraChunk.x()) > keep
-                        || Math.abs(z - cameraChunk.z()) > keep) {
+                if (Math.abs(x - cameraChunk.x) > keep
+                        || Math.abs(z - cameraChunk.z) > keep) {
                     continue;
                 }
                 // load=false: this asks what the client has and must never cause it to make one.

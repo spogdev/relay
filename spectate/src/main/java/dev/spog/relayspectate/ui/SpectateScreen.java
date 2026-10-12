@@ -6,9 +6,9 @@ import dev.spog.relayspectate.host.ViewerSession;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.config.TrustEntry;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.currentScreen.Screen;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -47,22 +47,22 @@ public final class SpectateScreen extends Screen {
         int y = LIST_TOP;
 
         if (active != null) {
-            addRenderableWidget(ButtonWidget.builder(
+            addDrawableChild(ButtonWidget.builder(
                     SpectateLang.text("menu.stop"),
                     b -> {
                         manager.stopViewing();
-                        rebuildWidgets();
-                    }).bounds(centerX, y, BUTTON_WIDTH, 20).build());
+                        clearAndInit();
+                    }).dimensions(centerX, y, BUTTON_WIDTH, 20).build());
             y += ROW_HEIGHT;
         }
 
         for (Candidate candidate : candidates()) {
-            addRenderableWidget(ButtonWidget.builder(
+            addDrawableChild(ButtonWidget.builder(
                     Text.literal(candidate.name()),
                     b -> {
                         manager.requestSession(candidate.id());
-                        rebuildWidgets();
-                    }).bounds(centerX, y, BUTTON_WIDTH, 20).build());
+                        clearAndInit();
+                    }).dimensions(centerX, y, BUTTON_WIDTH, 20).build());
             y += ROW_HEIGHT;
             if (y > height - 60) {
                 // The list is capped by the window rather than scrolled: a trust list long enough
@@ -72,9 +72,9 @@ public final class SpectateScreen extends Screen {
             }
         }
 
-        addRenderableWidget(ButtonWidget.builder(
+        addDrawableChild(ButtonWidget.builder(
                 SpectateLang.text("menu.close"),
-                b -> onClose()).bounds(centerX, height - 32, BUTTON_WIDTH, 20).build());
+                b -> onClose()).dimensions(centerX, height - 32, BUTTON_WIDTH, 20).build());
     }
 
     private record Candidate(UUID id, String name) {
@@ -101,11 +101,11 @@ public final class SpectateScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(DrawContext graphics, int mouseX, int mouseY,
+    public void render(DrawContext graphics, int mouseX, int mouseY,
                                    float partialTick) {
-        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        graphics.text(font, title.getString(),
-                width / 2 - font.width(title.getString()) / 2, 16, 0xFFFFFFFF, true);
+        super.render(graphics, mouseX, mouseY, partialTick);
+        graphics.text(textRenderer, title.getString(),
+                width / 2 - textRenderer.getWidth(title.getString()) / 2, 16, 0xFFFFFFFF, true);
 
         SpectateManager manager = SpectateManager.get();
         ViewerSession active = manager.viewing();
@@ -116,7 +116,7 @@ public final class SpectateScreen extends Screen {
                     : SpectateLang.string("status.loading", shortId(active.target()));
         } else if (manager.lastDenial() != null) {
             status = manager.lastDenial();
-        } else if (minecraft != null && minecraft.level != null) {
+        } else if (client != null && client.world != null) {
             // Spectating replaces the client's world, so it cannot start from in-game. Said here
             // rather than on a failed click, which would look like the button did nothing.
             status = SpectateLang.string("error.in_world");
@@ -127,8 +127,8 @@ public final class SpectateScreen extends Screen {
         } else {
             status = SpectateLang.string("menu.hint");
         }
-        graphics.text(font, status,
-                width / 2 - font.width(status) / 2, height - 48, 0xFFAAAAAA, true);
+        graphics.text(textRenderer, status,
+                width / 2 - textRenderer.getWidth(status) / 2, height - 48, 0xFFAAAAAA, true);
     }
 
     private static String shortId(UUID id) {
@@ -137,11 +137,11 @@ public final class SpectateScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        client.setScreen(parent);
     }
 
     @Override
-    public boolean isPauseScreen() {
+    public boolean shouldPause() {
         return false;
     }
 }

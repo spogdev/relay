@@ -163,7 +163,7 @@ public final class SpectateManager {
         // world with the target's, so starting one from in-game would disconnect the player from
         // the server they are playing on -- and ending it could not put them back. Spectating is
         // a from-the-menu feature, which is also how it was asked for.
-        if (MinecraftClient.getInstance().level != null) {
+        if (MinecraftClient.getInstance().world != null) {
             SpectateClient.LOGGER.info("spectate: refused, leave your world first");
             return;
         }
@@ -179,7 +179,7 @@ public final class SpectateManager {
     /** True if a session can be started right now. Drives the menu's own messaging. */
     public boolean canStartSession() {
         SpectateClientSocket s = socket;
-        return s != null && s.isAuthenticated() && MinecraftClient.getInstance().level == null;
+        return s != null && s.isAuthenticated() && MinecraftClient.getInstance().world == null;
     }
 
     /** True while this client is watching someone, for the pause menu's disconnect button. */
@@ -804,21 +804,21 @@ public final class SpectateManager {
         }
         MinecraftClient mc = MinecraftClient.getInstance();
         ClientPlayNetworkHandler listener = mc.getNetworkHandler();
-        if (mc.player == null || mc.level == null || listener == null) {
+        if (mc.player == null || mc.world == null || listener == null) {
             return;
         }
         var centre = mc.player.getChunkPos();
-        if (centre.x() == sweptCentreX && centre.z() == sweptCentreZ) {
+        if (centre.x == sweptCentreX && centre.z == sweptCentreZ) {
             return;
         }
-        sweptCentreX = centre.x();
-        sweptCentreZ = centre.z();
+        sweptCentreX = centre.x;
+        sweptCentreZ = centre.z;
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
         List<net.minecraft.util.math.ChunkPos> wanted = new ArrayList<>();
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
-                int x = centre.x() + dx;
-                int z = centre.z() + dz;
+                int x = centre.x + dx;
+                int z = centre.z + dz;
                 if (sentChunks.contains(chunkKey(x, z))) {
                     continue;
                 }
@@ -865,11 +865,11 @@ public final class SpectateManager {
         // while its chunk could still come back into range would have that chunk reconsidered,
         // and reconsidering in bulk is what made an earlier version of this flood the backlog.
         int forget = r * 3;
-        sentChunks.removeIf(key -> Math.abs((int) (key >> 32) - centre.x()) > forget
-                || Math.abs((int) (long) key - centre.z()) > forget);
+        sentChunks.removeIf(key -> Math.abs((int) (key >> 32) - centre.x) > forget
+                || Math.abs((int) (long) key - centre.z) > forget);
         if (sent > 0) {
             SpectateClient.LOGGER.debug("spectate: swept {} newly loaded chunk(s) at {},{}",
-                    sent, centre.x(), centre.z());
+                    sent, centre.x, centre.z);
         }
     }
 

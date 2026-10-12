@@ -211,8 +211,8 @@ public final class CaptureFilter {
             x = p.getX();
             z = p.getZ();
         } else if (packet instanceof UnloadChunkS2CPacket p) {
-            x = p.pos().x();
-            z = p.pos().z();
+            x = p.pos().x;
+            z = p.pos().z;
         } else {
             return true;
         }

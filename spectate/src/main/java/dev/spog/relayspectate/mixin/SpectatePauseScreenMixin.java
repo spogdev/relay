@@ -3,7 +3,7 @@ package dev.spog.relayspectate.mixin;
 import dev.spog.relayspectate.SpectateLang;
 import dev.spog.relayspectate.SpectateManager;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.screen.GameMenuScreen;
+import net.minecraft.client.gui.currentScreen.GameMenuScreen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;

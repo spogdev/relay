@@ -195,12 +195,12 @@ public final class ViewerSession {
      */
     public boolean targetChunkMissing() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.level == null || !seenPosition) {
+        if (mc.world == null || !seenPosition) {
             return false;
         }
-        int cx = net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(lastTargetX);
-        int cz = net.minecraft.util.math.ChunkChunkSectionPos.getSectionCoord(lastTargetZ);
-        return mc.level.getChunk(cx, cz,
+        int cx = net.minecraft.util.math.ChunkSectionPos.getSectionCoord(lastTargetX);
+        int cz = net.minecraft.util.math.ChunkSectionPos.getSectionCoord(lastTargetZ);
+        return mc.world.getChunk(cx, cz,
                 net.minecraft.world.chunk.ChunkStatus.FULL, false) == null;
     }
 
@@ -303,7 +303,7 @@ public final class ViewerSession {
                                 status.getString()),
                         new LevelLoadTracker(), null));
         connection.send(new LoginHelloC2SPacket(
-                mc.getSession().getName(), mc.getSession().getProfileId()));
+                mc.getSession().getName(), mc.getSession().getUuidOrNull()));
         SpectateClient.LOGGER.info("spectate: loopback session opened for {}", target);
     }
 
@@ -430,7 +430,7 @@ public final class ViewerSession {
             }
             return decoded;
         }
-        java.util.UUID me = MinecraftClient.getInstance().getSession().getProfileId();
+        java.util.UUID me = MinecraftClient.getInstance().getSession().getUuidOrNull();
         // A remove for the viewer's own id has to be dropped. The capture resends the tab list by
         // removing every player and re-adding them, which is the only way a client picks up a
         // changed profile -- but while the viewer's own entry is missing, gameMode() returns null,
@@ -638,7 +638,7 @@ public final class ViewerSession {
             mc.execute(() -> {
                 // Only if the client is still in the session's world: the user may already have
                 // left it, in which case tearing down again would drop a world we do not own.
-                if (mc.level != null) {
+                if (mc.world != null) {
                     // The title screen is the right destination because a session is only ever
                     // started from the menu -- see SpectateManager.beginViewing, which refuses one
                     // from a client already in a world. There is therefore nothing to return to.

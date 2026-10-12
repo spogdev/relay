@@ -90,7 +90,7 @@ public final class HandshakeRecorder {
      *
      * <p>All three parts are required, and checking only for the login packet was not enough: a
      * replay missing the tag packet produced a viewer that disconnected with dozens of
-     * "Missing tag: 'minecraft:enchantable/...' in 'minecraft:item'" errors, because the
+     * "Missing tag: 'client:enchantable/...' in 'client:item'" errors, because the
      * enchantment registry entries reference item tags and cannot be parsed without them. The
      * registry data has the same dependency the other way round, so neither is optional.
      *

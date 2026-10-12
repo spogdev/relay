@@ -9,7 +9,7 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
 
 /**
@@ -33,7 +33,7 @@ public final class WatchedIndicator implements HudElement {
     private static final int TOP_MARGIN = 4;
 
     @Override
-    public void extractRenderState(DrawContext graphics, RenderTickCounter delta) {
+    public void render(DrawContext graphics, RenderTickCounter delta) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.options.hideGui || !SpectateConfig.get().showWatchedIndicator) {
             return;

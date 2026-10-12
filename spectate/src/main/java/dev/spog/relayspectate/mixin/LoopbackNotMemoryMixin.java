@@ -11,13 +11,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Makes a spectate loopback report as a remote connection rather than a memory one.
  *
  * <p>This is the fix for the viewer failing registry loading with dozens of
- * "Missing tag: 'minecraft:enchantable/...' in 'minecraft:item'" errors, and the reason is narrow
+ * "Missing tag: 'client:enchantable/...' in 'client:item'" errors, and the reason is narrow
  * enough to be worth writing down.
  *
  * <p>{@code RegistryDataCollector.loadNewElementsAndTags} splits the tags it received in two.
  * Tags for a <em>networkable</em> registry -- one whose contents arrive as
  * {@code DynamicRegistriesS2CPacket} -- are merged into those contents. Tags for everything
- * else, including {@code minecraft:item}, which is built into the client and never synced, take the
+ * else, including {@code client:item}, which is built into the client and never synced, take the
  * other branch:
  *
  * <pre>

@@ -124,7 +124,7 @@ public final class CaptureSession {
         if (listener == null) {
             return;
         }
-        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc), captureCentre(mc))) {
+        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc))) {
             // Counted separately from the filter's other rejections. A chunk dropped for distance
             // is the one rejection that is expected to be rare and that a viewer notices
             // immediately as terrain that never appears, so it needs to be distinguishable from
@@ -169,49 +169,6 @@ public final class CaptureSession {
     private static ChunkPos localChunk(Minecraft mc) {
         Player player = mc.player;
         return player == null ? null : player.chunkPosition();
-    }
-
-    /**
-     * The centre of the captured region: the target's chunk, nudged towards where it is going.
-     *
-     * <p>The nudge exists because a server sends terrain <em>ahead of</em> a walking player --
-     * chunks are dispatched at the player's full view distance, well before it is near them -- so
-     * a region centred exactly on the target rejects precisely the chunks it is walking into.
-     *
-     * <p>The offset is scaled by speed rather than switched on and off at a threshold, and that
-     * detail matters. An earlier version returned null below a walking pace, which made the region
-     * jump by its full lead the moment the target started or stopped moving; chunks that were
-     * inside it one tick were outside it the next, and terrain was dropped at exactly the moments
-     * the target changed pace. Scaling makes a standing target's region centred on it and a
-     * sprinting target's fully biased, with every intermediate case in between and no jump
-     * anywhere.
-     *
-     * <p>Derived from delta movement rather than look direction, because where a player is going
-     * is what decides which chunks the server sends -- a player can walk forwards while looking
-     * behind.
-     */
-    private static ChunkPos captureCentre(Minecraft mc) {
-        Player player = mc.player;
-        if (player == null) {
-            return null;
-        }
-        var motion = player.getDeltaMovement();
-        double dx = motion.x;
-        double dz = motion.z;
-        double speed = Math.sqrt(dx * dx + dz * dz);
-        if (speed <= 1.0E-4) {
-            return player.chunkPosition();
-        }
-        // Roughly sprinting pace. Faster than this does not push the centre further, so a boat,
-        // a horse or an elytra cannot throw the region off the target.
-        double full = 0.28;
-        double scale = Math.min(speed / full, 1.0);
-        double lead = (double) CaptureFilter.LEAD_CHUNKS * 16.0 * scale;
-        double x = player.getX() + dx / speed * lead;
-        double z = player.getZ() + dz / speed * lead;
-        return new ChunkPos(
-                net.minecraft.core.SectionPos.blockToSectionCoord(x),
-                net.minecraft.core.SectionPos.blockToSectionCoord(z));
     }
 
     /** Forwarded, filtered and failed counts, for one summary line per session. */

@@ -176,32 +176,32 @@ public final class CaptureFilter {
      * never received are harmless -- the viewer's client drops an update for a chunk it does not
      * have -- and testing each one would cost more than it saves.
      *
-     * <p>The region is a single box around a centre that is nudged in the direction the target is
-     * travelling. One box, deliberately, after two earlier shapes failed:
+     * <p>A square centred on the target, with no bias towards where it is going. Two earlier
+     * shapes were tried and both carved holes in the viewer's world:
      *
      * <ul>
-     *   <li>A box on the target alone dropped the terrain ahead of a walking player. A server
-     *       dispatches chunks out at the player's full view distance well before the player is
-     *       near them, so the chunks the target was walking into were exactly the ones that failed
-     *       a test centred on where it stood -- two thirds of live chunks, in the log that found
-     *       it.</li>
-     *   <li>Adding a second box projected a full radius ahead fixed that and introduced something
-     *       worse. Two boxes of half-width r whose centres are 2r apart meet only along the travel
-     *       axis; travelling diagonally they separate into two squares joined at a corner, and
-     *       every chunk in the notch between them was dropped. That carved a clean-edged strip
-     *       through the world, straight for its whole length and sheer to the void, which is what
-     *       a gap in a filter looks like rather than what packet loss looks like.</li>
+     *   <li>Two boxes, one on the target and one projected a full radius ahead. Boxes of
+     *       half-width r whose centres are 2r apart meet only along the travel axis, so travelling
+     *       diagonally they separated into two squares joined at a corner and everything in the
+     *       notch between them was dropped -- a clean-edged trench through the world.</li>
+     *   <li>One box whose centre was nudged towards the target's travel. Moving a square forwards
+     *       gains ground ahead and loses exactly as much to the sides and behind, so the viewer
+     *       was missing wedges either side of the direction the target had walked -- the same
+     *       amount of terrain as before, in a less obvious shape.</li>
      * </ul>
      *
-     * <p>A single box cannot have a seam, which is the property worth having here: any shape
-     * assembled from pieces has to be checked for gaps at every relative velocity, and this one
-     * does not. The centre is offset by at most {@link #LEAD_CHUNKS}, well under the half-width,
-     * so the box always still contains the target.
+     * <p>Both were attempts to solve a problem that does not belong here. Terrain ahead of a
+     * walking target was being lost because a server dispatches chunks at the player's full view
+     * distance, so they arrive while the target is still far from them and fail a test centred on
+     * where it stands. The fix for that is to send those chunks when the target reaches them --
+     * which {@link dev.spog.relayspectate.capture.ChunkSweep} can do from the target's own cache,
+     * and which the viewer asks for when it finds a hole -- not to deform the region and trade one
+     * set of missing chunks for another. The region this clips to should simply match what the
+     * target's own client holds around it, and a centred square is that shape.
      *
      * @param local the target's own chunk, or null when there is no player yet (nothing is sent)
-     * @param centre the lead-biased centre, or null to fall back to the target's own chunk
      */
-    public static boolean isWithinRadius(Packet<?> packet, ChunkPos local, ChunkPos centre) {
+    public static boolean isWithinRadius(Packet<?> packet, ChunkPos local) {
         if (local == null) {
             return false;
         }
@@ -216,17 +216,7 @@ public final class CaptureFilter {
         } else {
             return true;
         }
-        ChunkPos about = centre == null ? local : centre;
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
-        return Math.abs(x - about.x()) <= r && Math.abs(z - about.z()) <= r;
+        return Math.abs(x - local.x()) <= r && Math.abs(z - local.z()) <= r;
     }
-
-    /**
-     * How far ahead of the target the captured region's centre is nudged, in chunks.
-     *
-     * <p>Much smaller than the radius, so the box still comfortably contains the target and the
-     * terrain behind it: this biases the region towards where the target is going rather than
-     * moving it there. The radius itself is what was widened to cover the lead.
-     */
-    public static final int LEAD_CHUNKS = 4;
 }

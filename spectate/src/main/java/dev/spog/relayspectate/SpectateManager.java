@@ -267,6 +267,7 @@ public final class SpectateManager {
         reportPositionIfStreaming();
         resendTabListIfTexturesArrived();
         reportCaptureOnce();
+        sweepNewTerrain();
         ViewerSession session = viewing;
         if (session != null) {
             session.tickCamera();
@@ -337,6 +338,13 @@ public final class SpectateManager {
      * frames. The spawn itself stays in order, behind the terrain it needs.
      */
     private void queueCaptured(Packet<?> packet, byte[] wire) {
+        // Chunks the live stream delivers are recorded as sent, so the trailing sweep does not
+        // rebuild and resend terrain the viewer already has. Without this every chunk inside the
+        // radius would be sent twice -- once live and once by the next sweep.
+        if (packet instanceof net.minecraft.network.protocol.game
+                .ClientboundLevelChunkWithLightPacket chunk) {
+            sentChunks.add(chunkKey(chunk.getX(), chunk.getZ()));
+        }
         if (packet instanceof net.minecraft.network.protocol.game
                 .ClientboundPlayerInfoUpdatePacket
                 || packet instanceof net.minecraft.network.protocol.game
@@ -789,6 +797,9 @@ public final class SpectateManager {
         for (var chunk : ChunkSweep.loadedChunksAround(mc)) {
             try {
                 terrainBacklog.add(PacketWire.encode(codec, chunk));
+                // Recorded so the trailing sweep does not immediately resend the whole opening
+                // sweep as its first act.
+                sentChunks.add(chunkKey(chunk.getX(), chunk.getZ()));
                 chunks++;
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.warn("spectate: could not encode a packed chunk", e);
@@ -809,6 +820,97 @@ public final class SpectateManager {
         }
         SpectateClient.LOGGER.info("spectate: queued {} chunks and {} entity packets",
                 chunks, entities);
+    }
+
+    /** The chunk the target was in when terrain was last swept for viewers. */
+    private int sweptCentreX = Integer.MIN_VALUE;
+    private int sweptCentreZ = Integer.MIN_VALUE;
+    /** Chunks already sent to viewers, so each is sent once. */
+    private final java.util.HashSet<Long> sentChunks = new java.util.HashSet<>();
+
+    /**
+     * Sends viewers the chunks the target has walked into. On the client thread.
+     *
+     * <p>This is what replaces biasing the capture region towards the target's travel. The problem
+     * that bias was trying to solve is real: a server dispatches chunks at the player's full view
+     * distance, so terrain ahead of a walking target arrives long before the target is near it and
+     * is rejected by a radius test centred on where it stands. But deforming the region only moved
+     * the hole -- pushing the box forwards lost exactly as much terrain to the sides and behind as
+     * it gained ahead.
+     *
+     * <p>The chunks are not lost, though: the target's own client keeps them, and by the time the
+     * target walks far enough for them to be inside the capture radius they are sitting in its
+     * cache. So rather than trying to catch them in flight, they are swept up afterwards. A client
+     * cannot ask its server to resend a chunk, but it can rebuild a packet for any chunk it holds,
+     * which is what the opening sweep already does.
+     *
+     * <p>Only on a chunk boundary, and only the chunks not already sent. A session that walks in a
+     * straight line sends one new edge per chunk crossed rather than re-sending the whole region.
+     */
+    private void sweepNewTerrain() {
+        CaptureSession session = CaptureHooks.session();
+        SpectateClientSocket s = socket;
+        if (session == null || !session.hasViewers() || s == null) {
+            // Forgotten when nobody is watching, so the next session starts from a clean slate
+            // rather than believing it has already sent terrain to a viewer that never saw it.
+            if (!sentChunks.isEmpty()) {
+                sentChunks.clear();
+                sweptCentreX = Integer.MIN_VALUE;
+                sweptCentreZ = Integer.MIN_VALUE;
+            }
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener listener = mc.getConnection();
+        if (mc.player == null || mc.level == null || listener == null) {
+            return;
+        }
+        var centre = mc.player.chunkPosition();
+        if (centre.x() == sweptCentreX && centre.z() == sweptCentreZ) {
+            return;
+        }
+        sweptCentreX = centre.x();
+        sweptCentreZ = centre.z();
+        int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
+        List<net.minecraft.world.level.ChunkPos> wanted = new ArrayList<>();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                int x = centre.x() + dx;
+                int z = centre.z() + dz;
+                if (sentChunks.contains(chunkKey(x, z))) {
+                    continue;
+                }
+                wanted.add(new net.minecraft.world.level.ChunkPos(x, z));
+            }
+        }
+        if (wanted.isEmpty()) {
+            return;
+        }
+        StreamCodec<ByteBuf, Packet<? super ClientGamePacketListener>> codec =
+                PacketWire.gameCodec(listener.registryAccess());
+        int sent = 0;
+        for (var chunk : ChunkSweep.chunksAt(mc, wanted)) {
+            try {
+                terrainBacklog.add(PacketWire.encode(codec, chunk));
+                sentChunks.add(chunkKey(chunk.getX(), chunk.getZ()));
+                sent++;
+            } catch (RuntimeException e) {
+                SpectateClient.LOGGER.warn("spectate: could not encode a trailing chunk", e);
+            }
+        }
+        // Entries far outside the region are dropped, so a long session does not keep one per
+        // chunk it ever passed through.
+        int forget = r * 3;
+        sentChunks.removeIf(key -> Math.abs((int) (key >> 32) - centre.x()) > forget
+                || Math.abs((int) (long) key - centre.z()) > forget);
+        if (sent > 0) {
+            SpectateClient.LOGGER.debug("spectate: swept {} newly loaded chunk(s) at {},{}",
+                    sent, centre.x(), centre.z());
+        }
+    }
+
+    private static long chunkKey(int x, int z) {
+        return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
 
     /**
@@ -857,6 +959,12 @@ public final class SpectateManager {
             return;
         }
         SpectateClient.LOGGER.info("spectate: viewer asked for a resweep");
+        // Forgotten first: the viewer is asking precisely because it no longer has the terrain,
+        // so what was sent before is not what it holds, and sendLoadedTerrain would otherwise be
+        // free to skip nothing while the trailing sweep skipped everything.
+        sentChunks.clear();
+        sweptCentreX = Integer.MIN_VALUE;
+        sweptCentreZ = Integer.MIN_VALUE;
         sendLoadedTerrain(s, session);
     }
 

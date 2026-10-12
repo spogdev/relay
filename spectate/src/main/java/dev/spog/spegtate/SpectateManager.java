@@ -614,6 +614,7 @@ public final class SpectateManager {
             sendLoadedTerrain(s, session);
         }
         SpectateClient.LOGGER.info("spectate: streaming to {}", viewer);
+        announceViewer(viewer, "chat.spectate_started");
     }
 
     /** Stops streaming to a viewer. On the client thread. */
@@ -631,6 +632,7 @@ public final class SpectateManager {
             }
         }
         SpectateClient.LOGGER.info("spectate: stopped streaming to {}", viewer);
+        announceViewer(viewer, "chat.spectate_stopped");
     }
 
     /**
@@ -1033,5 +1035,45 @@ public final class SpectateManager {
                 recorder.describe(), configuration.size(),
                 login == null ? 0 : login.length);
         return new EncodedHandshake(configuration, login);
+    }
+
+    /**
+     * Tells this player in chat that a viewer started or stopped watching them.
+     *
+     * <p>Said once, in chat, rather than only shown in the corner: the HUD indicator renders
+     * from a viewer count and so had no name to show, and a line in chat is also the only form
+     * of this that survives being looked away from.
+     */
+    private void announceViewer(UUID viewer, String key) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        mc.player.sendSystemMessage(SpectateLang.text(key, viewerName(mc, viewer)));
+    }
+
+    /**
+     * The best name available for a viewer.
+     *
+     * <p>The server's player list first -- someone watching this client is almost always on the
+     * same server -- then the service roster, which carries verified names but lists only
+     * players who themselves consent to being watched. A viewer with spectating turned off
+     * appears in neither, so the id is the last resort: naming someone imperfectly is better
+     * than a message that names nobody.
+     */
+    private static String viewerName(Minecraft mc, UUID viewer) {
+        if (mc.getConnection() != null) {
+            var entry = mc.getConnection().getPlayerInfo(viewer);
+            if (entry != null && entry.getProfile() != null
+                    && entry.getProfile().name() != null) {
+                return entry.getProfile().name();
+            }
+        }
+        for (SpectateRoster.Peer peer : SpectateRoster.peers()) {
+            if (viewer.equals(peer.id())) {
+                return peer.display();
+            }
+        }
+        return viewer.toString().substring(0, 8);
     }
 }

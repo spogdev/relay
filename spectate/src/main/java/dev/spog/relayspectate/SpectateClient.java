@@ -5,7 +5,6 @@ import dev.spog.relayspectate.capture.CaptureHooks;
 import dev.spog.relayspectate.ui.MenuButton;
 import dev.spog.relayspectate.ui.SpectateScreen;
 import dev.spog.relayspectate.ui.WatchedIndicator;
-import dev.spog.teamlocator.client.TeamLocatorClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -23,8 +22,11 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Separate mod jar rather than part of Relay: spectating is a niche feature with a much larger
  * surface than the rest of the mod (an in-process server, a second socket, a second service), and
- * keeping it out means a Relay user who does not want it does not ship it. The addon reads Relay's
- * trust list and config; Relay itself is unaware of the addon.
+ * keeping it out means a Relay user who does not want it does not ship it.
+ *
+ * <p>Standalone: it keeps its own trust list, service address and keybind-name window, so it runs
+ * with or without Relay. If Relay is installed its settings are imported once on first run (see
+ * {@link SpectateRelayImport}), and after that the two are unrelated.
  */
 @Environment(EnvType.CLIENT)
 public final class SpectateClient implements ClientModInitializer {
@@ -37,7 +39,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "concurrent-12+26.3";
+    public static final String BUILD_MARKER = "standalone-13+26.3";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -139,14 +141,19 @@ public final class SpectateClient implements ClientModInitializer {
 
         // The socket is wanted whenever this client could be either role: in-game it may be a
         // target, and in the menu it may be a viewer. So it is kept up in both cases, but only
-        // once Relay itself is configured -- the addon has no service address of its own to fall
-        // back on.
+        // once a service address is configured.
+        //
+        // The trust set is re-sent on this interval rather than only on change, so the service's
+        // view cannot drift from the config's: a dropped frame or a reconnect would otherwise
+        // leave it enforcing a stale set, which for a set that revokes access is the wrong way to
+        // fail. It is also what makes turning allowSpectators off take effect within the interval
+        // without any explicit revoke message.
         if (++tickCounter >= TRUST_INTERVAL_TICKS) {
             tickCounter = 0;
             String url = SpectateConfig.get().serviceWebSocketUrl();
             if (url != null) {
                 manager.connect(url);
-                manager.sendTrust(TeamLocatorClient.CONFIG.effectiveSharingSet());
+                manager.sendTrust(SpectateTrust.allowedViewers());
             }
         }
 

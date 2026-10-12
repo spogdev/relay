@@ -17,9 +17,6 @@
   "mixins": [
     "relayspectate.mixins.json"
   ],
-  "suggests": {
-    "relay": ">=0.3.1"
-  },
   "depends": {
     "fabricloader": ">=0.19",
     "fabric-api": "*",

@@ -37,7 +37,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "chunk-repair-7";
+    public static final String BUILD_MARKER = "one-box-resweep-8";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -118,8 +118,17 @@ public final class SpectateClient implements ClientModInitializer {
                 // happen yet -- no position from the target so far -- is otherwise
                 // indistinguishable from the key not being bound.
                 if (active.refocus()) {
+                    // A viewer that flew far from the target has had its own cache drop the
+                    // terrain it left behind, so refocusing can land it somewhere empty. Ask for
+                    // the whole surroundings again rather than leaving the repair loop to find it
+                    // a handful of chunks at a time.
+                    boolean empty = active.targetChunkMissing();
+                    if (empty) {
+                        SpectateManager.get().requestResweep();
+                    }
                     client.gui.setOverlayMessage(
-                            SpectateLang.text("status.refocused", targetName(client, active)),
+                            SpectateLang.text(empty ? "status.refocused_loading"
+                                    : "status.refocused", targetName(client, active)),
                             false);
                 } else {
                     client.gui.setOverlayMessage(

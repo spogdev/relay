@@ -176,13 +176,34 @@ public final class SpectateProtocol {
     public static final int MAX_CHUNK_REQUESTS = 64;
 
     /**
-     * How far from the target, in chunks, the capture forwards terrain. Deliberately well under a
-     * typical server view distance: chunk volume grows with the square of the radius, so trimming
-     * 16 to 10 is roughly a 60% cut in both the initial burst and the steady-state rate. The viewer
-     * sees less of the distance than the target does, which is the intended trade -- the camera is
-     * locked to the target, so the far edge is rarely what is being looked at.
+     * Asks the target to send its surroundings again from scratch. No payload.
+     *
+     * <p>The repair loop handles holes; this handles having nothing. A viewer that flies far from
+     * the target leaves the streamed region entirely, and the terrain it had is dropped by its own
+     * chunk cache as it goes. Refocusing then puts it somewhere with no terrain at all, and the
+     * repair loop is the wrong tool for that: it is rate limited, bounded to
+     * {@link #MAX_CHUNK_REQUESTS} chunks per sweep, and deliberately so, because a viewer asking
+     * for hundreds of chunks is not a viewer with a hole.
+     *
+     * <p>That is exactly the state this reports, so the target answers with a full sweep -- the
+     * same one a session starts with, which is already written and already knows how to rebuild
+     * terrain from the target's own cache.
      */
-    public static final int CAPTURE_RADIUS_CHUNKS = 10;
+    public static final byte TYPE_RESWEEP_REQUEST = 0x41;
+
+    /**
+     * How far from the target, in chunks, the capture forwards terrain. Deliberately under a
+     * typical server view distance: chunk volume grows with the square of the radius, so trimming
+     * 16 to 14 still cuts both the initial burst and the steady-state rate. The viewer sees less of
+     * the distance than the target does, which is the intended trade -- the camera is usually on
+     * the target, so the far edge is rarely what is being looked at.
+     *
+     * <p>Raised from 10 to cover the lead bias. The captured region's centre is nudged up to
+     * {@link dev.spog.relayspectate.capture.CaptureFilter#LEAD_CHUNKS} chunks ahead of the target,
+     * so at 10 the trailing edge would have sat only 6 chunks behind it and terrain the target had
+     * just walked past would have been dropped while it was still in view.
+     */
+    public static final int CAPTURE_RADIUS_CHUNKS = 14;
 
     /**
      * The view radius the viewer's client is told to use, in chunks.

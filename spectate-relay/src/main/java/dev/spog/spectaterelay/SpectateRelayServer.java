@@ -147,7 +147,8 @@ public final class SpectateRelayServer extends WebSocketServer {
             case Wire.TYPE_SESSION_STOP -> endAsViewer(session);
             case Wire.TYPE_HANDSHAKE, Wire.TYPE_LOGIN_PACKET, Wire.TYPE_GAME_PACKET,
                  Wire.TYPE_TARGET_POSITION -> forwardToViewers(session, frame);
-            case Wire.TYPE_CHUNK_REQUEST -> forwardToTarget(session, frame);
+            case Wire.TYPE_CHUNK_REQUEST, Wire.TYPE_RESWEEP_REQUEST ->
+                    forwardToTarget(session, frame);
             case Wire.TYPE_CAPTURE_UNAVAILABLE -> denyViewersOf(session);
             case Wire.TYPE_STREAM_END -> endAsTarget(session);
             default -> { }

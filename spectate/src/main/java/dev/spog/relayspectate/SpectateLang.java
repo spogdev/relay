@@ -49,6 +49,7 @@ public final class SpectateLang {
             Map.entry("menu.stop", "Stop Spectating"),
             Map.entry("menu.close", "Close"),
             Map.entry("status.refocused", "Refocused on %s"),
+            Map.entry("status.refocused_loading", "Refocused on %s -- loading terrain..."),
             Map.entry("status.refocus_waiting", "Waiting for the target's position."),
             Map.entry("status.connecting", "Connecting to the spectate service..."),
             Map.entry("status.loading", "Loading %s's view..."),

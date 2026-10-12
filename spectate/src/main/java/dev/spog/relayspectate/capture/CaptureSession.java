@@ -124,7 +124,7 @@ public final class CaptureSession {
         if (listener == null) {
             return;
         }
-        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc), leadChunk(mc))) {
+        if (!CaptureFilter.isWithinRadius(packet, localChunk(mc), captureCentre(mc))) {
             // Counted separately from the filter's other rejections. A chunk dropped for distance
             // is the one rejection that is expected to be rare and that a viewer notices
             // immediately as terrain that never appears, so it needs to be distinguishable from
@@ -172,20 +172,25 @@ public final class CaptureSession {
     }
 
     /**
-     * A chunk ahead of this player along its travel, or null when it is not really moving.
+     * The centre of the captured region: the target's chunk, nudged towards where it is going.
      *
-     * <p>This is the second centre the radius filter clips against, and it exists because a server
-     * sends terrain <em>ahead of</em> a walking player: chunks are dispatched out at the player's
-     * full view distance, well before the player is near them. A filter centred only on where the
-     * player stands rejects precisely the chunks it is walking into, which is what pinned a viewer
-     * to the terrain swept at session start.
+     * <p>The nudge exists because a server sends terrain <em>ahead of</em> a walking player --
+     * chunks are dispatched at the player's full view distance, well before it is near them -- so
+     * a region centred exactly on the target rejects precisely the chunks it is walking into.
      *
-     * <p>Projected from the horizontal delta movement rather than from look direction, because
-     * where a player is going is what decides which chunks the server sends -- a player can walk
-     * forwards while looking behind. Below a small threshold the lead collapses to null and the
-     * filter is a single box again, so standing still costs nothing.
+     * <p>The offset is scaled by speed rather than switched on and off at a threshold, and that
+     * detail matters. An earlier version returned null below a walking pace, which made the region
+     * jump by its full lead the moment the target started or stopped moving; chunks that were
+     * inside it one tick were outside it the next, and terrain was dropped at exactly the moments
+     * the target changed pace. Scaling makes a standing target's region centred on it and a
+     * sprinting target's fully biased, with every intermediate case in between and no jump
+     * anywhere.
+     *
+     * <p>Derived from delta movement rather than look direction, because where a player is going
+     * is what decides which chunks the server sends -- a player can walk forwards while looking
+     * behind.
      */
-    private static ChunkPos leadChunk(Minecraft mc) {
+    private static ChunkPos captureCentre(Minecraft mc) {
         Player player = mc.player;
         if (player == null) {
             return null;
@@ -194,12 +199,14 @@ public final class CaptureSession {
         double dx = motion.x;
         double dz = motion.z;
         double speed = Math.sqrt(dx * dx + dz * dz);
-        // Roughly a tenth of a block per tick. Below this the projection is noise and would
-        // wander the lead box around at random.
-        if (speed < 0.05) {
-            return null;
+        if (speed <= 1.0E-4) {
+            return player.chunkPosition();
         }
-        double lead = (double) SpectateProtocol.CAPTURE_RADIUS_CHUNKS * 16.0;
+        // Roughly sprinting pace. Faster than this does not push the centre further, so a boat,
+        // a horse or an elytra cannot throw the region off the target.
+        double full = 0.28;
+        double scale = Math.min(speed / full, 1.0);
+        double lead = (double) CaptureFilter.LEAD_CHUNKS * 16.0 * scale;
         double x = player.getX() + dx / speed * lead;
         double z = player.getZ() + dz / speed * lead;
         return new ChunkPos(

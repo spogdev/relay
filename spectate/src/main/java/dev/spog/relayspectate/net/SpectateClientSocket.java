@@ -235,6 +235,16 @@ public final class SpectateClientSocket {
         sendBinary(buf.flip());
     }
 
+    /**
+     * Asks the target to send its surroundings again from scratch.
+     *
+     * <p>For a viewer that has no terrain where it is going, rather than one with holes in it; see
+     * {@link SpectateProtocol#TYPE_RESWEEP_REQUEST}.
+     */
+    public void sendResweepRequest() {
+        sendBinary(Frames.of(SpectateProtocol.TYPE_RESWEEP_REQUEST));
+    }
+
     public void sendCaptureUnavailable() {
         sendBinary(Frames.of(SpectateProtocol.TYPE_CAPTURE_UNAVAILABLE));
     }

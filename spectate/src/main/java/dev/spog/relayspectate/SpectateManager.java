@@ -583,6 +583,8 @@ public final class SpectateManager {
                     pendingMainThread.add(() -> answerChunkRequest(wanted));
                 }
             }
+            case SpectateProtocol.TYPE_RESWEEP_REQUEST ->
+                    pendingMainThread.add(this::answerResweepRequest);
             case SpectateProtocol.TYPE_CAPTURE_STOP -> {
                 UUID viewer = Frames.readUuid(frame);
                 pendingMainThread.add(() -> endCapture(viewer));
@@ -810,6 +812,20 @@ public final class SpectateManager {
     }
 
     /**
+     * Asks the target to send its surroundings again from scratch.
+     *
+     * <p>For a viewer that has arrived somewhere with no terrain at all, which the repair loop is
+     * deliberately not built to fix; see {@link SpectateProtocol#TYPE_RESWEEP_REQUEST}.
+     */
+    public void requestResweep() {
+        SpectateClientSocket s = socket;
+        if (s != null && viewing != null) {
+            SpectateClient.LOGGER.info("spectate: asking the target to sweep again");
+            s.sendResweepRequest();
+        }
+    }
+
+    /**
      * Asks the target to resend any chunks this viewer is missing. On the client thread.
      *
      * <p>Rate limiting lives in {@link ChunkRepair}, which returns an empty list on the ticks it
@@ -824,6 +840,24 @@ public final class SpectateManager {
         if (!missing.isEmpty()) {
             s.sendChunkRequest(missing);
         }
+    }
+
+    /**
+     * Answers a viewer that has no terrain where it is, by sweeping again. On the client thread.
+     *
+     * <p>Reuses the session's own opening sweep rather than a second code path: that is already
+     * the operation "send everything around the target", it rebuilds from this client's cache
+     * without involving the server, and it queues the tab list ahead of the terrain, which a
+     * viewer that has just refocused needs for the same reason a joining one does.
+     */
+    private void answerResweepRequest() {
+        CaptureSession session = CaptureHooks.session();
+        SpectateClientSocket s = socket;
+        if (session == null || s == null) {
+            return;
+        }
+        SpectateClient.LOGGER.info("spectate: viewer asked for a resweep");
+        sendLoadedTerrain(s, session);
     }
 
     /**

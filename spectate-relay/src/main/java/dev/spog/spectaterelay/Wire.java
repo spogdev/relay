@@ -56,6 +56,9 @@ public final class Wire {
      */
     public static final byte TYPE_CHUNK_REQUEST = 0x40;
 
+    /** Viewer -> target: send the surroundings again from scratch. Routed like a chunk request. */
+    public static final byte TYPE_RESWEEP_REQUEST = 0x41;
+
     /** A frame's type byte without consuming it, or -1 if empty. */
     public static byte typeOf(ByteBuffer frame) {
         return frame.remaining() < 1 ? -1 : frame.get(frame.position());

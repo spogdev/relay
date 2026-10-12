@@ -184,6 +184,27 @@ public final class ViewerSession {
     }
 
     /**
+     * Whether the chunk the viewer is being sent to actually has terrain.
+     *
+     * <p>Asked on refocus, because that is the one moment the viewer moves a long way at once. A
+     * viewer that has flown away from the target has had its own chunk cache drop the terrain
+     * behind it, so refocusing can land it in a world that is empty where it arrives -- and the
+     * repair loop cannot fix that: it is rate limited and bounded to a handful of chunks per
+     * sweep, deliberately, because a viewer missing hundreds of chunks is not a viewer with holes.
+     * The answer to this one is the full sweep a session starts with.
+     */
+    public boolean targetChunkMissing() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !seenPosition) {
+            return false;
+        }
+        int cx = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetX);
+        int cz = net.minecraft.core.SectionPos.blockToSectionCoord(lastTargetZ);
+        return mc.level.getChunk(cx, cz,
+                net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false) == null;
+    }
+
+    /**
      * Accepts one configuration-phase handshake packet.
      *
      * <p>Decoded immediately rather than kept as bytes so a malformed handshake is caught before

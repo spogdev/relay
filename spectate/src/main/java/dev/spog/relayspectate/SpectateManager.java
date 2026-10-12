@@ -743,10 +743,20 @@ public final class SpectateManager {
     }
 
     /** The chunk the target was in when terrain was last swept for viewers. */
-    private int sweptCentreX = Integer.MIN_VALUE;
-    private int sweptCentreZ = Integer.MIN_VALUE;
-    /** Chunks already sent to viewers, so each is sent once. */
-    private final java.util.HashSet<Long> sentChunks = new java.util.HashSet<>();
+    private volatile int sweptCentreX = Integer.MIN_VALUE;
+    private volatile int sweptCentreZ = Integer.MIN_VALUE;
+    /**
+     * Chunks already sent to viewers, so each is sent once.
+     *
+     * <p>Concurrent, and it has to be: {@link #sweepNewTerrain} reads and writes this on the
+     * client thread while {@link #queueCaptured} writes it from Netty's IO thread, which is where
+     * {@code channelRead0} delivers captured packets. With a plain HashSet the two collided
+     * during a resize and the set was left corrupt -- an entry in the wrong bucket reads back as
+     * "already sent" for a chunk that never was, so the sweep skipped it and nothing ever looked
+     * at it again. That is a permanent hole with a clean edge, appearing only when the threads
+     * happened to collide.
+     */
+    private final java.util.Set<Long> sentChunks = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * Sends viewers the chunks the target has walked into. On the client thread.

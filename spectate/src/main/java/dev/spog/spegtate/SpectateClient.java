@@ -41,11 +41,9 @@ public final class SpectateClient implements ClientModInitializer {
     public static final String BUILD_MARKER = "sweepfix-14+1.21.11";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    /** Push the trust set to the service at most this often, in client ticks. */
+    /** Push this client's consent to the service at most this often, in client ticks. */
     private static final int TRUST_INTERVAL_TICKS = 100;
 
-    private static KeyBinding openMenuKey;
-    private static KeyBinding stopKey;
     private static KeyBinding refocusKey;
 
     private int tickCounter;
@@ -55,13 +53,9 @@ public final class SpectateClient implements ClientModInitializer {
         KeyBinding.Category category = KeyBinding.Category.create(
                 Identifier.of(MOD_ID, "main"));
         int unbound = InputUtil.UNKNOWN_KEY.getCode();
-        // Unbound by default, matching Relay's convention: binding is a deliberate choice.
-        openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.spegtate.open_menu", InputUtil.Type.KEYSYM, unbound, category));
-        stopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.spegtate.stop", InputUtil.Type.KEYSYM, unbound, category));
-        // Refocus puts a free-flying viewer back on the target. Unbound by default like the
-        // others, so it is a deliberate choice rather than a key taken from the player.
+        // Refocus puts a free-flying viewer back on the target, and is the only keybind
+        // this addon registers. Unbound by default, matching Relay's convention: binding
+        // is a deliberate choice rather than a key taken from the player.
         refocusKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.spegtate.refocus", InputUtil.Type.KEYSYM, unbound, category));
 
@@ -101,17 +95,9 @@ public final class SpectateClient implements ClientModInitializer {
         SpectateManager manager = SpectateManager.get();
         manager.tick();
 
-        // Both keybinds only reach this feature while a session is live, because that is the only
-        // time this addon has a world for MinecraftClient to dispatch keys in. Starting a session is the
-        // menu button's job; see MenuButton.
-        while (openMenuKey.wasPressed()) {
-            if (manager.viewing() != null) {
-                client.setScreen(new SpectateScreen(client.currentScreen));
-            }
-        }
-        while (stopKey.wasPressed()) {
-            manager.stopViewing();
-        }
+        // Refocus only reaches this feature while a session is live, because that is the
+        // only time this addon has a world for the client to dispatch keys in. Starting
+        // and stopping a session are the menu's job; see MenuButton.
         while (refocusKey.wasPressed()) {
             var active = manager.viewing();
             if (active != null) {

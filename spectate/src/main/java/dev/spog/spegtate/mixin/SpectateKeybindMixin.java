@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Closes the keybind-component probe path for this addon's keybinds (MC-265322).
  *
  * <p>Mirrors Relay's own {@code KeybindContentsMixin}, and is needed for the same reason. A
- * {@code {"keybind":"key.spegtate.open_menu"}} component resolves through
+ * {@code {"keybind":"key.spegtate.refocus"}} component resolves through
  * {@code KeyBinding.ALL}, so any <em>registered</em> keybind answers with its bound key's display
  * name -- independent of the translation table, which is why {@link SpectateLang} keeping strings
  * private is not sufficient on its own. Keybinds have to be registered to be bindable, so the

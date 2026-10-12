@@ -119,7 +119,7 @@ public final class HostDriver {
 
     /** Attaches the handshake listener. The client is about to send its intention packet. */
     public void begin() {
-        connection.setupInboundProtocol(
+        connection.transitionInbound(
                 net.minecraft.network.protocol.handshake.HandshakeStates.C2S,
                 new HostHandshakeListener(connection, intention -> enterLogin()));
     }
@@ -128,8 +128,8 @@ public final class HostDriver {
     private void enterLogin() {
         // Outbound before inbound, as the vanilla server does: the client has sent its intention
         // and the next thing it reads must already be a login packet.
-        connection.setupOutboundProtocol(LoginStates.S2C);
-        connection.setupInboundProtocol(
+        connection.transitionOutbound(LoginStates.S2C);
+        connection.transitionInbound(
                 LoginStates.C2S,
                 new HostLoginListener(connection, profile -> enterConfiguration()));
     }
@@ -138,8 +138,8 @@ public final class HostDriver {
     private void enterConfiguration() {
         HostConfigurationListener listener =
                 new HostConfigurationListener(connection, handshake, c -> enterGame());
-        connection.setupOutboundProtocol(ConfigurationStates.S2C);
-        connection.setupInboundProtocol(ConfigurationStates.C2S, listener);
+        connection.transitionOutbound(ConfigurationStates.S2C);
+        connection.transitionInbound(ConfigurationStates.C2S, listener);
         listener.begin();
     }
 
@@ -188,10 +188,10 @@ public final class HostDriver {
             return;
         }
 
-        connection.setupOutboundProtocol(
+        connection.transitionOutbound(
                 PlayStateFactories.S2C.bind(
                         RegistryByteBuf.makeFactory(access)));
-        connection.setupInboundProtocol(
+        connection.transitionInbound(
                 PlayStateFactories.C2S.bind(
                         RegistryByteBuf.makeFactory(access),
                         new PlayStateFactories.Context() {

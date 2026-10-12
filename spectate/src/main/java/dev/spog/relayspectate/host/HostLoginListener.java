@@ -6,13 +6,13 @@ import net.minecraft.network.ClientConnection;
 import net.minecraft.network.NetworkPhase;
 import net.minecraft.network.DisconnectionInfo;
 import net.minecraft.network.NetworkSide;
-import net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket;
+import net.minecraft.network.packet.c2s.common.CookieResponseC2SPacket;
 import net.minecraft.network.packet.s2c.login.LoginSuccessS2CPacket;
 import net.minecraft.network.listener.ServerLoginPacketListener;
-import net.minecraft.network.protocol.login.ServerboundCustomQueryAnswerPacket;
+import net.minecraft.network.packet.c2s.login.LoginQueryResponseC2SPacket;
 import net.minecraft.network.packet.c2s.login.LoginHelloC2SPacket;
-import net.minecraft.network.protocol.login.ServerboundKeyPacket;
-import net.minecraft.network.protocol.login.ServerboundLoginAcknowledgedPacket;
+import net.minecraft.network.packet.c2s.login.LoginKeyC2SPacket;
+import net.minecraft.network.packet.c2s.login.EnterConfigurationC2SPacket;
 
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -42,7 +42,7 @@ public final class HostLoginListener implements ServerLoginPacketListener {
     }
 
     @Override
-    public void handleHello(LoginHelloC2SPacket packet) {
+    public void onHello(LoginHelloC2SPacket packet) {
         // The client sends the name and uuid it is logged in as; there is nothing to verify here,
         // because this "server" serves exactly one client in its own process.
         UUID id = packet.profileId();
@@ -51,43 +51,43 @@ public final class HostLoginListener implements ServerLoginPacketListener {
     }
 
     @Override
-    public void handleLoginAcknowledgement(ServerboundLoginAcknowledgedPacket packet) {
+    public void onEnterConfiguration(EnterConfigurationC2SPacket packet) {
         onAcknowledged.accept(profile);
     }
 
     @Override
-    public void handleKey(ServerboundKeyPacket packet) {
+    public void onKey(LoginKeyC2SPacket packet) {
         // Unreachable: encryption is never requested, so the client never sends a key.
         SpectateClient.LOGGER.warn("spectate host: unexpected key packet");
     }
 
     @Override
-    public void handleCustomQueryPacket(ServerboundCustomQueryAnswerPacket packet) {
+    public void onQueryResponse(LoginQueryResponseC2SPacket packet) {
         // Unreachable: no custom queries are sent.
     }
 
     @Override
-    public void handleCookieResponse(ServerboundCookieResponsePacket packet) {
+    public void handleCookieResponse(CookieResponseC2SPacket packet) {
         // Unreachable: no cookie requests are sent.
     }
 
     @Override
-    public NetworkSide flow() {
+    public NetworkSide getSide() {
         return NetworkSide.SERVERBOUND;
     }
 
     @Override
-    public NetworkPhase protocol() {
+    public NetworkPhase getPhase() {
         return NetworkPhase.LOGIN;
     }
 
     @Override
-    public void onDisconnect(DisconnectionInfo details) {
+    public void onDisconnected(DisconnectionInfo details) {
         SpectateClient.LOGGER.debug("spectate host: login disconnect: {}", details.reason().getString());
     }
 
     @Override
-    public boolean isAcceptingMessages() {
+    public boolean isConnectionOpen() {
         return connection.isOpen();
     }
 }

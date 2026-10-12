@@ -5,8 +5,8 @@ import net.fabricmc.fabric.api.client.currentScreen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.currentScreen.v1.Screens;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.currentScreen.multiplayer.MultiplayerScreen;
-import net.minecraft.client.gui.currentScreen.Screen;
+import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
+import net.minecraft.client.gui.screen.Screen;
 
 /**
  * Adds a Spectate button to the multiplayer screen.

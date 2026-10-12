@@ -6,7 +6,7 @@ import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkLoadDistanceS2CPacket;
-import net.minecraft.network.protocol.game.CommonPlayerSpawnInfo;
+import net.minecraft.network.packet.s2c.play.CommonPlayerSpawnInfo;
 import net.minecraft.world.entity.PositionMoveRotation;
 import com.mojang.authlib.GameProfile;
 import dev.spog.relayspectate.capture.TabList;

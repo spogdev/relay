@@ -33,29 +33,29 @@ public final class HostHandshakeListener implements ServerHandshakePacketListene
     }
 
     @Override
-    public void handleIntention(HandshakeC2SPacket packet) {
-        SpectateClient.LOGGER.debug("spectate host: intention {}", packet.intention());
+    public void onHandshake(HandshakeC2SPacket packet) {
+        SpectateClient.LOGGER.debug("spectate host: intention {}", packet.intendedState());
         onIntention.accept(packet);
     }
 
     @Override
-    public NetworkSide flow() {
+    public NetworkSide getSide() {
         return NetworkSide.SERVERBOUND;
     }
 
     @Override
-    public NetworkPhase protocol() {
+    public NetworkPhase getPhase() {
         return NetworkPhase.HANDSHAKING;
     }
 
     @Override
-    public void onDisconnect(DisconnectionInfo details) {
+    public void onDisconnected(DisconnectionInfo details) {
         SpectateClient.LOGGER.debug("spectate host: handshake disconnect: {}",
                 details.reason().getString());
     }
 
     @Override
-    public boolean isAcceptingMessages() {
+    public boolean isConnectionOpen() {
         return connection.isOpen();
     }
 }

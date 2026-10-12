@@ -2,10 +2,10 @@ package dev.spog.relayspectate.capture;
 
 import dev.spog.relayspectate.SpectateClient;
 import net.minecraft.network.packet.Packet;
-import net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket;
-import net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket;
-import net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks;
-import net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket;
+import net.minecraft.network.packet.s2c.common.SynchronizeTagsS2CPacket;
+import net.minecraft.network.packet.s2c.config.DynamicRegistriesS2CPacket;
+import net.minecraft.network.packet.s2c.config.SelectKnownPacksS2CPacket;
+import net.minecraft.network.packet.s2c.config.FeaturesS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 
 import java.util.ArrayList;
@@ -36,9 +36,9 @@ public final class HandshakeRecorder {
      * the registry data they scope.
      */
     private static final List<Class<?>> RECORDED = List.of(
-            ClientboundSelectKnownPacks.class,
+            SelectKnownPacksS2CPacket.class,
             DynamicRegistriesS2CPacket.class,
-            ClientboundUpdateEnabledFeaturesPacket.class,
+            FeaturesS2CPacket.class,
             SynchronizeTagsS2CPacket.class,
             GameJoinS2CPacket.class);
 

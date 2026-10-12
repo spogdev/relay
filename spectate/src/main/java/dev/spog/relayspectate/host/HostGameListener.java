@@ -306,7 +306,7 @@ public final class HostGameListener implements ServerPlayPacketListener {
 
     @Override
     public void onCookieResponse(
-            net.minecraft.network.packet.c2s.cookie.CookieResponseC2SPacket packet) {
+            net.minecraft.network.packet.c2s.common.CookieResponseC2SPacket packet) {
         // No cookie is ever requested, so this cannot arrive.
     }
 }

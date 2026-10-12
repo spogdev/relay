@@ -294,7 +294,7 @@ public final class ViewerSession {
 
         // Null ServerData and null parent screen: there is no real server behind this, and the
         // session's own teardown handles failure rather than returning to a screen.
-        connection.initiateServerboundPlayConnection(
+        connection.connect(
                 address.toString(),
                 0,
                 new ClientLoginNetworkHandler(
@@ -415,7 +415,7 @@ public final class ViewerSession {
             var info = re.commonPlayerSpawnInfo();
             if (info.gameType() != net.minecraft.world.GameMode.SPECTATOR) {
                 return new net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket(
-                        new net.minecraft.network.protocol.game.CommonPlayerSpawnInfo(
+                        new net.minecraft.network.packet.s2c.play.CommonPlayerSpawnInfo(
                                 info.dimensionType(),
                                 info.dimension(),
                                 info.seed(),

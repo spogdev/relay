@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.spog.spegtate.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ClientEffectCaptureMixin",
+    "ClientPacketListenerRegistryMixin",
+    "ConnectionCaptureMixin",
+    "InboundApplyMarkerMixin",
+    "LoopbackNotMemoryMixin",
+    "SpectateDisconnectMixin",
+    "SpectateKeybindMixin",
+    "SpectateKeyBindsListMixin",
+    "SpectateKeyBindsScreenMixin",
+    "SpectateNoClipMixin",
+    "SpectateLanguageMixin",
+    "SpectatePauseScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

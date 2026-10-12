@@ -1,7 +1,6 @@
 package dev.spog.spectaterelay;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.spog.teamlocator.relay.auth.Verifier;
 import org.java_websocket.client.WebSocketClient;
@@ -28,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Drives the real {@link SpectateRelayServer} over real WebSockets with a stub verifier, and
  * asserts the properties the addon's privacy rests on: a stream only ever reaches a viewer the
- * target has trusted, revoking trust cuts an established session immediately, and nobody can
+ * target consents to, withdrawing consent cuts an established session immediately, and nobody can
  * spectate by asserting their own identity.
  *
  * <p>These are the tests worth having without the game, because they cover the part that decides
@@ -163,14 +162,10 @@ class SpectateRoutingTest {
             assertTrue(authed.await(5, TimeUnit.SECONDS), name + " did not authenticate");
         }
 
-        void sendTrust(UUID... trusted) {
+        void sendConsent(boolean allowsViewers) {
             JsonObject obj = new JsonObject();
             obj.addProperty("type", "trust-update");
-            JsonArray array = new JsonArray();
-            for (UUID id : trusted) {
-                array.add(id.toString());
-            }
-            obj.add("trusts", array);
+            obj.addProperty("allowsViewers", allowsViewers);
             send(GSON.toJson(obj));
         }
 
@@ -207,10 +202,10 @@ class SpectateRoutingTest {
     }
 
     @Test
-    void streamReachesATrustedViewer() throws Exception {
+    void streamReachesAConsentedViewer() throws Exception {
         TestClient target = connect("target");
         TestClient viewer = connect("viewer");
-        target.sendTrust(viewer.uuid);
+        target.sendConsent(true);
         settle();
 
         viewer.requestSession(target.uuid);
@@ -225,36 +220,65 @@ class SpectateRoutingTest {
     }
 
     @Test
-    void streamNeverReachesAnUntrustedViewer() throws Exception {
+    void streamNeverReachesAViewerWhenConsentIsWithheld() throws Exception {
         TestClient target = connect("target");
         TestClient viewer = connect("viewer");
-        // Target trusts someone else entirely.
-        target.sendTrust(uuidOf("somebody-else"));
+        // Target has spectating turned off.
+        target.sendConsent(false);
         settle();
 
         viewer.requestSession(target.uuid);
         settle();
-        assertFalse(viewer.sawType(Wire.TYPE_SESSION_READY), "untrusted viewer was given a session");
-        assertTrue(viewer.denyReasons.contains(Wire.DENY_NOT_TRUSTED), "no not-trusted denial");
+        assertFalse(viewer.sawType(Wire.TYPE_SESSION_READY), "refusing target was spectated anyway");
+        assertTrue(viewer.denyReasons.contains(Wire.DENY_NOT_TRUSTED), "no refusal");
         assertFalse(target.sawType(Wire.TYPE_CAPTURE_START), "target was asked to capture anyway");
 
         target.sendGamePacket(new byte[] {9});
         settle();
-        assertTrue(viewer.streamFrames.isEmpty(), "stream leaked to an untrusted viewer");
+        assertTrue(viewer.streamFrames.isEmpty(), "stream leaked from a refusing target");
     }
 
     @Test
-    void revokingTrustEndsALiveSession() throws Exception {
+    void aTargetThatHasNotReportedConsentIsNotSpectatable() throws Exception {
+        // The default matters: a client that has authenticated but not yet sent its consent must
+        // not be watchable in that window. Nothing here sends a consent frame at all.
         TestClient target = connect("target");
         TestClient viewer = connect("viewer");
-        target.sendTrust(viewer.uuid);
+        settle();
+
+        viewer.requestSession(target.uuid);
+        settle();
+        assertFalse(viewer.sawType(Wire.TYPE_SESSION_READY), "silent target was spectated");
+        assertTrue(viewer.denyReasons.contains(Wire.DENY_NOT_TRUSTED), "no refusal");
+    }
+
+    @Test
+    void anyConsentingClientMayBeWatchedWithoutBeingAddedToAList() throws Exception {
+        // The point of the change: the target never names the viewer, and the viewer is a
+        // stranger to it. Consent alone is enough.
+        TestClient target = connect("target");
+        TestClient viewer = connect("viewer");
+        target.sendConsent(true);
+        settle();
+
+        viewer.requestSession(target.uuid);
+        settle();
+        assertTrue(viewer.sawType(Wire.TYPE_SESSION_READY), "a consenting target refused a stranger");
+        assertTrue(target.sawType(Wire.TYPE_CAPTURE_START), "target was not asked to capture");
+    }
+
+    @Test
+    void withdrawingConsentEndsALiveSession() throws Exception {
+        TestClient target = connect("target");
+        TestClient viewer = connect("viewer");
+        target.sendConsent(true);
         settle();
         viewer.requestSession(target.uuid);
         settle();
         assertTrue(viewer.sawType(Wire.TYPE_SESSION_READY));
 
-        // Revoke by sending a trust set that no longer contains the viewer.
-        target.sendTrust();
+        // Revoke by turning spectating off.
+        target.sendConsent(false);
         settle();
         assertTrue(viewer.denyReasons.contains(Wire.DENY_REVOKED), "viewer was not told of revocation");
         assertTrue(target.sawType(Wire.TYPE_CAPTURE_STOP), "target was not told to stop capturing");
@@ -268,7 +292,7 @@ class SpectateRoutingTest {
     @Test
     void cannotSpectateYourself() throws Exception {
         TestClient viewer = connect("viewer");
-        viewer.sendTrust(viewer.uuid);
+        viewer.sendConsent(true);
         settle();
         viewer.requestSession(viewer.uuid);
         settle();
@@ -282,7 +306,7 @@ class SpectateRoutingTest {
         // the only party that sees both clients before anything is streamed.
         TestClient target = connect("target", "1.21.11");
         TestClient viewer = connect("viewer", "26.1.2");
-        target.sendTrust(viewer.uuid);
+        target.sendConsent(true);
         settle();
         viewer.requestSession(target.uuid);
         settle();
@@ -295,7 +319,7 @@ class SpectateRoutingTest {
         // The companion to the test above: the version gate must not refuse a legitimate pair.
         TestClient target = connect("target", "26.3");
         TestClient viewer = connect("viewer", "26.3");
-        target.sendTrust(viewer.uuid);
+        target.sendConsent(true);
         settle();
         viewer.requestSession(target.uuid);
         settle();
@@ -314,7 +338,7 @@ class SpectateRoutingTest {
     void aTargetDisconnectEndsTheSession() throws Exception {
         TestClient target = connect("target");
         TestClient viewer = connect("viewer");
-        target.sendTrust(viewer.uuid);
+        target.sendConsent(true);
         settle();
         viewer.requestSession(target.uuid);
         settle();
@@ -326,25 +350,32 @@ class SpectateRoutingTest {
     }
 
     /**
-     * A second viewer must not inherit the first one's session. Trust is per-player, so a target
-     * that trusts one viewer has not consented to another.
+     * Two viewers may watch one target at once, and each is told separately.
+     *
+     * <p>This used to assert the opposite -- that a second viewer the target had not named was
+     * refused. Consent is no longer per-player, so a second viewer is legitimate, and what
+     * matters instead is that the target is asked to capture once per viewer: the capture-start
+     * carries the viewer's id, and the target replays a handshake for each, so a viewer joining
+     * an already-running stream still gets one.
      */
     @Test
-    void aSecondUntrustedViewerIsNotAttached() throws Exception {
+    void aSecondViewerIsAttachedAndAlsoReceivesTheStream() throws Exception {
         TestClient target = connect("target");
         TestClient first = connect("first");
         TestClient second = connect("second");
-        target.sendTrust(first.uuid);
+        target.sendConsent(true);
         settle();
         first.requestSession(target.uuid);
         settle();
         second.requestSession(target.uuid);
         settle();
+        assertTrue(first.sawType(Wire.TYPE_SESSION_READY), "first viewer was refused");
+        assertTrue(second.sawType(Wire.TYPE_SESSION_READY), "second viewer was refused");
 
         target.sendGamePacket(new byte[] {4});
         settle();
-        assertFalse(first.streamFrames.isEmpty(), "trusted viewer received nothing");
-        assertTrue(second.streamFrames.isEmpty(), "stream leaked to a second, untrusted viewer");
+        assertFalse(first.streamFrames.isEmpty(), "first viewer received nothing");
+        assertFalse(second.streamFrames.isEmpty(), "second viewer received nothing");
     }
 
     private static void assertArrayEqualsBytes(byte[] expected, byte[] actual) {

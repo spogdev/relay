@@ -7,7 +7,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientLoginNetworkHandler;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.multiplayer.LevelLoadTracker;
+import net.minecraft.client.world.ClientChunkLoadProgress;
 import net.minecraft.registry.DynamicRegistryManager;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.text.Text;
@@ -130,15 +130,15 @@ public final class ViewerSession {
      * have.
      *
      * <p>{@code ClientPlayerInteractionManager.localPlayerMode} is what actually decides it:
-     * {@code MinecraftClient.gameMode.isSpectator()} reads it, and that governs no-clip and whether the
+     * {@code MinecraftClient.interactionManager.getCurrentGameMode().isSpectator()} reads it, and that governs no-clip and whether the
      * local player is drawn -- a viewer appearing as a body in third person was this being wrong.
      * Setting it directly each tick makes the viewer a spectator regardless of what arrives, and
      * nothing in the stream can take it away for longer than a tick.
      */
     private void enforceSpectator() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.gameMode != null && !mc.gameMode.isSpectator()) {
-            mc.gameMode.setLocalMode(net.minecraft.world.GameMode.SPECTATOR);
+        if (mc.interactionManager != null && !mc.interactionManager.getCurrentGameMode().isSpectator()) {
+            mc.interactionManager.setGameMode(net.minecraft.world.GameMode.SPECTATOR);
         }
     }
 
@@ -301,7 +301,7 @@ public final class ViewerSession {
                         connection, mc, null, null, false, Duration.ZERO,
                         status -> SpectateClient.LOGGER.debug("spectate login: {}",
                                 status.getString()),
-                        new LevelLoadTracker(), null));
+                        new ClientChunkLoadProgress(), null));
         connection.send(new LoginHelloC2SPacket(
                 mc.getSession().getName(), mc.getSession().getUuidOrNull()));
         SpectateClient.LOGGER.info("spectate: loopback session opened for {}", target);
@@ -405,7 +405,7 @@ public final class ViewerSession {
      */
     private Packet<?> withOwnEntrySpectating(Packet<?> decoded) {
         // A respawn carries the target's game mode and the client applies it to itself through
-        // setLocalMode -- which is where MinecraftClient.gameMode.isSpectator() reads from, and that is
+        // setGameMode -- which is where interactionManager.getCurrentGameMode() reads from, and that is
         // what decides no-clip and whether the local player is rendered in third person. So the
         // target dying, respawning or changing dimension silently took the viewer out of
         // spectator: it collided with blocks again and appeared as a visible body behind its own
@@ -413,7 +413,7 @@ public final class ViewerSession {
         // mid-session equivalent and needs the same treatment.
         if (decoded instanceof net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket re) {
             var info = re.commonPlayerSpawnInfo();
-            if (info.gameType() != net.minecraft.world.GameMode.SPECTATOR) {
+            if (info.gameMode() != net.minecraft.world.GameMode.SPECTATOR) {
                 return new net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket(
                         new net.minecraft.network.packet.s2c.play.CommonPlayerSpawnInfo(
                                 info.dimensionType(),
@@ -426,7 +426,7 @@ public final class ViewerSession {
                                 info.lastDeathLocation(),
                                 info.portalCooldown(),
                                 info.seaLevel()),
-                        re.dataToKeep());
+                        re.flag());
             }
             return decoded;
         }

@@ -375,6 +375,8 @@ public final class SpectateManager {
         if (s == null) {
             terrainBacklog.clear();
             priorityBacklog.clear();
+            // Nothing is reported once nobody is watching, so nothing should be suppressed.
+            SpectateRoster.clearReportedPeers();
             return;
         }
         // Priority frames are not rate limited. There are only ever a handful, and the frames
@@ -1173,6 +1175,13 @@ public final class SpectateManager {
                 break;
             }
         }
+        // Recorded before sending, so the filter suppresses the server's own movement
+        // packets for exactly the players this report covers.
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
+        for (double[] peer : peers) {
+            ids.add((int) peer[0]);
+        }
+        SpectateRoster.setReportedPeers(ids);
         s.sendPeerPositions(peers);
     }
 }

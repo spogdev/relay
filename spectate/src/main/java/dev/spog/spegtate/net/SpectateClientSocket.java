@@ -226,8 +226,8 @@ public final class SpectateClientSocket {
      */
     public void sendTargetPosition(double x, double y, double z, float yaw, float pitch,
                                    int entityId, float headYaw, boolean onGround,
-                                   int swingAction) {
-        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2 + 4 + 4 + 1 + 1);
+                                   int swingAction, int pose) {
+        ByteBuffer buf = ByteBuffer.allocate(1 + 8 * 3 + 4 * 2 + 4 + 4 + 1 + 1 + 1);
         buf.put(SpectateProtocol.TYPE_TARGET_POSITION);
         buf.putDouble(x).putDouble(y).putDouble(z).putFloat(yaw).putFloat(pitch);
         // The entity id, head rotation and ground flag were added so the viewer can move the
@@ -241,6 +241,11 @@ public final class SpectateClientSocket {
         // is absent from the target's own inbound stream and the target's arms never moved. -1
         // means "not swinging"; anything else is a ClientboundAnimatePacket action id.
         buf.put((byte) swingAction);
+        // The pose, appended as one more optional field. A client is never told its
+        // own metadata, so without this the target's sneak reached a viewer only by
+        // the server echoing it to the players around the target -- a full round
+        // trip, which is the delay.
+        buf.put((byte) pose);
         sendBinary(buf.flip());
     }
 

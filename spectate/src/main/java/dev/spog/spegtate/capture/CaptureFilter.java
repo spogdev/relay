@@ -9,6 +9,7 @@ import net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket;
 import net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket;
 import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
@@ -88,6 +89,11 @@ public final class CaptureFilter {
             ClientboundChunkBatchStartPacket.class,
             ClientboundChunkBatchFinishedPacket.class,
             ClientboundBlockUpdatePacket.class,
+            // Two or more blocks changing in one chunk section arrive as this
+            // instead of several single updates. Without it a door's two halves
+            // -- changed together, so sent together -- never moved for a viewer,
+            // and the same for beds, tall plants and doors broken in one hit.
+            ClientboundSectionBlocksUpdatePacket.class,
             ClientboundBlockEntityDataPacket.class,
             ClientboundBlockEventPacket.class,
             ClientboundBlockDestructionPacket.class,

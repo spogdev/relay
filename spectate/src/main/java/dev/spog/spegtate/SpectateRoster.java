@@ -38,6 +38,32 @@ public final class SpectateRoster {
     private SpectateRoster() {
     }
 
+    /**
+     * Entity ids this client reports positions for itself, each tick.
+     *
+     * <p>Held here rather than in the manager because the capture filter needs it on the Netty
+     * read thread while the sweep writes it on the client thread. A player in this set has its
+     * position sent absolutely every tick, so the server's own movement packets for it must be
+     * dropped rather than forwarded -- two sources writing one entity is what made players
+     * rubber-band.
+     */
+    private static volatile java.util.Set<Integer> reportedPeers = java.util.Set.of();
+
+    /** Records the entity ids reported this tick. */
+    public static void setReportedPeers(java.util.Set<Integer> ids) {
+        reportedPeers = ids;
+    }
+
+    /** True if this client sends its own position reports for that entity. */
+    public static boolean reportsPeer(int entityId) {
+        return reportedPeers.contains(entityId);
+    }
+
+    /** Forgets the reported set, so nothing is suppressed once a capture ends. */
+    public static void clearReportedPeers() {
+        reportedPeers = java.util.Set.of();
+    }
+
     /** Replaces the roster with what the service just sent. */
     public static void set(List<Peer> next) {
         peers = List.copyOf(next);

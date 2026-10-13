@@ -430,7 +430,7 @@ public final class SpectateManager {
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYaw(), mc.player.getPitch(),
                 mc.player.getId(), mc.player.getHeadYaw(), mc.player.isOnGround(),
-                swingAction(mc.player));
+                swingAction(mc.player), poseOf(mc.player));
     }
 
     /**
@@ -554,10 +554,16 @@ public final class SpectateManager {
                     if (frame.remaining() >= 1) {
                         swingAction = frame.get();
                     }
+                    // Optional, like the fields before it: a target on an older build sends
+                    // nothing here and the viewer leaves the pose alone.
+                    int pose = -1;
+                    if (frame.remaining() >= 1) {
+                        pose = frame.get();
+                    }
                     ViewerSession session = viewing;
                     if (session != null) {
                         session.applyTargetPosition(x, y, z, yaw, pitch,
-                                entityId, headYaw, onGround, swingAction);
+                                entityId, headYaw, onGround, swingAction, pose);
                     }
                 }
             }
@@ -733,7 +739,8 @@ public final class SpectateManager {
         }
         s.sendTargetPosition(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                 mc.player.getYaw(), mc.player.getPitch(),
-                mc.player.getId(), mc.player.getHeadYaw(), mc.player.isOnGround(), -1);
+                mc.player.getId(), mc.player.getHeadYaw(), mc.player.isOnGround(), -1,
+                poseOf(mc.player));
     }
 
     /**
@@ -1182,5 +1189,16 @@ public final class SpectateManager {
         }
         SpectateRoster.setReportedPeers(ids);
         s.sendPeerPositions(peers);
+    }
+
+    /**
+     * The target's current pose, as an ordinal for the wire.
+     *
+     * <p>Read from the player directly rather than from its data tracker: a client sets its own
+     * pose locally and is never sent metadata about itself, so the tracker is not the source of
+     * truth here and the server's echo of it is a round-trip late.
+     */
+    private static int poseOf(net.minecraft.client.network.ClientPlayerEntity player) {
+        return player.getPose().ordinal();
     }
 }

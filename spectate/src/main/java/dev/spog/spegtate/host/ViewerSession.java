@@ -366,7 +366,7 @@ public final class ViewerSession {
 
     public void applyTargetPosition(double x, double y, double z, float yaw, float pitch,
                                     int entityId, float headYaw, boolean onGround,
-                                    int swingAction) {
+                                    int swingAction, int pose) {
         if (closed) {
             return;
         }
@@ -399,6 +399,9 @@ public final class ViewerSession {
         // from the position report, which arrives every tick for the chunk cache's benefit.
         if (entityId >= 0) {
             d.moveTargetEntity(entityId, x, y, z, yaw, pitch, headYaw, onGround);
+            if (pose >= 0) {
+                d.setEntityPose(entityId, pose);
+            }
             if (swingAction >= 0) {
                 d.swingTargetArm(entityId, swingAction);
             }

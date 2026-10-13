@@ -476,4 +476,29 @@ public final class HostDriver {
             return null;
         }
     }
+
+    /**
+     * Sets one entity's pose on the viewer, as a metadata update.
+     *
+     * <p>Synthesised rather than forwarded, because the target's own pose is never in its
+     * inbound stream: a client sets its pose locally and the server tells only the other
+     * clients. Waiting for that echo to come back round is what made the target's sneak lag
+     * behind everything else it did.
+     */
+    public void setEntityPose(int entityId, int poseOrdinal) {
+        if (!inGame || !connection.isOpen()) {
+            return;
+        }
+        net.minecraft.entity.EntityPose[] poses = net.minecraft.entity.EntityPose.values();
+        if (poseOrdinal < 0 || poseOrdinal >= poses.length) {
+            return;
+        }
+        java.util.List<net.minecraft.entity.data.DataTracker.SerializedEntry<?>> entries =
+                java.util.List.of(net.minecraft.entity.data.DataTracker.SerializedEntry.of(
+                        dev.spog.spegtate.mixin.EntityPoseAccessor.spegtate$pose(),
+                        poses[poseOrdinal]));
+        connection.send(
+                new net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket(
+                        entityId, entries));
+    }
 }

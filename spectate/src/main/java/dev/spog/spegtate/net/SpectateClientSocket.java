@@ -61,6 +61,23 @@ public final class SpectateClientSocket {
     /** Serializes sends; the JDK WebSocket rejects overlapping send operations. */
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
 
+    /**
+     * Frames handed to {@link #sendChain} that have not finished sending.
+     *
+     * <p>The chain is strictly sequential, so this is the depth of the queue behind the frame
+     * currently on the wire. It exists because the tick loop's rate limit counted frames handed
+     * off rather than frames sent: while swept chunks carried no light they were small enough
+     * that the difference never showed, and once they carried real light the chain fell behind
+     * and live packets queued behind several seconds of terrain.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger framesInFlight =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** How many frames are waiting on the send chain. */
+    public int framesInFlight() {
+        return framesInFlight.get();
+    }
+
     /** Counts failed frame sends, so a burst reports once rather than per frame. */
     private final java.util.concurrent.atomic.AtomicLong sendFailures =
             new java.util.concurrent.atomic.AtomicLong();
@@ -314,12 +331,14 @@ public final class SpectateClientSocket {
         // ByteBuffer's position and limit are mutable state -- so reading it later is a race with
         // whatever else touches it in the meantime.
         ByteBuffer payload = frame.duplicate();
+        framesInFlight.incrementAndGet();
         synchronized (this) {
             sendChain = sendChain.thenCompose(ignored -> {
                 WebSocket current = socket;
                 return current == null ? CompletableFuture.completedFuture(null)
                         : current.sendBinary(payload.duplicate(), true);
-            }).exceptionally(e -> {
+            }).whenComplete((ignored, error) -> framesInFlight.decrementAndGet())
+                    .exceptionally(e -> {
                 // Counted and logged once per burst rather than per frame. Swallowing these
                 // silently hid a complete terrain failure: the target reported "sent 421 chunks"
                 // while the viewer received none and nothing anywhere said a send had failed.
@@ -330,7 +349,7 @@ public final class SpectateClientSocket {
                                     ? e.getCause() : e);
                 }
                 return null;
-            });
+                    });
         }
     }
 
@@ -339,6 +358,9 @@ public final class SpectateClientSocket {
         WebSocket ws = socket;
         socket = null;
         authenticated = false;
+        // Anything still chained will never complete now, so the count is reset rather than
+        // left high -- a stale count would throttle the next session to a standstill.
+        framesInFlight.set(0);
         SpectateRoster.clear();
         if (ws != null) {
             ws.abort();

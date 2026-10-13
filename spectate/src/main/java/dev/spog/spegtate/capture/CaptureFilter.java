@@ -1,6 +1,7 @@
 package dev.spog.spegtate.capture;
 
 import dev.spog.spegtate.net.SpectateProtocol;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket;
@@ -155,7 +156,13 @@ public final class CaptureFilter {
         if (packet instanceof GameStateChangeS2CPacket p) {
             return p.getReason() != GameStateChangeS2CPacket.GAME_MODE_CHANGED;
         }
-        return true;
+        // Movement for a player this client reports itself is dropped: the report is absolute
+        // and arrives every tick, while MoveRelative applies a delta to the tracked position
+        // that the report has already overwritten. Forwarding both made those players snap
+        // backwards and forwards, and only those players -- anyone outside the reported set had
+        // one source and behaved normally.
+        Integer moved = movedEntity(packet);
+        return moved == null || !dev.spog.spegtate.SpectateRoster.reportsPeer(moved);
     }
 
     /**
@@ -218,5 +225,34 @@ public final class CaptureFilter {
         }
         int r = SpectateProtocol.CAPTURE_RADIUS_CHUNKS;
         return Math.abs(x - local.x) <= r && Math.abs(z - local.z) <= r;
+    }
+
+    /**
+     * The entity a movement packet moves, or null if it is not a movement packet.
+     *
+     * <p>Only the kinds that carry a position; rotation-only packets are left alone, since the
+     * position reports do not supersede them.
+     */
+    private static Integer movedEntity(Packet<?> packet) {
+        if (packet instanceof EntityS2CPacket p) {
+            // No id getter on this one, and a rotation-only move carries no position to
+            // conflict with, so it is left alone.
+            if (!p.isPositionChanged()) {
+                return null;
+            }
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.world == null) {
+                return null;
+            }
+            var moved = p.getEntity(mc.world);
+            return moved == null ? null : moved.getId();
+        }
+        if (packet instanceof EntityPositionS2CPacket p) {
+            return p.entityId();
+        }
+        if (packet instanceof EntityPositionSyncS2CPacket p) {
+            return p.id();
+        }
+        return null;
     }
 }

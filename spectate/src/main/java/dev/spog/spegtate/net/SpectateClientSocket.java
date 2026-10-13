@@ -159,6 +159,32 @@ public final class SpectateClientSocket {
         sendText(gson.toJson(obj));
     }
 
+
+    /**
+     * Reports the players near the target, so a viewer can move them every tick.
+     *
+     * <p>One frame for all of them rather than one each: at 20 Hz with a handful of players in
+     * view, separate frames would multiply the session's frame count for no gain, and they are
+     * all read in the same tick at the other end anyway.
+     */
+    public void sendPeerPositions(java.util.List<double[]> peers) {
+        int count = Math.min(peers.size(), SpectateProtocol.MAX_PEER_POSITIONS);
+        if (count == 0) {
+            return;
+        }
+        ByteBuffer buf = ByteBuffer.allocate(1 + 2 + count * (4 + 8 * 3 + 4 * 3 + 1));
+        buf.put(SpectateProtocol.TYPE_PEER_POSITIONS);
+        buf.putShort((short) count);
+        for (int i = 0; i < count; i++) {
+            double[] peer = peers.get(i);
+            buf.putInt((int) peer[0]);
+            buf.putDouble(peer[1]).putDouble(peer[2]).putDouble(peer[3]);
+            buf.putFloat((float) peer[4]).putFloat((float) peer[5]).putFloat((float) peer[6]);
+            buf.put((byte) (peer[7] != 0 ? 1 : 0));
+        }
+        sendBinary(buf.flip());
+    }
+
     /** Asks to begin watching a target. */
     public void requestSession(UUID target) {
         sendBinary(Frames.of(SpectateProtocol.TYPE_SESSION_REQUEST, target));

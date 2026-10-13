@@ -154,6 +154,25 @@ public final class SpectateProtocol {
      */
     public static final byte TYPE_CAPTURE_UNAVAILABLE = 0x25;
 
+    /**
+     * Positions of the players near the target, sent once per tick.
+     *
+     * <p>Other players move in a viewer's world only as fast as the target's own server reports
+     * them, and servers throttle entity movement to every few ticks and further with distance.
+     * Against the target's own entity, which is synthesised here every tick, that difference
+     * reads as lag. The target's client already holds these players interpolated, so it reports
+     * them the same way it reports itself.
+     *
+     * <p>Layout: a short count, then that many records of
+     * {@code int id, double x, double y, double z, float yaw, float pitch, float headYaw,
+     * byte onGround}. Players only, and only inside the swept region, so the frame stays small
+     * on a busy server.
+     */
+    public static final byte TYPE_PEER_POSITIONS = 0x26;
+
+    /** Most players one {@link #TYPE_PEER_POSITIONS} frame may carry. */
+    public static final int MAX_PEER_POSITIONS = 64;
+
     // ---- relay -> target ----
 
     /**

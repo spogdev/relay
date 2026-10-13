@@ -255,6 +255,7 @@ public final class SpectateManager {
         }
         drainTerrainBacklog();
         reportPositionIfStreaming();
+        reportPeerPositions();
         resendTabListIfTexturesArrived();
         sweepNewTerrain();
         ViewerSession session = viewing;
@@ -510,6 +511,24 @@ public final class SpectateManager {
                 ViewerSession session = viewing;
                 if (session != null) {
                     session.feed(payload);
+                }
+            }
+            case SpectateProtocol.TYPE_PEER_POSITIONS -> {
+                frame.get(); // type
+                if (frame.remaining() >= 2) {
+                    int count = frame.getShort() & 0xFFFF;
+                    count = Math.min(count, SpectateProtocol.MAX_PEER_POSITIONS);
+                    List<double[]> peers = new ArrayList<>(count);
+                    for (int i = 0; i < count && frame.remaining() >= 4 + 8 * 3 + 4 * 3 + 1; i++) {
+                        peers.add(new double[] {
+                                frame.getInt(), frame.getDouble(), frame.getDouble(),
+                                frame.getDouble(), frame.getFloat(), frame.getFloat(),
+                                frame.getFloat(), frame.get()});
+                    }
+                    ViewerSession active = viewing;
+                    if (active != null) {
+                        pendingMainThread.add(() -> active.applyPeerPositions(peers));
+                    }
                 }
             }
             case SpectateProtocol.TYPE_TARGET_POSITION -> {
@@ -1104,5 +1123,55 @@ public final class SpectateManager {
         sentChunks.clear();
         sweptCentreX = Integer.MIN_VALUE;
         sweptCentreZ = Integer.MIN_VALUE;
+    }
+
+    /**
+     * Reports the players near the target, once per tick.
+     *
+     * <p>The target's own entity is synthesised every tick because a client is never told where
+     * it is. Everyone else was left to the server's own movement packets, which are throttled to
+     * every few ticks and further with distance -- so the target moved smoothly in a viewer's
+     * world while every other player stuttered, which reads as lag although nothing is delayed.
+     * The target's client holds these players already interpolated, so the same treatment is
+     * applied to them.
+     *
+     * <p>Players only, and only inside the swept region. Mobs keep the server's rate: they are
+     * rarely what a viewer is watching, and including them would make this frame unbounded next
+     * to a farm.
+     */
+    private void reportPeerPositions() {
+        CaptureSession session = CaptureHooks.session();
+        if (session == null || !session.hasViewers()) {
+            return;
+        }
+        SpectateClientSocket s = socket;
+        if (s == null || !s.isAuthenticated()) {
+            return;
+        }
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null || mc.world == null) {
+            return;
+        }
+        double reach = SpectateProtocol.SWEEP_RADIUS_CHUNKS * 16.0;
+        double maxSqr = reach * reach;
+        List<double[]> peers = new ArrayList<>();
+        for (var entity : mc.world.getPlayers()) {
+            if (entity == mc.player) {
+                // The target reports itself through sendTargetPosition, which also carries the
+                // swing it would otherwise never send.
+                continue;
+            }
+            if (entity.squaredDistanceTo(mc.player.getEntityPos()) > maxSqr) {
+                continue;
+            }
+            peers.add(new double[] {
+                    entity.getId(), entity.getX(), entity.getY(), entity.getZ(),
+                    entity.getYaw(), entity.getPitch(), entity.getHeadYaw(),
+                    entity.isOnGround() ? 1 : 0});
+            if (peers.size() >= SpectateProtocol.MAX_PEER_POSITIONS) {
+                break;
+            }
+        }
+        s.sendPeerPositions(peers);
     }
 }

@@ -7,14 +7,15 @@
     "ClientEffectCaptureMixin",
     "ClientPacketListenerRegistryMixin",
     "ConnectionCaptureMixin",
+    "EntityPoseAccessor",
     "InboundApplyMarkerMixin",
     "LoopbackNotMemoryMixin",
     "SpectateDisconnectMixin",
-    "SpectateKeybindMixin",
     "SpectateKeyBindsListMixin",
     "SpectateKeyBindsScreenMixin",
-    "SpectateNoClipMixin",
+    "SpectateKeybindMixin",
     "SpectateLanguageMixin",
+    "SpectateNoClipMixin",
     "SpectatePauseScreenMixin"
   ],
   "injectors": {

@@ -8,13 +8,16 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.List;
 
 /**
@@ -73,10 +76,15 @@ public final class ChunkSweep {
                     continue;
                 }
                 try {
-                    // Empty bit sets mean "no light sections included"; the light engine argument
-                    // is what the packet reads the actual light data from.
+                    // null, not an empty BitSet. These two arguments are section
+                    // filters and the test inside is `mask == null || mask.get(i)`,
+                    // so null includes every section while an empty set includes
+                    // none of them. Passing empty stripped the light out of every
+                    // swept chunk and left the viewer lighting them from blocks
+                    // alone, with no skylight -- which is what made a swept world
+                    // look so much darker than the target's own.
                     out.add(new ClientboundLevelChunkWithLightPacket(
-                            chunk, lightEngine, new BitSet(), new BitSet()));
+                            chunk, lightEngine, null, null));
                 } catch (RuntimeException e) {
                     // One unserializable chunk should cost its own hole in the view, not the
                     // session.
@@ -115,8 +123,9 @@ public final class ChunkSweep {
                 continue;
             }
             try {
+                // null sends all light sections; see loadedChunksAround.
                 out.add(new ClientboundLevelChunkWithLightPacket(
-                        chunk, lightEngine, new BitSet(), new BitSet()));
+                        chunk, lightEngine, null, null));
             } catch (RuntimeException e) {
                 SpectateClient.LOGGER.debug("spectate: could not repack chunk {},{}",
                         pos.x(), pos.z(), e);
@@ -188,6 +197,7 @@ public final class ChunkSweep {
                     0,
                     entity.getDeltaMovement(),
                     entity.getYHeadRot()));
+            addEquipment(out, entity);
             var data = entity.getEntityData().getNonDefaultValues();
             if (data != null && !data.isEmpty()) {
                 out.add(new ClientboundSetEntityDataPacket(entity.getId(), data));
@@ -199,6 +209,36 @@ public final class ChunkSweep {
             // no explanation anywhere.
             SpectateClient.LOGGER.warn("spectate: could not pack entity {}",
                     entity.getClass().getSimpleName(), e);
+        }
+    }
+
+    /**
+     * Seeds one entity's current equipment, if it has any.
+     *
+     * <p>Equipment updates are forwarded live, so a change during a session already reached a
+     * viewer. The gap was everything worn <em>before</em> it: a server sends this packet only
+     * when equipment changes, so for anyone already standing there in armour it had been sent
+     * long ago and was never coming again. That is the same "sent exactly once" problem the
+     * chunk and spawn sweeps exist to solve, and it is solved the same way.
+     *
+     * <p>Empty slots are skipped rather than sent as empty stacks: a freshly spawned entity
+     * already has nothing in them, so sending them would be a packet that changes nothing, and
+     * for a crowd of players that is the majority of the slots.
+     */
+    private static void addEquipment(List<Packet<?>> out, Entity entity) {
+        if (!(entity instanceof LivingEntity living)) {
+            return;
+        }
+        List<com.mojang.datafixers.util.Pair<EquipmentSlot, ItemStack>> worn =
+                new ArrayList<>();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = living.getItemBySlot(slot);
+            if (!stack.isEmpty()) {
+                worn.add(com.mojang.datafixers.util.Pair.of(slot, stack.copy()));
+            }
+        }
+        if (!worn.isEmpty()) {
+            out.add(new ClientboundSetEquipmentPacket(entity.getId(), worn));
         }
     }
 }

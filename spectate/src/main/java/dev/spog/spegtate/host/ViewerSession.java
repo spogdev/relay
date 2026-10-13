@@ -339,6 +339,31 @@ public final class ViewerSession {
      * discards any chunk outside it, and it starts at 0,0, so until the first position arrives
      * every chunk from a target standing anywhere else is thrown away on receipt.
      */
+
+    /**
+     * Moves the players near the target, from the target's own tick-rate report.
+     *
+     * <p>Reuses the same packet the target's own entity is moved with, so a viewer's client
+     * interpolates them exactly as it does any other entity -- the only thing that changes is how
+     * often it is told.
+     *
+     * <p>Ignored before the game phase opens: these are positions for entities the viewer has not
+     * been sent yet, and the next tick brings another report, so there is nothing to hold.
+     */
+    public void applyPeerPositions(java.util.List<double[]> peers) {
+        if (closed) {
+            return;
+        }
+        HostDriver d = driver;
+        if (d == null || !isInGame()) {
+            return;
+        }
+        for (double[] peer : peers) {
+            d.moveTargetEntity((int) peer[0], peer[1], peer[2], peer[3],
+                    (float) peer[4], (float) peer[5], (float) peer[6], peer[7] != 0);
+        }
+    }
+
     public void applyTargetPosition(double x, double y, double z, float yaw, float pitch,
                                     int entityId, float headYaw, boolean onGround,
                                     int swingAction) {

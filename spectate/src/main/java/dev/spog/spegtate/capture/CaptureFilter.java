@@ -9,6 +9,7 @@ import net.minecraft.network.packet.s2c.play.BlockBreakingProgressS2CPacket;
 import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.BlockEventS2CPacket;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkSentS2CPacket;
 import net.minecraft.network.packet.s2c.play.StartChunkSendS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkBiomeDataS2CPacket;
@@ -88,6 +89,11 @@ public final class CaptureFilter {
             StartChunkSendS2CPacket.class,
             ChunkSentS2CPacket.class,
             BlockUpdateS2CPacket.class,
+            // Two or more blocks changing in one chunk section arrive as this
+            // instead of several single updates. Without it a door's two halves
+            // -- changed together, so sent together -- never moved for a viewer,
+            // and the same for beds, tall plants and doors broken in one hit.
+            ChunkDeltaUpdateS2CPacket.class,
             BlockEntityUpdateS2CPacket.class,
             BlockEventS2CPacket.class,
             BlockBreakingProgressS2CPacket.class,

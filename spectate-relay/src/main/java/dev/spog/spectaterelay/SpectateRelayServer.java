@@ -195,12 +195,18 @@ public final class SpectateRelayServer extends WebSocketServer {
             case Wire.TYPE_SESSION_REQUEST -> handleSessionRequest(session, frame);
             case Wire.TYPE_SESSION_STOP -> endAsViewer(session);
             case Wire.TYPE_HANDSHAKE, Wire.TYPE_LOGIN_PACKET, Wire.TYPE_GAME_PACKET,
-                 Wire.TYPE_TARGET_POSITION -> forwardToViewers(session, frame);
+                 Wire.TYPE_TARGET_POSITION, Wire.TYPE_PEER_POSITIONS ->
+                    forwardToViewers(session, frame);
             case Wire.TYPE_CHUNK_REQUEST, Wire.TYPE_RESWEEP_REQUEST ->
                     forwardToTarget(session, frame);
             case Wire.TYPE_CAPTURE_UNAVAILABLE -> denyViewersOf(session);
             case Wire.TYPE_STREAM_END -> endAsTarget(session);
-            default -> { }
+            // Logged rather than dropped in silence. A client one build ahead of this service
+            // sends frame types it does not know, and the only symptom is a feature that does
+            // nothing, with nothing anywhere saying why -- which is exactly how the peer
+            // position frames were lost.
+            default -> LOG.warn("dropping unknown frame type 0x{} from {}",
+                    Integer.toHexString(Wire.typeOf(frame) & 0xFF), session.uuid());
         }
     }
 

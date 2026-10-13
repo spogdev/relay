@@ -83,6 +83,21 @@ public final class SpectateManager {
     private static final int TERRAIN_FRAMES_PER_TICK = 32;
 
     /**
+     * How many frames may be outstanding on the socket before the backlog stops feeding it.
+     *
+     * <p>The per-tick limit alone was not enough: it bounds how many frames are handed to the
+     * send chain each tick, not how fast the chain gets through them. A frame carrying a chunk's
+     * light is far larger than one carrying a block change, so once the sweep began sending real
+     * light the chain could not keep up and the tick loop kept feeding it anyway. Live packets
+     * then sat behind seconds of queued terrain, which is why a block being placed, a player
+     * logging out or an entity dying all showed up late.
+     *
+     * <p>Two ticks' worth. Enough that the socket is never left idle waiting for the next tick,
+     * small enough that a live packet is never more than about a tick behind the wire.
+     */
+    private static final int MAX_FRAMES_IN_FLIGHT = TERRAIN_FRAMES_PER_TICK * 2;
+
+    /**
      * Captured frames still to be handed to the socket, drained by {@link #tick()}.
      *
      * <p>Concurrent because live capture is queued from the Netty event loop while the sweep is
@@ -359,9 +374,16 @@ public final class SpectateManager {
      * down to roughly one tick's worth, it drains completely each tick and live capture flows at
      * the rate it arrives.
      */
-    private int frameBudget() {
+    private int frameBudget(SpectateClientSocket s) {
+        // Whatever the socket has not sent yet comes off this tick's allowance: the limit is on
+        // frames outstanding, not on frames handed over.
+        int room = MAX_FRAMES_IN_FLIGHT - s.framesInFlight();
+        if (room <= 0) {
+            return 0;
+        }
         int waiting = terrainBacklog.size();
-        return waiting <= TERRAIN_FRAMES_PER_TICK ? waiting : TERRAIN_FRAMES_PER_TICK;
+        int budget = waiting <= TERRAIN_FRAMES_PER_TICK ? waiting : TERRAIN_FRAMES_PER_TICK;
+        return Math.min(budget, room);
     }
 
     private void drainTerrainBacklog() {
@@ -382,7 +404,7 @@ public final class SpectateManager {
         while ((ahead = priorityBacklog.poll()) != null) {
             s.sendGamePacket(ahead);
         }
-        int budget = frameBudget();
+        int budget = frameBudget(s);
         int sent = 0;
         byte[] wire;
         while (sent < budget && (wire = terrainBacklog.poll()) != null) {

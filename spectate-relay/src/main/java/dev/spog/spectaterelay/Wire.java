@@ -49,6 +49,16 @@ public final class Wire {
     public static final byte TYPE_TARGET_POSITION = 0x24;
     public static final byte TYPE_CAPTURE_UNAVAILABLE = 0x25;
 
+    /**
+     * Positions of the players near a target, forwarded like any other stream frame.
+     *
+     * <p>Kept in sync with the client's SpectateProtocol. A type the service does not know is
+     * dropped by the switch in SpectateRelayServer, so adding one here is not optional: the
+     * client sent these for a while against a service without this constant and every frame
+     * vanished without a word.
+     */
+    public static final byte TYPE_PEER_POSITIONS = 0x26;
+
     // relay -> target
     public static final byte TYPE_CAPTURE_START = 0x30;
     public static final byte TYPE_CAPTURE_STOP = 0x31;

@@ -265,8 +265,12 @@ public final class HostGameListener implements ServerPlayPacketListener {
      */
     @Override
     public void onSpectatorTeleport(net.minecraft.network.packet.c2s.play.SpectatorTeleportC2SPacket packet) {
+        // Cast here rather than through a static helper on the accessor: a mixin targeting a
+        // class may not declare a non-private static method, and doing so failed at class-load
+        // time in a way that took down every server connection.
         java.util.UUID player =
-                dev.spog.spegtate.mixin.SpectatorTeleportAccessor.spegtate$uuid(packet);
+                ((dev.spog.spegtate.mixin.SpectatorTeleportAccessor) (Object) packet)
+                        .spegtate$uuid();
         dev.spog.spegtate.SpectateManager.get().onClientThread(() -> {
             var session = dev.spog.spegtate.SpectateManager.get().viewing();
             if (session != null) {

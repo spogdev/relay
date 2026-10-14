@@ -80,6 +80,20 @@ public final class SpectateConfig {
      */
     public boolean freeCamera = true;
 
+    /**
+     * Whether the service called this account an administrator the last time it connected.
+     *
+     * <p>Remembered only so the {@code /spegtate} command can be offered in autocomplete from
+     * the moment the client starts. The command tree is built before the service has
+     * authenticated, so asking the live connection would hide the command from real admins for
+     * the first few seconds of every session.
+     *
+     * <p><b>Never a permission.</b> The service re-checks the caller's Mojang-verified UUID on
+     * every command, so editing this to true only makes visible a command that will still be
+     * refused.
+     */
+    public boolean wasSpectateAdmin = false;
+
     public static synchronized SpectateConfig get() {
         if (instance == null) {
             instance = load();

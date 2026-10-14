@@ -36,7 +36,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "sweepfix-14+1.21.11";
+    public static final String BUILD_MARKER = "whitelist-1+1.21.11";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push this client's consent to the service at most this often, in client ticks. */
@@ -60,6 +60,10 @@ public final class SpectateClient implements ClientModInitializer {
         // The menu button, not the keybind, is how a session is started: see MenuButton for why
         // a keybind cannot reach this feature at all.
         MenuButton.register();
+
+        // Admin commands. Registered for every client; Brigadier hides the tree from
+        // non-admins and the service re-authorizes each command regardless.
+        dev.spog.spegtate.ui.SpegtateCommand.register();
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         // The build stamp is the point of this line. Several rounds of "nothing changed" could
@@ -91,6 +95,18 @@ public final class SpectateClient implements ClientModInitializer {
     private void onTick(MinecraftClient client) {
         SpectateManager manager = SpectateManager.get();
         manager.tick();
+
+        // The access screen, when the service has refused this account. Shown once per launch
+        // and only at a screen the player is already looking at -- never over a world, where it
+        // would interrupt whatever they were doing for a mod that simply will not run for them.
+        if (manager.isAccessDenied()
+                && !dev.spog.spegtate.ui.AccessDeniedScreen.alreadyShown()
+                && client.world == null
+                && client.currentScreen != null
+                && !(client.currentScreen instanceof dev.spog.spegtate.ui.AccessDeniedScreen)) {
+            dev.spog.spegtate.ui.AccessDeniedScreen.markShown();
+            client.setScreen(new dev.spog.spegtate.ui.AccessDeniedScreen(client.currentScreen));
+        }
 
         // Refocus only reaches this feature while a session is live, because that is the
         // only time this addon has a world for the client to dispatch keys in. Starting

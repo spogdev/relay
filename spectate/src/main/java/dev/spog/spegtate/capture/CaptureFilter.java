@@ -60,8 +60,11 @@ import java.util.Set;
  * <p>What is deliberately absent, and why:
  * <ul>
  *   <li>Container and inventory packets -- the target's items are private.</li>
- *   <li>Chat of every kind -- the target's messages, including DMs, are private. A viewer who
- *       wants to talk has Relay's own chat.</li>
+ *   <li>Private messages -- see {@link ChatFilter}. Public chat <em>is</em> forwarded, so a
+ *       viewer can follow what is happening; whispers are withheld as far as they can be
+ *       recognised, which is reliably for vanilla signed chat and heuristically for the
+ *       pre-formatted text most servers send. A viewer cannot send chat at all: nothing it
+ *       types reaches the target's server.</li>
  *   <li>Advancements, statistics, recipes -- the target's account progress, and useless to a
  *       viewer.</li>
  *   <li>{@code GameJoinS2CPacket} and the configuration-phase packets -- those are replayed
@@ -126,6 +129,11 @@ public final class CaptureFilter {
             // The target changing dimension: re-keys the viewer's level, without which every
             // chunk that follows belongs to a dimension the viewer is not in.
             PlayerRespawnS2CPacket.class,
+            // Chat the viewer may see. Which of these is actually forwarded is decided per
+            // packet by ChatFilter: public chat passes, private messages do not.
+            net.minecraft.network.packet.s2c.play.GameMessageS2CPacket.class,
+            net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket.class,
+            net.minecraft.network.packet.s2c.play.ProfilelessChatMessageS2CPacket.class,
             // Ambient.
             WorldTimeUpdateS2CPacket.class,
             // Weather and similar level state. Note the host synthesizes its own
@@ -167,6 +175,11 @@ public final class CaptureFilter {
         // that the report has already overwritten. Forwarding both made those players snap
         // backwards and forwards, and only those players -- anyone outside the reported set had
         // one source and behaved normally.
+        // Chat is admitted by class above, then decided per message: public chat reaches the
+        // viewer, private messages do not. See ChatFilter for how far that can be enforced.
+        if (!ChatFilter.isPublic(packet)) {
+            return false;
+        }
         Integer moved = movedEntity(packet);
         return moved == null || !dev.spog.spegtate.SpectateRoster.reportsPeer(moved);
     }

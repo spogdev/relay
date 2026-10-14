@@ -27,14 +27,7 @@ import java.util.UUID;
  * is replaced, which happens when the target respawns or changes dimension.
  */
 public final class SpectateCamera {
-    /**
-     * The player the camera is on.
-     *
-     * <p>Not final: the spectator bar can move the focus to another player, the same way vanilla
-     * spectator mode teleports between players. The capture target is only where a session
-     * starts, not where it is stuck.
-     */
-    private volatile UUID target;
+    private final UUID target;
 
     /** Logged once, so a target out of range does not spam while the viewer waits. */
     private boolean warnedMissing;
@@ -85,28 +78,6 @@ public final class SpectateCamera {
             attached = true;
             SpectateClient.LOGGER.debug("spectate: camera attached to target");
         }
-    }
-
-    /**
-     * Moves the camera to another player.
-     *
-     * <p>The chunk centre follows {@code getCameraEntity()} on the next tick, so the streamed
-     * terrain re-centres on the new focus without anything else being told.
-     *
-     * <p>Only the focus changes. The capture is still centred on the session's own target, so
-     * focusing someone near the edge of the streamed region shows them standing at the edge of
-     * the terrain that exists -- which is why the bar offers only players inside it.
-     */
-    public void focusOn(UUID player) {
-        target = player;
-        warnedMissing = false;
-        // Taken on the next tick rather than here: tick() already resolves the entity, handles it
-        // not existing yet, and is the one place the camera is assigned.
-    }
-
-    /** The player the camera is currently on. */
-    public UUID focus() {
-        return target;
     }
 
     /** Releases the camera back to the viewer's own player. */

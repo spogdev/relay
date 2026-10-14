@@ -36,7 +36,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "skinfix-1+1.21.11";
+    public static final String BUILD_MARKER = "invchat-1+1.21.11";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push this client's consent to the service at most this often, in client ticks. */
@@ -106,6 +106,17 @@ public final class SpectateClient implements ClientModInitializer {
                 && !(client.currentScreen instanceof dev.spog.spegtate.ui.AccessDeniedScreen)) {
             dev.spog.spegtate.ui.AccessDeniedScreen.markShown();
             client.setScreen(new dev.spog.spegtate.ui.AccessDeniedScreen(client.currentScreen));
+        }
+
+        // The inventory key opens the target's inventory instead of the viewer's own, which
+        // is empty and meaningless. Consumed here so vanilla does not also open its screen;
+        // only while actually watching, so the key behaves normally everywhere else.
+        var watching = manager.viewing();
+        if (watching != null && client.currentScreen == null) {
+            while (client.options.inventoryKey.wasPressed()) {
+                client.setScreen(new dev.spog.spegtate.ui.TargetInventoryScreen(
+                        null, targetName(client, watching)));
+            }
         }
 
         // Refocus only reaches this feature while a session is live, because that is the

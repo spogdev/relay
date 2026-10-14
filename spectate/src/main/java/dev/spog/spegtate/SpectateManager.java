@@ -124,6 +124,18 @@ public final class SpectateManager {
     /** Whether the service called this account an administrator on the current connection. */
     private volatile boolean spectateAdmin;
 
+    /** Builds the target's inventory frames; sends only when the inventory actually changed. */
+    private final dev.spog.spegtate.capture.InventoryCapture inventoryCapture =
+            new dev.spog.spegtate.capture.InventoryCapture();
+
+    /**
+     * The target's inventory as of the last frame, or null before one has arrived.
+     *
+     * <p>Replaced wholesale rather than mutated, so the screen reading it on the render thread
+     * always sees a complete inventory rather than one being rewritten under it.
+     */
+    private volatile java.util.List<net.minecraft.item.ItemStack> targetInventory;
+
     private SpectateManager() {
     }
 
@@ -177,6 +189,16 @@ public final class SpectateManager {
         if (s != null && s.isAuthenticated()) {
             s.sendConsent(allowsViewers);
         }
+    }
+
+    /** The target's inventory as of the last frame, or null if none has arrived yet. */
+    public java.util.List<net.minecraft.item.ItemStack> targetInventory() {
+        return targetInventory;
+    }
+
+    /** Called when an inventory frame arrives, on the client thread. */
+    public void setTargetInventory(java.util.List<net.minecraft.item.ItemStack> slots) {
+        targetInventory = slots;
     }
 
     /** Whether the service is connected and has authenticated this client. */
@@ -612,6 +634,18 @@ public final class SpectateManager {
                     ViewerSession active = viewing;
                     if (active != null) {
                         pendingMainThread.add(() -> active.applyPeerPositions(peers));
+                    }
+                }
+            }
+            case SpectateProtocol.TYPE_INVENTORY -> {
+                frame.get(); // type
+                MinecraftClient mc = MinecraftClient.getInstance();
+                var listener = mc.getNetworkHandler();
+                if (listener != null) {
+                    var slots = dev.spog.spegtate.capture.InventoryCapture
+                            .decode(frame, listener);
+                    if (slots != null) {
+                        pendingMainThread.add(() -> setTargetInventory(slots));
                     }
                 }
             }
@@ -1271,6 +1305,14 @@ public final class SpectateManager {
         }
         SpectateRoster.setReportedPeers(ids);
         s.sendPeerPositions(peers);
+
+        // The inventory rides the same tick. It sends nothing when unchanged, which is most
+        // ticks, so this costs an equality check on the common path.
+        java.nio.ByteBuffer inventory =
+                inventoryCapture.frameIfChanged(MinecraftClient.getInstance());
+        if (inventory != null) {
+            s.sendInventory(inventory);
+        }
     }
 
     /**

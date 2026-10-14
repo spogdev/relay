@@ -274,6 +274,16 @@ public final class SpectateClientSocket {
         sendBinary(buf.flip());
     }
 
+    /**
+     * Sends the target's inventory to its viewers.
+     *
+     * <p>Takes an already-encoded frame because building it needs the item codec and the
+     * session registries, which belong on the capture side rather than here.
+     */
+    public void sendInventory(ByteBuffer frame) {
+        sendBinary(frame);
+    }
+
     /** Asks to begin watching a target. */
     public void requestSession(UUID target) {
         sendBinary(Frames.of(SpectateProtocol.TYPE_SESSION_REQUEST, target));

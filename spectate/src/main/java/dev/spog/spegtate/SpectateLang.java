@@ -89,7 +89,10 @@ public final class SpectateLang {
                     "Usage: /spegtate <whitelist|stats|playerlist>"),
             Map.entry("admin.page_prev", "<< Prev"),
             Map.entry("admin.page_next", "Next >>"),
-            Map.entry("admin.page_of", "Page %s/%s"));
+            Map.entry("admin.page_of", "Page %s/%s"),
+
+            Map.entry("inventory.title", "%s's inventory"),
+            Map.entry("inventory.waiting", "Waiting for their inventory..."));
 
     /**
      * Set while a screen that legitimately shows keybind names is building its rows.

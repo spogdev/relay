@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
+import dev.spog.spectaterelay.admin.SpectateAdminService;
 import dev.spog.teamlocator.relay.auth.Verifier;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -56,6 +57,16 @@ public final class SpectateRelayServer extends WebSocketServer {
     private final Gson gson = new Gson();
     private final Verifier verifier;
 
+    /**
+     * Access control and the {@code /spegtate} commands.
+     *
+     * <p>Null when the service was constructed without a data directory, which is what the
+     * routing tests do: they exercise forwarding, not moderation, and should not need files on
+     * disk. Every use is guarded, and a null service means "no gate" -- the behaviour before
+     * this existed.
+     */
+    private final SpectateAdminService admin;
+
     /** Mojang verification is a blocking HTTP call; keep it off the socket threads. */
     private final ExecutorService authPool =
             Executors.newCachedThreadPool(r -> {
@@ -68,8 +79,18 @@ public final class SpectateRelayServer extends WebSocketServer {
     private final Map<UUID, SpectateSession> byUuid = new ConcurrentHashMap<>();
 
     public SpectateRelayServer(InetSocketAddress address, Verifier verifier) {
+        this(address, verifier, null);
+    }
+
+    /**
+     * @param admin access control and admin commands, or null to run with no whitelist at all
+     *     (the routing tests, which have no data directory)
+     */
+    public SpectateRelayServer(InetSocketAddress address, Verifier verifier,
+                               SpectateAdminService admin) {
         super(address);
         this.verifier = verifier;
+        this.admin = admin;
         setReuseAddr(true);
     }
 
@@ -173,6 +194,7 @@ public final class SpectateRelayServer extends WebSocketServer {
                 case "hello" -> handleHello(session, obj);
                 case "auth-response" -> handleAuthResponse(session);
                 case "trust-update" -> handleTrustUpdate(session, obj);
+                case "admin-command" -> handleAdminCommand(session, obj);
                 default -> { }
             }
         } catch (JsonSyntaxException | UnsupportedOperationException | IllegalStateException e) {
@@ -254,9 +276,29 @@ public final class SpectateRelayServer extends WebSocketServer {
                     session.conn().close();
                     return;
                 }
+                // Recorded before the access check, so the all-time figure counts everyone
+                // who has the mod rather than everyone who was let in.
+                if (admin != null) {
+                    admin.recordSeen(verified);
+                }
+                if (admin != null && !admin.mayConnect(verified)) {
+                    // A distinct reason, because the client turns this one into the
+                    // "you have not been granted access" screen rather than retrying. Every
+                    // other auth-fail is a transient or technical problem worth retrying.
+                    send(session, "{\"type\":\"auth-fail\",\"reason\":\"notwhitelisted\"}");
+                    LOG.info("refused {} ({}): not whitelisted", name, verified);
+                    session.conn().close();
+                    return;
+                }
                 session.authenticated(verified);
                 byUuid.put(verified, session);
-                send(session, "{\"type\":\"auth-ok\"}");
+                // The client is told whether it is an admin so it can offer /spegtate in
+                // autocomplete. Cosmetic only -- every command is re-authorized here against
+                // the verified UUID, so a client that lies to itself gains nothing.
+                JsonObject ok = new JsonObject();
+                ok.addProperty("type", "auth-ok");
+                ok.addProperty("admin", admin != null && admin.isAdmin(verified));
+                send(session, gson.toJson(ok));
                 LOG.info("authenticated {} ({})", name, verified);
                 // The new client needs the current roster, and everyone else needs to learn
                 // about it -- the same message answers both, so it goes to all of them.
@@ -480,4 +522,100 @@ public final class SpectateRelayServer extends WebSocketServer {
             session.conn().send(json);
         }
     }
+
+    /**
+     * Run a {@code /spegtate} subcommand for an authenticated admin and reply with its lines.
+     *
+     * <p>Authorization is not checked here: {@link SpectateAdminService#execute} re-checks the
+     * caller's verified UUID itself, so there is exactly one place that decides it.
+     *
+     * <p>Run off the socket thread because a whitelist change resolves a name through Mojang,
+     * which blocks. The reply carries the request's {@code id} so a client with two commands in
+     * flight can tell the answers apart.
+     */
+    private void handleAdminCommand(SpectateSession session, JsonObject obj) {
+        if (!session.isAuthenticated() || admin == null) {
+            return;
+        }
+        String command = obj.has("command") ? obj.get("command").getAsString() : "";
+        List<String> args = new ArrayList<>();
+        if (obj.has("args") && obj.get("args").isJsonArray()) {
+            for (var el : obj.getAsJsonArray("args")) {
+                args.add(el.getAsString());
+            }
+        }
+        String id = obj.has("id") ? obj.get("id").getAsString() : null;
+        authPool.submit(() -> {
+            SpectateAdminService.Result result = admin.execute(
+                    session.uuid(), session.profileName(), command, args, liveState());
+            JsonObject out = new JsonObject();
+            out.addProperty("type", "admin-result");
+            if (id != null) {
+                out.addProperty("id", id);
+            }
+            out.addProperty("error", result.error());
+            JsonArray lines = new JsonArray();
+            for (String line : result.lines()) {
+                lines.add(line);
+            }
+            out.add("lines", lines);
+            send(session, gson.toJson(out));
+        });
+    }
+
+    /** What the admin commands need to know about the live service. */
+    private SpectateAdminService.LiveState liveState() {
+        return new SpectateAdminService.LiveState() {
+            @Override
+            public java.util.Optional<UUID> byName(String name) {
+                for (SpectateSession s : byUuid.values()) {
+                    if (s.isAuthenticated() && name.equalsIgnoreCase(s.profileName())) {
+                        return java.util.Optional.ofNullable(s.uuid());
+                    }
+                }
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public int onlineCount() {
+                int n = 0;
+                for (SpectateSession s : byUuid.values()) {
+                    if (s.isAuthenticated()) {
+                        n++;
+                    }
+                }
+                return n;
+            }
+
+            /**
+             * Viewers currently watching someone.
+             *
+             * <p>Counted as the number of viewers across every target, not the number of
+             * targets: two people watching one player is two spectators, and that is what the
+             * figure is asked for.
+             */
+            @Override
+            public int spectatingCount() {
+                int n = 0;
+                for (SpectateSession s : byUuid.values()) {
+                    if (s.isAuthenticated()) {
+                        n += s.viewers().size();
+                    }
+                }
+                return n;
+            }
+
+            @Override
+            public List<String> onlineNames() {
+                List<String> out = new ArrayList<>();
+                for (SpectateSession s : byUuid.values()) {
+                    if (s.isAuthenticated() && s.profileName() != null) {
+                        out.add(s.profileName());
+                    }
+                }
+                return out;
+            }
+        };
+    }
+
 }

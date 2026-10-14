@@ -51,6 +51,9 @@ public final class CaptureSession {
     /** Counts packets this session could not re-encode, so a burst reports once. */
     private volatile long encodeFailures;
 
+    /** What this session is putting on the wire, so a stutter can be attributed to a cause. */
+    private final CaptureStats stats = new CaptureStats();
+
     public CaptureSession(java.util.function.BiConsumer<Packet<?>, byte[]> sink) {
         this.sink = sink;
     }
@@ -118,7 +121,9 @@ public final class CaptureSession {
             @SuppressWarnings("unchecked")
             Packet<? super ClientPlayPacketListener> game =
                     (Packet<? super ClientPlayPacketListener>) CaptureFilter.sanitize(packet);
-            sink.accept(packet, PacketWire.encode(c, game));
+            byte[] wire = PacketWire.encode(c, game);
+            stats.record(packet, wire.length);
+            sink.accept(packet, wire);
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;
             }

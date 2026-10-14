@@ -160,6 +160,43 @@ public final class ViewerSession {
     }
 
     /**
+     * Moves the camera to another player in the streamed world.
+     *
+     * <p>Backs the spectator bar, which on a viewer is the one in vanilla's own HUD. Only players
+     * the capture actually streams can be focused, and the bar is filtered to those, so this is
+     * reached with an id the viewer has an entity for.
+     *
+     * @return false if that player is not in the viewer's world, so the caller can say so
+     */
+    public boolean focusOn(java.util.UUID player) {
+        if (closed || !isInGame()) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return false;
+        }
+        boolean present = false;
+        for (var candidate : mc.level.players()) {
+            if (player.equals(candidate.getUUID())) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) {
+            return false;
+        }
+        camera.focusOn(player);
+        // Re-centred now rather than next tick, so the chunk cache is accepting terrain around
+        // the new focus by the time the camera gets there.
+        HostDriver d = driver;
+        if (d != null) {
+            d.tickViewerCentre();
+        }
+        return true;
+    }
+
+    /**
      * Puts the viewer back on the target, for the Refocus keybind.
      *
      * <p>Needed because a free camera can be flown anywhere, including out of the streamed region

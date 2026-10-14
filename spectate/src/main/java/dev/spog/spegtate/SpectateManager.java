@@ -128,6 +128,17 @@ public final class SpectateManager {
         return viewing;
     }
 
+    /**
+     * Runs a task on the client thread at the start of the next tick.
+     *
+     * <p>For callers reached from the loopback host's packet listeners, which run on a Netty
+     * event-loop thread: anything touching the world, the camera or a screen has to be handed
+     * over rather than done there.
+     */
+    public void onClientThread(Runnable task) {
+        pendingMainThread.add(task);
+    }
+
     /** True if someone is currently watching this client. */
     public boolean isBeingWatched() {
         return CaptureHooks.isStreaming();

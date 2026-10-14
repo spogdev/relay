@@ -16,6 +16,8 @@
     "SpectateKeybindMixin",
     "SpectateLanguageMixin",
     "SpectateNoClipMixin",
+    "SpectatorTeleportAccessor",
+    "SpectatorBarMixin",
     "SpectatePauseScreenMixin"
   ],
   "injectors": {

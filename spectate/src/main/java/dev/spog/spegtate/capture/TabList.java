@@ -351,31 +351,21 @@ public final class TabList {
                 for (com.mojang.authlib.properties.Property property : properties) {
                     buf.writeString(property.name());
                     buf.writeString(property.value());
-                    // The signature is forwarded when it is a real one and dropped when it is
-                    // not, and both halves of that matter.
+                    // No signature is ever forwarded, and the viewer no longer needs one.
                     //
-                    // Dropping every signature was the previous behaviour. It was written for
-                    // Essential, which replaces the signature with the literal string "trusted":
-                    // forwarding that made the viewer's verifier try to RSA-verify five bytes --
-                    // "Bad signature length: got 5 but was expecting 512" -- mark the property
-                    // INVALID and discard the skin. Dropping it yields UNSIGNED instead, which
-                    // fixed that case.
+                    // A signature only helps if the viewer requires one, and
+                    // SpectateSkinSecurityMixin stops it requiring one for the duration of a
+                    // session -- which it had to, because requireSecure is
+                    // !isOwnProfile, so every player in the stream was held to a requirement
+                    // the viewer's own account is the only one exempt from.
                     //
-                    // But UNSIGNED is only harmless for the viewer's own profile.
-                    // PlayerListEntry.texturesSupplier passes requireSecure = !isOwnProfile, and
-                    // PlayerSkinProvider filters on `!requireSecure || textures.secure()` where
-                    // secure() means signatureState == SIGNED. So an unsigned profile keeps its
-                    // skin only for the one player the viewer is logged in as, and every other
-                    // player falls back to the default skin -- which is why the target looked
-                    // right and nobody else did.
-                    //
-                    // A genuine texture signature is RSA over Mojang's 2048-bit key: 512 bytes
-                    // decoded. "trusted" is five characters. Testing the decoded length keeps a
-                    // real signature (SIGNED, skin loads for everyone) and still drops a
-                    // substitute one (UNSIGNED, no verifier error), which is the behaviour both
-                    // cases need.
-                    String signature = signatureToForward(property);
-                    buf.writeNullable(signature, (b, sig) -> b.writeString(sig));
+                    // Forwarding one can still actively cost a skin. Essential replaces the
+                    // signature with the literal string "trusted"; the viewer's verifier then
+                    // tries to RSA-verify five bytes, fails with "Bad signature length: got 5
+                    // but was expecting 512", and marks the property INVALID -- and INVALID is
+                    // discarded no matter what requireSecure says. Sending nothing yields
+                    // UNSIGNED, which is now accepted.
+                    buf.writeNullable(null, (b, sig) -> b.writeString((String) sig));
                 }
             }
             case INITIALIZE_CHAT -> buf.writeNullable(entry.chatSession(),
@@ -391,32 +381,4 @@ public final class TabList {
         }
     }
 
-    /** The length of an RSA signature over Mojang's 2048-bit profile key, in bytes. */
-    private static final int MOJANG_SIGNATURE_BYTES = 512;
-
-    /**
-     * A property's signature if it is a real one, or null to send the property unsigned.
-     *
-     * <p>Only a signature the viewer's verifier can actually check is worth forwarding. A real
-     * one leaves the property SIGNED, which is what lets a player who is not the viewer keep
-     * their skin; anything else is dropped so the property arrives UNSIGNED rather than INVALID,
-     * since a verifier error discards the skin outright and also logs on every join.
-     *
-     * <p>The length is checked rather than the signature verified: verification needs Mojang's
-     * public key and an RSA operation per property per player, on the client thread, to decide
-     * something the viewer will decide for itself a moment later anyway.
-     */
-    private static String signatureToForward(com.mojang.authlib.properties.Property property) {
-        String signature = property.signature();
-        if (signature == null || signature.isEmpty()) {
-            return null;
-        }
-        try {
-            byte[] raw = java.util.Base64.getDecoder().decode(signature);
-            return raw.length == MOJANG_SIGNATURE_BYTES ? signature : null;
-        } catch (IllegalArgumentException e) {
-            // Not valid base64 at all, so certainly not a signature the viewer can verify.
-            return null;
-        }
-    }
 }

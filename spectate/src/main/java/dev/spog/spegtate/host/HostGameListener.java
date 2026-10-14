@@ -248,8 +248,31 @@ public final class HostGameListener implements ServerPlayPacketListener {
     public void onSlotChangedState(net.minecraft.network.packet.c2s.play.SlotChangedStateC2SPacket packet) {
     }
 
+    /**
+     * Moves the viewer's camera to the player it clicked in the spectator bar.
+     *
+     * <p>Vanilla's spectator menu sends this to the server when a player is clicked, and the
+     * viewer's "server" is this loopback host -- so the click arrived here and did nothing,
+     * because this was an empty stub. The real server never sees it and must not: the viewer is
+     * not a player there.
+     *
+     * <p>The packet names a player by uuid, which is all that is needed; the camera resolves the
+     * entity itself.
+     *
+     * <p>Handed to the client thread rather than acted on here. This listener runs on the
+     * loopback connection's Netty event loop, and the focus change reads the viewer's world and
+     * assigns its camera entity -- neither of which may be touched off the client thread.
+     */
     @Override
     public void onSpectatorTeleport(net.minecraft.network.packet.c2s.play.SpectatorTeleportC2SPacket packet) {
+        java.util.UUID player =
+                dev.spog.spegtate.mixin.SpectatorTeleportAccessor.spegtate$uuid(packet);
+        dev.spog.spegtate.SpectateManager.get().onClientThread(() -> {
+            var session = dev.spog.spegtate.SpectateManager.get().viewing();
+            if (session != null) {
+                session.focusOn(player);
+            }
+        });
     }
 
     @Override

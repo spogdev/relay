@@ -49,6 +49,9 @@ public abstract class SpectatorBarMixin {
                 reachable.add(entry);
             }
         }
+        dev.spog.spegtate.SpectateClient.LOGGER.info(
+                "spectate bar: {} listed -> {} reachable (world has {} players)",
+                entries.size(), reachable.size(), present.size());
         return reachable;
     }
 }

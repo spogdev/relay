@@ -271,11 +271,16 @@ public final class HostGameListener implements ServerPlayPacketListener {
         java.util.UUID player =
                 ((dev.spog.spegtate.mixin.SpectatorTeleportAccessor) (Object) packet)
                         .spegtate$uuid();
+        dev.spog.spegtate.SpectateClient.LOGGER.info("spectate bar: click -> focus {}", player);
         dev.spog.spegtate.SpectateManager.get().onClientThread(() -> {
             var session = dev.spog.spegtate.SpectateManager.get().viewing();
-            if (session != null) {
-                session.focusOn(player);
+            if (session == null) {
+                dev.spog.spegtate.SpectateClient.LOGGER.info("spectate bar: no session");
+                return;
             }
+            boolean ok = session.focusOn(player);
+            dev.spog.spegtate.SpectateClient.LOGGER.info("spectate bar: focus {} -> {}",
+                    player, ok ? "ok" : "no entity for that player");
         });
     }
 

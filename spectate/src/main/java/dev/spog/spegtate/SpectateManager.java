@@ -121,6 +121,9 @@ public final class SpectateManager {
     /** The most recent denial's text, shown on the spectate screen. Cleared on a new request. */
     private volatile String lastDenial;
 
+    /** Whether the service called this account an administrator on the current connection. */
+    private volatile boolean spectateAdmin;
+
     private SpectateManager() {
     }
 
@@ -174,6 +177,63 @@ public final class SpectateManager {
         if (s != null && s.isAuthenticated()) {
             s.sendConsent(allowsViewers);
         }
+    }
+
+    /** Whether the service is connected and has authenticated this client. */
+    public boolean isServiceReady() {
+        SpectateClientSocket s = socket;
+        return s != null && s.isAuthenticated();
+    }
+
+    /**
+     * Whether the service has called this account an administrator.
+     *
+     * <p>Only ever true after the service says so; the client never decides this for itself.
+     */
+    public boolean isSpectateAdmin() {
+        return spectateAdmin;
+    }
+
+    /**
+     * Record what the service said about this account's admin status.
+     *
+     * <p>Persisted to the config so the {@code /spegtate} command can be offered immediately on
+     * the next launch, before authentication has finished. Written only on a change, to avoid
+     * rewriting the config file on every connect.
+     */
+    public void setSpectateAdmin(boolean admin) {
+        spectateAdmin = admin;
+        SpectateConfig config = SpectateConfig.get();
+        if (config.wasSpectateAdmin != admin) {
+            config.wasSpectateAdmin = admin;
+            config.save();
+        }
+    }
+
+    /**
+     * Whether the service refused this account because it is not whitelisted.
+     *
+     * <p>Distinct from "not connected": this one will not resolve by waiting.
+     */
+    public boolean isAccessDenied() {
+        SpectateClientSocket s = socket;
+        return s != null && s.accessDenied();
+    }
+
+    /**
+     * Send a {@code /spegtate} subcommand to the service.
+     *
+     * <p>{@code onResult} runs on a network thread with the reply lines, or null lines if
+     * nothing answered; hop to the client thread before touching the game.
+     */
+    public void sendAdminCommand(String command, java.util.List<String> args,
+                                 java.util.function.BiConsumer<java.util.List<String>, Boolean> onResult) {
+        SpectateClientSocket s = socket;
+        if (s == null || !s.isAuthenticated()) {
+            onResult.accept(null, true);
+            return;
+        }
+        s.sendAdminCommand(command, args, onResult);
     }
 
     /** Asks to begin watching a target. */

@@ -58,6 +58,34 @@ public final class SpectateClientSocket {
     private volatile boolean authenticated;
     private volatile long nextAttemptAllowedMs;
 
+    /**
+     * Set when the service refused this account because it is not whitelisted.
+     *
+     * <p>Distinct from every other authentication failure, which are transient and retried. This
+     * one is a standing decision about the account, so the client stops asking and shows the
+     * access screen instead. Sticky for the process: nothing can change it without an admin
+     * acting, and retrying on a timer would reopen the screen repeatedly.
+     */
+    private volatile boolean accessDenied;
+
+    /** Awaiting a reply to an admin command, with the timeout that gives up on it. */
+    private volatile java.util.function.BiConsumer<java.util.List<String>, Boolean> adminCallback;
+    private volatile java.util.concurrent.ScheduledFuture<?> adminTimeout;
+
+    /**
+     * Timeouts for admin replies. Separate from {@link #executor}, which is a single thread that
+     * would be busy running the very send we need to time out.
+     */
+    private final java.util.concurrent.ScheduledExecutorService timers =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "spegtate-admin-timeout");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** How long to wait for the service to answer an admin command. */
+    private static final long ADMIN_TIMEOUT_MS = 10_000L;
+
     /** Serializes sends; the JDK WebSocket rejects overlapping send operations. */
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
 
@@ -169,6 +197,50 @@ public final class SpectateClientSocket {
      * <p>A single bit rather than a list of permitted UUIDs: the mod is private and everyone
      * holding it has agreed the others may watch them, so the only question is consent.
      */
+    /**
+     * Whether the service refused this account as not whitelisted.
+     *
+     * <p>Read by the client to decide whether to show the access screen, and to stop offering
+     * spectate features that cannot work.
+     */
+    public boolean accessDenied() {
+        return accessDenied;
+    }
+
+    /**
+     * Send a {@code /spegtate} subcommand and deliver the service's reply.
+     *
+     * <p>{@code onResult} receives the lines and whether it was an error, or null lines if
+     * nothing answered in time -- which is what an older service that does not know this frame
+     * looks like, since it drops it silently. Runs on a network thread; hop to the client thread
+     * before touching anything in the game.
+     */
+    public void sendAdminCommand(String command, java.util.List<String> args,
+                                 java.util.function.BiConsumer<java.util.List<String>, Boolean> onResult) {
+        java.util.concurrent.ScheduledFuture<?> prior = adminTimeout;
+        if (prior != null) {
+            prior.cancel(false);
+        }
+        adminCallback = onResult;
+        adminTimeout = timers.schedule(() -> {
+            var cb = adminCallback;
+            adminCallback = null;
+            if (cb != null) {
+                cb.accept(null, true);
+            }
+        }, ADMIN_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "admin-command");
+        o.addProperty("command", command);
+        com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+        for (String a : args) {
+            arr.add(a);
+        }
+        o.add("args", arr);
+        sendText(gson.toJson(o));
+    }
+
     public void sendConsent(boolean allowsViewers) {
         JsonObject obj = new JsonObject();
         obj.addProperty("type", "trust-update");
@@ -434,7 +506,13 @@ public final class SpectateClientSocket {
                     case "auth-challenge" -> onChallenge(obj.get("serverId").getAsString());
                     case "auth-ok" -> {
                         authenticated = true;
+                        accessDenied = false;
                         nextAttemptAllowedMs = 0L;
+                        // Remembered so /spegtate can be offered in autocomplete next launch,
+                        // before authentication has finished. Never a permission: the service
+                        // re-checks every command against the verified UUID.
+                        dev.spog.spegtate.SpectateManager.get().setSpectateAdmin(
+                                obj.has("admin") && obj.get("admin").getAsBoolean());
                         SpectateClient.LOGGER.info("spectate service authenticated");
                     }
                     case "roster" -> {
@@ -451,8 +529,32 @@ public final class SpectateClientSocket {
                     case "auth-fail" -> {
                         String reason = obj.has("reason") ? obj.get("reason").getAsString() : "?";
                         SpectateClient.LOGGER.warn("spectate auth rejected: {}", reason);
+                        // Not whitelisted is a decision about the account rather than a
+                        // transient failure, so it is remembered and not retried: the client
+                        // shows the access screen instead of reconnecting on a timer.
+                        if ("notwhitelisted".equals(reason)) {
+                            accessDenied = true;
+                        }
                         nextAttemptAllowedMs = System.currentTimeMillis() + AUTH_BACKOFF_MS;
                         close();
+                    }
+                    case "admin-result" -> {
+                        java.util.concurrent.ScheduledFuture<?> t = adminTimeout;
+                        if (t != null) {
+                            t.cancel(false);
+                        }
+                        var cb = adminCallback;
+                        adminCallback = null;
+                        if (cb != null) {
+                            java.util.List<String> lines = new java.util.ArrayList<>();
+                            if (obj.has("lines") && obj.get("lines").isJsonArray()) {
+                                for (var el : obj.getAsJsonArray("lines")) {
+                                    lines.add(el.getAsString());
+                                }
+                            }
+                            boolean error = obj.has("error") && obj.get("error").getAsBoolean();
+                            cb.accept(lines, error);
+                        }
                     }
                     default -> { }
                 }

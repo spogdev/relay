@@ -69,7 +69,27 @@ public final class SpectateLang {
             Map.entry("error.no_service", "The spectate service is not configured"),
             Map.entry("error.failed", "The spectate session could not start"),
             Map.entry("error.in_world", "Leave your world first -- spectating replaces it"),
-            Map.entry("error.not_connected", "Not connected to the spectate service"));
+            Map.entry("error.not_connected", "Not connected to the spectate service"),
+
+            // The access screen, shown when the service refuses this account. The Discord
+            // handle is substituted at render time rather than written in here, so there is
+            // one place to change it.
+            Map.entry("access.title", "Spegtate"),
+            Map.entry("access.line1",
+                    "Unfortunately this is a private mod and you haven't been granted access."),
+            Map.entry("access.line2", "If you think this is a mistake, DM %s on discord"),
+            Map.entry("access.dismiss", "Close"),
+
+            // Admin command feedback. Only the strings the client produces itself; everything
+            // the service decides arrives as text and is shown as sent.
+            Map.entry("admin.not_connected", "Not connected to the spectate service"),
+            Map.entry("admin.no_response",
+                    "No response from the spectate service (it may not support admin commands)."),
+            Map.entry("admin.usage",
+                    "Usage: /spegtate <whitelist|stats|playerlist>"),
+            Map.entry("admin.page_prev", "<< Prev"),
+            Map.entry("admin.page_next", "Next >>"),
+            Map.entry("admin.page_of", "Page %s/%s"));
 
     /**
      * Set while a screen that legitimately shows keybind names is building its rows.

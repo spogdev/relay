@@ -172,6 +172,31 @@ public final class CaptureFilter {
     }
 
     /**
+     * Strips anything a packet applies to "the receiving player" implicitly.
+     *
+     * <p>A few packets carry no entity id because the server only ever sends them to the one
+     * player they concern. Forwarded verbatim, the viewer's client reads them as being about
+     * <em>itself</em>: a wind charge that launched the target shoved the viewer's camera
+     * instead, because {@code onExplosion} ends in
+     * {@code playerKnockback().ifPresent(client.player::addVelocity)} with no check of who the
+     * explosion was for.
+     *
+     * <p>Rewritten rather than dropped, so the viewer still sees the blast and hears it -- only
+     * the force on the camera is removed. Returns the packet unchanged when there is nothing to
+     * strip, which is the common case.
+     *
+     * @return the packet to forward, never null
+     */
+    public static Packet<?> sanitize(Packet<?> packet) {
+        if (packet instanceof ExplosionS2CPacket p && p.playerKnockback().isPresent()) {
+            return new ExplosionS2CPacket(p.center(), p.radius(), p.blockCount(),
+                    java.util.Optional.empty(), p.explosionParticle(), p.explosionSound(),
+                    p.blockParticles());
+        }
+        return packet;
+    }
+
+    /**
      * True if this packet carries terrain.
      *
      * <p>Used to decide when the viewer has something to render, which gates releasing its loading

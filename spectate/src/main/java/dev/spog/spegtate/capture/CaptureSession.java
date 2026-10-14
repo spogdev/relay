@@ -117,7 +117,7 @@ public final class CaptureSession {
             }
             @SuppressWarnings("unchecked")
             Packet<? super ClientPlayPacketListener> game =
-                    (Packet<? super ClientPlayPacketListener>) packet;
+                    (Packet<? super ClientPlayPacketListener>) CaptureFilter.sanitize(packet);
             sink.accept(packet, PacketWire.encode(c, game));
             if (CaptureFilter.isChunkPacket(packet)) {
                 sentAnyChunk = true;

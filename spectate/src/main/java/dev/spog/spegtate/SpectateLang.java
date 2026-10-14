@@ -84,7 +84,7 @@ public final class SpectateLang {
             // the service decides arrives as text and is shown as sent.
             Map.entry("admin.not_connected", "Not connected to the spectate service"),
             Map.entry("admin.no_response",
-                    "No response from the spectate service (it may not support admin commands)."),
+                    "No response from the spectate service (it may not support admin commands)"),
             Map.entry("admin.usage",
                     "Usage: /spegtate <whitelist|stats|playerlist>"),
             Map.entry("admin.page_prev", "<< Prev"),

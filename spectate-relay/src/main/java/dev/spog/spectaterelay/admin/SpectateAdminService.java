@@ -141,7 +141,7 @@ public final class SpectateAdminService {
         if (!isAdmin(caller)) {
             // Same message whatever the reason: an unprivileged caller learns nothing about
             // whether this relay has moderation configured at all.
-            return Result.fail("You do not have permission to use this command.");
+            return Result.fail("You do not have permission to use this command");
         }
         String sub = command == null ? "" : command.toLowerCase(Locale.ROOT);
         return switch (sub) {
@@ -182,7 +182,7 @@ public final class SpectateAdminService {
         lines.add("Whitelist (" + all.size() + ") -- enforcement is "
                 + (state.enabled() ? "on" : "off"));
         if (all.isEmpty()) {
-            lines.add("Nobody is whitelisted. Only admins can connect.");
+            lines.add("Nobody is whitelisted. Only admins can connect");
         }
         for (WhitelistStore.Listed e : all) {
             String name = e.name() == null || e.name().isBlank() ? e.uuid().toString() : e.name();
@@ -209,16 +209,16 @@ public final class SpectateAdminService {
         try {
             id = names.resolve(name);
         } catch (NameResolver.Unavailable e) {
-            return Result.fail("Could not reach Mojang to look up '" + name + "'. Try again.");
+            return Result.fail("Could not reach Mojang to look up '" + name + "'. Try again");
         }
         if (id == null) {
-            return Result.fail("No Minecraft account named '" + name + "'.");
+            return Result.fail("No Minecraft account named '" + name + "'");
         }
         if (!whitelist.add(id, name, callerName)) {
-            return Result.fail(name + " is already whitelisted.");
+            return Result.fail(name + " is already whitelisted");
         }
         LOG.info("{} whitelisted {} ({})", callerName, name, id);
-        return Result.ok("Added " + name + " to the whitelist.");
+        return Result.ok("Added " + name + " to the whitelist");
     }
 
     /**
@@ -244,17 +244,17 @@ public final class SpectateAdminService {
             }
             if (id == null) {
                 return Result.fail("Could not reach Mojang, and nobody named '" + name
-                        + "' is recorded on the whitelist.");
+                        + "' is recorded on the whitelist");
             }
         }
         if (id == null) {
-            return Result.fail("No Minecraft account named '" + name + "'.");
+            return Result.fail("No Minecraft account named '" + name + "'");
         }
         if (!whitelist.remove(id)) {
-            return Result.fail(name + " is not on the whitelist.");
+            return Result.fail(name + " is not on the whitelist");
         }
         LOG.info("removed {} ({}) from the whitelist", name, id);
-        return Result.ok("Removed " + name + " from the whitelist.");
+        return Result.ok("Removed " + name + " from the whitelist");
     }
 
     /**
@@ -263,12 +263,12 @@ public final class SpectateAdminService {
      */
     private Result whitelistToggle(boolean on) {
         if (!state.set(on)) {
-            return Result.fail("The whitelist is already " + (on ? "on" : "off") + ".");
+            return Result.fail("The whitelist is already " + (on ? "on" : "off"));
         }
         return on
-                ? Result.ok("Whitelist enabled. Only whitelisted players can use the mod.")
-                : Result.ok("Whitelist disabled. Anyone can use the mod.",
-                        "The list of " + whitelist.size() + " player(s) has been kept.");
+                ? Result.ok("Whitelist enabled. Only whitelisted players can use the mod")
+                : Result.ok("Whitelist disabled. Anyone can use the mod",
+                        "The list of " + whitelist.size() + " player(s) has been kept");
     }
 
     // ---- stats ----
@@ -293,7 +293,7 @@ public final class SpectateAdminService {
     private Result playerlist(LiveState live) {
         List<String> online = live.onlineNames();
         if (online.isEmpty()) {
-            return Result.ok("Nobody is online with Spegtate.");
+            return Result.ok("Nobody is online with Spegtate");
         }
         List<String> lines = new ArrayList<>(online.size() + 1);
         lines.add("Online with Spegtate (" + online.size() + "):");

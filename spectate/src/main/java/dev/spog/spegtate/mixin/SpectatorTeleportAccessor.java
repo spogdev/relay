@@ -14,18 +14,26 @@ import org.spongepowered.asm.mixin.gen.Accessor;
  * <p>An accessor rather than reflection: it is remapped with the other mixins, so it cannot
  * silently miss on an obfuscated version the way a hardcoded field name would.
  *
- * <p>An abstract class rather than an interface, which is what an accessor would normally be.
- * Mixin matches the mixin's own kind to the target's: an interface mixin may only target an
- * interface, and this packet is a class, so declaring one failed at PREPARE with "target type
- * mismatch" -- before the game window opened, and invisibly to javac.
+ * <p>Two shapes of this were rejected by Mixin before this one, both only at class-load time and
+ * both after compiling cleanly:
+ *
+ * <ul>
+ *   <li>An interface, which is how an accessor is usually written. A mixin's kind must match its
+ *       target's and this packet is a class, so it failed at PREPARE with "target type
+ *       mismatch".</li>
+ *   <li>An abstract class carrying a {@code static} convenience method to do the cast. A mixin
+ *       for a class may not declare a non-private static method -- it would have to be merged
+ *       into the target -- so it failed at APPLY. That failure surfaced far from its cause: the
+ *       packet class is first loaded while Fabric builds its vanilla packet table, so the error
+ *       left {@code VanillaPacketTypes} uninitialised and every connection to a real server died
+ *       in its static initialiser with a {@code NoClassDefFoundError} naming neither this class
+ *       nor this mod.</li>
+ * </ul>
+ *
+ * <p>Hence the form below: instance accessor only, and the caller casts.
  */
 @Mixin(net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket.class)
 public abstract class SpectatorTeleportAccessor {
     @Accessor("uuid")
     public abstract UUID spegtate$uuid();
-
-    /** Reads the uuid out of a packet instance. */
-    public static UUID spegtate$uuid(net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket packet) {
-        return ((SpectatorTeleportAccessor) (Object) packet).spegtate$uuid();
-    }
 }

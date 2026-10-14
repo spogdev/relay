@@ -36,7 +36,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "sweepfix-14+26.3";
+    public static final String BUILD_MARKER = "whitelist-1+26.3";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -60,6 +60,27 @@ public final class SpectateClient implements ClientModInitializer {
         // The menu button, not the keybind, is how a session is started: see MenuButton for why
         // a keybind cannot reach this feature at all.
         MenuButton.register();
+
+        // Admin commands. Registered for every client; Brigadier hides the tree from
+        // non-admins and the service re-authorizes each command regardless.
+        dev.spog.spegtate.ui.SpegtateCommand.register();
+
+        // The access screen, when the service has refused this account. Driven by a screen
+        // event rather than polled in the tick: there is no accessor for the current screen on
+        // every branch, and this fires exactly when one opens, which is the moment to replace
+        // it. Only at a menu -- never over a world, where it would interrupt what the player
+        // was doing for a mod that simply will not run for them.
+        net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
+                (client, screen, w, h) -> {
+                    if (SpectateManager.get().isAccessDenied()
+                            && !dev.spog.spegtate.ui.AccessDeniedScreen.alreadyShown()
+                            && client.level == null
+                            && !(screen instanceof dev.spog.spegtate.ui.AccessDeniedScreen)) {
+                        dev.spog.spegtate.ui.AccessDeniedScreen.markShown();
+                        client.setScreenAndShow(
+                                new dev.spog.spegtate.ui.AccessDeniedScreen(screen));
+                    }
+                });
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         // The build stamp is the point of this line. Several rounds of "nothing changed" could

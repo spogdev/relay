@@ -1,5 +1,6 @@
 package dev.spog.spectaterelay;
 
+import dev.spog.spectaterelay.admin.SpectateAdminService;
 import dev.spog.teamlocator.relay.auth.MojangVerifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,17 +27,23 @@ public final class SpectateRelayMain {
     public static void main(String[] args) {
         int port = DEFAULT_PORT;
         String host = "0.0.0.0";
+        // Defaults to the working directory, so the usual deployment -- both services started
+        // from the same folder on the VPS -- shares one admins.json with the main relay.
+        String dataDir = ".";
 
         for (int i = 0; i < args.length - 1; i++) {
             switch (args[i]) {
                 case "--port" -> port = Integer.parseInt(args[++i]);
                 case "--host" -> host = args[++i];
+                case "--data" -> dataDir = args[++i];
                 default -> { }
             }
         }
 
-        SpectateRelayServer server =
-                new SpectateRelayServer(new InetSocketAddress(host, port), new MojangVerifier());
+        SpectateAdminService admin =
+                SpectateAdminService.load(java.nio.file.Path.of(dataDir));
+        SpectateRelayServer server = new SpectateRelayServer(
+                new InetSocketAddress(host, port), new MojangVerifier(), admin);
         // A streaming target sends continuously; a viewer that has gone quiet for this long is
         // half-open rather than idle.
         server.setConnectionLostTimeout(60);

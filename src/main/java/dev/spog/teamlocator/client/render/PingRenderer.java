@@ -13,7 +13,7 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
-import dev.spog.teamlocator.client.gui.SecondsSlider;
+import dev.spog.spore.ui.widget.SporeSlider;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
@@ -186,7 +186,7 @@ public final class PingRenderer {
             // Infinite means "until replaced or disconnect": PingState drops a ping once it is older
             // than the lifetime, so Long.MAX_VALUE is the natural encoding of never. Passing the -1
             // sentinel through unscaled would make every ping instantly expired instead.
-            long lifetime = config.pingDisplaySeconds == SecondsSlider.INFINITE
+            long lifetime = config.pingDisplaySeconds == SporeSlider.INFINITE
                     ? Long.MAX_VALUE
                     : config.pingDisplaySeconds * 1000L;
             List<PingState.Ping> pings = PingState.visible(

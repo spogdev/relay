@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "relay-gametest",
+  "version": "1.0.0",
+  "name": "Relay Game Tests",
+  "description": "Client game tests for Relay. Not published.",
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "dev.spog.teamlocator.test.ConfigScreenGameTest"
+    ]
+  },
+  "depends": {
+    "relay": "*"
+  }
+}

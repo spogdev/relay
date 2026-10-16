@@ -3,7 +3,7 @@ package dev.spog.teamlocator.client.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import dev.spog.teamlocator.TeamLocatorConstants;
-import dev.spog.teamlocator.client.gui.SecondsSlider;
+import dev.spog.spore.ui.widget.SporeSlider;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
@@ -96,7 +96,7 @@ public class TeamConfig {
     /**
      * Per-player client-side ping display cooldown, in seconds: a repeat alert from the same player
      * is received but not shown again until it elapses. The slider offers 1s–10m
-     * ({@link dev.spog.teamlocator.client.gui.SecondsSlider#COOLDOWN_STEPS}); 0 (show every alert)
+     * ({@link dev.spog.spore.ui.widget.SporeSlider#DURATION_STEPS}); 0 (show every alert)
      * remains valid if set in the config file directly.
      */
     public int pingCooldownSeconds = 15;
@@ -112,7 +112,7 @@ public class TeamConfig {
      * How long a location ping stays on screen, in seconds. A viewer-side setting: it governs how
      * long <em>this</em> player sees pings, both teammates' and their own, so two people can watch
      * the same ping for different lengths of time. Runs 5s..600s in 5s steps, or
-     * {@link SecondsSlider#INFINITE} for pings that stay until replaced or the player disconnects.
+     * {@link SporeSlider#INFINITE} for pings that stay until replaced or the player disconnects.
      */
     public int pingDisplaySeconds = 30;
     /** Show teammates' location pings at all. */
@@ -349,7 +349,7 @@ public class TeamConfig {
         playerMarkerHideDistance =
                 Math.clamp(playerMarkerHideDistance, MARKER_HIDE_MIN, MARKER_HIDE_MAX);
         // -1 (Infinite) is a valid setting, so only reject values outside the range that are not it.
-        if (pingDisplaySeconds != SecondsSlider.INFINITE
+        if (pingDisplaySeconds != SporeSlider.INFINITE
                 && (pingDisplaySeconds < 1 || pingDisplaySeconds > 600)) {
             pingDisplaySeconds = 30;
         }

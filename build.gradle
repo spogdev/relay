@@ -12,6 +12,22 @@ base {
     archivesName = project.archives_base_name
 }
 
+// A client gametest that opens the settings screen and paints every tab in a
+// real client. The screen is drawn inside render(), which the compiler checks
+// and never runs, so this is what actually proves the port works rather than
+// merely compiles. Loom creates the `gametest` source set and run config;
+// neither is part of the published jar.
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = "relay-gametest"
+        enableClientGameTests = true
+        // A client mod: there is no server behaviour to test, and `check`
+        // would otherwise launch a dedicated server with nothing to run.
+        enableGameTests = false
+    }
+}
+
 repositories {
     mavenCentral()
     // Mod Menu and Xaero's both come from Modrinth. Mod Menu's own maven
@@ -23,6 +39,15 @@ repositories {
         url = 'https://api.modrinth.com/maven'
         content {
             includeGroup 'maven.modrinth'
+        }
+    }
+    // SporeUI, the shared config UI. One artifact per Minecraft version, so
+    // each branch of this mod depends on the matching one.
+    maven {
+        name = 'Spog'
+        url = 'https://repo.spog.dev/releases'
+        content {
+            includeGroup 'dev.spog'
         }
     }
 }
@@ -38,6 +63,16 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     modApi("maven.modrinth:modmenu:${project.modmenu_version}") { transitive = false }
+
+    // The shared config UI: the tabbed settings screen and its widgets, which
+    // this mod's settings screen is built from. Bundled with `include` so a
+    // player installs this mod alone -- it is a library nobody would think to
+    // install separately, and it is small.
+    //
+    // ModMenu comes through it transitively, hence `transitive = false` here
+    // as well: without it the two ModMenu declarations fight over versions.
+    modImplementation("dev.spog:sporeui:${project.sporeui_version}") { transitive = false }
+    include("dev.spog:sporeui:${project.sporeui_version}")
 
     // Optional integration: teammates on Xaero's minimap/world map. modCompileOnly so the mod
     // runs fine without them; all xaero.* references live behind a mod-loaded guard.
@@ -69,4 +104,10 @@ jar {
     from('LICENSE') {
         rename { "${it}_${project.archives_base_name}" }
     }
+}
+
+dependencies {
+    // Fabric API on the gametest source set's own classpath: the test is
+    // driven by fabric-client-gametest-api-v1. Remapped, like the mod itself.
+    modGametestImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }

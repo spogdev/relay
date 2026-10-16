@@ -4,7 +4,7 @@ import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.PingHandler;
 import dev.spog.teamlocator.client.PingState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
-import dev.spog.teamlocator.client.gui.SecondsSlider;
+import dev.spog.spore.ui.widget.SporeSlider;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
@@ -209,7 +209,7 @@ public final class PingRenderer {
         // Infinite means "until replaced or disconnect": PingState drops a ping once it is older
         // than the lifetime, so Long.MAX_VALUE is the natural encoding of never. Passing the -1
         // sentinel through unscaled would make every ping instantly expired instead.
-        long lifetime = config.pingDisplaySeconds == SecondsSlider.INFINITE
+        long lifetime = config.pingDisplaySeconds == SporeSlider.INFINITE
                 ? Long.MAX_VALUE
                 : config.pingDisplaySeconds * 1000L;
         Identifier viewerDim = mc.player.getEntityWorld().getRegistryKey().getValue();

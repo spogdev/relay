@@ -278,29 +278,35 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                     config.save();
                 });
 
-        // Ping colour: the five the account's UUID produces. The colours have
-        // no names, so each row is the colour itself -- the old "2 / 5" told
-        // you nothing about what you were picking.
+        // Ping colour: the five the account's UUID produces. The colours have no names, so each
+        // row is its own hex value and the swatch beside the control shows the current pick --
+        // the old "2 / 5" told you nothing about what you were choosing.
         List<String> palette = pingPalette();
         if (!palette.isEmpty()) {
+            int selected = Math.floorMod(config.pingColorIndex, palette.size());
+            // Label each row with its own hex value. A SporeDropdown.Entry carries only a label
+            // and a texture icon -- there is no per-entry colour and the icon is blitted, not
+            // tinted -- so an empty label left every row blank with nothing to tell them apart.
             List<SporeDropdown.Entry<Integer>> colors = new java.util.ArrayList<>();
             for (int i = 0; i < palette.size(); i++) {
-                colors.add(new SporeDropdown.Entry<>(i, "", null));
+                colors.add(new SporeDropdown.Entry<>(i, palette.get(i)));
             }
             pingColor.setEntries(colors);
-            body.dropdown(RelayLang.text("relay.config.ping_color"), pingColor,
-                    Math.floorMod(config.pingColorIndex, palette.size()),
+            body.dropdown(RelayLang.text("relay.config.ping_color"), pingColor, selected,
                     RelayLang.text("relay.config.ping_color.desc"));
-            // The swatch beside the closed control, since the entries carry
-            // no label of their own.
-            int swatchX = body.controlX() + SporeTheme.CONTROL_W + 8;
-            int swatchY = body.y() - 4;
+
+            // Back up over the row the dropdown just advanced past, so the swatch lands beside
+            // the control rather than under the next row. The swatch goes in the gap between the
+            // label column and the control: controlX() + CONTROL_W is the right edge every other
+            // control shares, so the old controlX() + CONTROL_W + 8 put it outside the card, and
+            // the control's own width is taken by its label at +6 and its arrow at +width-10.
+            int swatchX = body.controlX() - 26;
+            int swatchY = body.y() - (SporeTheme.ROW_HEIGHT + 2) - 4;
             body.graphics().fill(swatchX, swatchY, swatchX + 20, swatchY + SporeTheme.CONTROL_H,
                     0xFFFFFFFF);
             body.graphics().fill(swatchX + 1, swatchY + 1, swatchX + 19,
                     swatchY + SporeTheme.CONTROL_H - 1,
-                    PingPalette.argb(palette.get(Math.floorMod(config.pingColorIndex,
-                            palette.size()))));
+                    PingPalette.argb(palette.get(selected)));
         }
 
         body.section(RelayLang.text("relay.config.section.chat"));

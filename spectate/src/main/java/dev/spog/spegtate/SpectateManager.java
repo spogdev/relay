@@ -115,6 +115,31 @@ public final class SpectateManager {
     private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> priorityBacklog =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
 
+    /**
+     * Live captured frames -- movement, sounds, block changes, entity data -- drained in full
+     * every tick, ahead of terrain and with no rate limit.
+     *
+     * <p>Separate from {@link #terrainBacklog} because sharing one queue made the terrain rate
+     * limit a rate limit on movement too. A sweep is a few hundred large frames, and while they
+     * were draining at 32 a tick every position update sat behind them; the viewer then received
+     * several ticks of movement at once and interpolated across the gaps, so a 20 TPS server
+     * looked like a 12 TPS one. The frames were not late in aggregate, they were unevenly
+     * spaced, which is what reads as a laggy server rather than a slow connection.
+     *
+     * <p>Draining it uncapped is safe in the way the terrain cap was protecting against: this
+     * queue can only ever hold what the target's own server actually sent in that tick, so it is
+     * self-limiting at the source. Terrain is not -- a sweep queues hundreds of frames the
+     * server never sent -- which is why that one keeps its cap.
+     *
+     * <p>Ordering against terrain is no longer global, so a live block change can arrive a tick
+     * before the swept chunk it sits in. That is the tradeoff: the viewer's client drops updates
+     * for chunks it does not hold, so the cost is a stale block until the repair sweep rebuilds
+     * that chunk, not a broken session. Ordering <em>within</em> this queue is untouched, which
+     * is what entity data after its spawn depends on.
+     */
+    private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> liveBacklog =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
 
     private boolean reportedUnavailable;
 
@@ -420,7 +445,15 @@ public final class SpectateManager {
             queueAhead(wire);
             return;
         }
-        terrainBacklog.add(wire);
+        // Chunks go to the paced queue even when they arrive live: they are the frames the pacing
+        // exists for, and one arriving a tick later is simply a tick later. Everything else is
+        // what the viewer's sense of time is built from and must not be made to wait behind them.
+        if (packet instanceof net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket
+                || packet instanceof net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket) {
+            terrainBacklog.add(wire);
+            return;
+        }
+        liveBacklog.add(wire);
     }
 
     /**
@@ -445,16 +478,17 @@ public final class SpectateManager {
     }
 
     /**
-     * How many frames to hand the socket this tick.
+     * How many terrain frames to hand the socket this tick.
      *
      * <p>The limit exists to stop a sweep's few hundred frames being written in one go, which
-     * overran the send buffer and lost frames silently. It must not become a permanent speed limit
-     * on live capture: a busy server can exceed 32 packets a tick, and a cap below the arrival
-     * rate would make the queue grow without bound and the viewer fall steadily further behind.
+     * overran the send buffer and lost frames silently.
      *
-     * <p>So the cap applies only while a backlog is actually being worked off. Once the queue is
-     * down to roughly one tick's worth, it drains completely each tick and live capture flows at
-     * the rate it arrives.
+     * <p>It applies to terrain alone. It used to govern live capture too, on the reasoning that
+     * once the queue fell to roughly one tick's worth it would drain completely each tick -- but
+     * a sweep's frames are large enough to hold {@code framesInFlight} near its ceiling for many
+     * ticks together, so the queue never fell that far and the cap became exactly the permanent
+     * speed limit on movement it was not meant to be. Live frames now have their own queue and
+     * bypass this entirely; see {@link #liveBacklog}.
      */
     private int frameBudget(SpectateClientSocket s) {
         // Whatever the socket has not sent yet comes off this tick's allowance: the limit is on
@@ -469,13 +503,14 @@ public final class SpectateManager {
     }
 
     private void drainTerrainBacklog() {
-        if (terrainBacklog.isEmpty() && priorityBacklog.isEmpty()) {
+        if (terrainBacklog.isEmpty() && priorityBacklog.isEmpty() && liveBacklog.isEmpty()) {
             return;
         }
         SpectateClientSocket s = socket;
         if (s == null) {
             terrainBacklog.clear();
             priorityBacklog.clear();
+            liveBacklog.clear();
             // Nothing is reported once nobody is watching, so nothing should be suppressed.
             SpectateRoster.clearReportedPeers();
             return;
@@ -485,6 +520,11 @@ public final class SpectateManager {
         byte[] ahead;
         while ((ahead = priorityBacklog.poll()) != null) {
             s.sendGamePacket(ahead);
+        }
+        // Live frames in full, before terrain and without a budget. See liveBacklog.
+        byte[] live;
+        while ((live = liveBacklog.poll()) != null) {
+            s.sendGamePacket(live);
         }
         int budget = frameBudget(s);
         int sent = 0;
@@ -784,6 +824,7 @@ public final class SpectateManager {
             // be sent properly.
             terrainBacklog.clear();
             priorityBacklog.clear();
+            liveBacklog.clear();
             SpectateClientSocket s = socket;
             if (s != null) {
                 s.sendStreamEnd();

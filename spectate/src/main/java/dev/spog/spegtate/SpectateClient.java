@@ -36,7 +36,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "chatindex-1+26.2";
+    public static final String BUILD_MARKER = "chathead-1+26.2";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */

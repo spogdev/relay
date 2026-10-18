@@ -312,8 +312,10 @@ public final class CaptureFilter {
     /**
      * The entity a movement packet moves, or null if it is not a movement packet.
      *
-     * <p>Only the kinds that carry a position; rotation-only packets are left alone, since the
-     * position reports do not supersede them.
+     * <p>The kinds a tick report supersedes: those carrying a position, and head rotation, which
+     * the report also sends for every peer it names. Body-rotation-only moves are left alone --
+     * the report carries a body yaw inside the position sync, so dropping those would lose
+     * nothing, but they are harmless and the narrower rule is the one already proven.
      */
     private static Integer movedEntity(Packet<?> packet) {
         if (packet instanceof ClientboundMoveEntityPacket p) {
@@ -328,6 +330,20 @@ public final class CaptureFilter {
             }
             var moved = p.getEntity(mc.level);
             return moved == null ? null : moved.getId();
+        }
+        if (packet instanceof ClientboundRotateHeadPacket p) {
+            // Head rotation conflicts the same way position does. The tick report sends a head
+            // yaw for every reported peer through HostDriver.rotateHead, so forwarding the
+            // server's copy as well gave each of those heads two sources a tick, at slightly
+            // different angles -- which read as the head shaking rather than turning. Only the
+            // reported players are affected; anyone outside that set has one source and is
+            // left alone, which is why bodies looked smooth while heads did not.
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level == null) {
+                return null;
+            }
+            var turned = p.getEntity(mc.level);
+            return turned == null ? null : turned.getId();
         }
         if (packet instanceof ClientboundTeleportEntityPacket p) {
             return p.id();

@@ -206,7 +206,47 @@ public final class CaptureFilter {
                     java.util.Optional.empty(), p.explosionParticle(), p.explosionSound(),
                     p.blockParticles());
         }
+        // Signed player chat is rebuilt as system chat, never forwarded as itself.
+        //
+        // ChatMessageS2CPacket carries a globalIndex, and onChatMessage increments its own
+        // counter for every one it receives and disconnects with "Detected a missed or
+        // reordered chat message from the server" the moment the two disagree. Forwarding these
+        // breaks that in two independent ways: dropping a whisper leaves a gap in the sequence,
+        // and the indices come from the target's session anyway while the viewer's loopback
+        // connection counts from zero -- so they could never have matched, filter or no filter.
+        //
+        // System chat has no index and no signature, so it is the right shape for a message the
+        // viewer is being shown rather than participating in. The text is decorated here, by the
+        // same chat decoration vanilla would have used, so the viewer sees the usual
+        // "<name> message" rather than a bare string.
+        if (packet instanceof net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket p) {
+            return new net.minecraft.network.packet.s2c.play.GameMessageS2CPacket(
+                    renderChat(p), false);
+        }
         return packet;
+    }
+
+    /**
+     * The displayed form of a signed chat message.
+     *
+     * <p>Prefers the server's unsigned override when there is one -- that is what vanilla
+     * displays in preference to the signed body -- and otherwise decorates the raw content with
+     * the message's own type parameters.
+     *
+     * <p>{@code applyChatDecoration} resolves the message type through the registry entry, which
+     * throws for one not bound to an entry. A malformed or unknown type must not take down the
+     * target's own session, so the undecorated content is used instead.
+     */
+    private static net.minecraft.text.Text renderChat(
+            net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket p) {
+        net.minecraft.text.Text body = p.unsignedContent() != null
+                ? p.unsignedContent()
+                : net.minecraft.text.Text.literal(p.body().content());
+        try {
+            return p.serializedParameters().applyChatDecoration(body);
+        } catch (RuntimeException e) {
+            return body;
+        }
     }
 
     /**
@@ -274,8 +314,10 @@ public final class CaptureFilter {
     /**
      * The entity a movement packet moves, or null if it is not a movement packet.
      *
-     * <p>Only the kinds that carry a position; rotation-only packets are left alone, since the
-     * position reports do not supersede them.
+     * <p>The kinds a tick report supersedes: those carrying a position, and head rotation, which
+     * the report also sends for every peer it names. Body-rotation-only moves are left alone --
+     * the report carries a body yaw inside the position sync, so dropping those would lose
+     * nothing, but they are harmless and the narrower rule is the one already proven.
      */
     private static Integer movedEntity(Packet<?> packet) {
         if (packet instanceof EntityS2CPacket p) {
@@ -290,6 +332,20 @@ public final class CaptureFilter {
             }
             var moved = p.getEntity(mc.world);
             return moved == null ? null : moved.getId();
+        }
+        if (packet instanceof EntitySetHeadYawS2CPacket p) {
+            // Head rotation conflicts the same way position does. The tick report sends a head
+            // yaw for every reported peer through HostDriver.rotateHead, so forwarding the
+            // server's copy as well gave each of those heads two sources a tick, at slightly
+            // different angles -- which read as the head shaking rather than turning. Only the
+            // reported players are affected; anyone outside that set has one source and is
+            // left alone, which is why bodies looked smooth while heads did not.
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.world == null) {
+                return null;
+            }
+            var turned = p.getEntity(mc.world);
+            return turned == null ? null : turned.getId();
         }
         if (packet instanceof EntityPositionS2CPacket p) {
             return p.entityId();

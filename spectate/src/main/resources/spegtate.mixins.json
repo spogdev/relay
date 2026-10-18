@@ -16,6 +16,7 @@
     "SpectateKeybindMixin",
     "SpectateLanguageMixin",
     "SpectateNoClipMixin",
+    "SpectateSkinSecurityMixin",
     "SpectatePauseScreenMixin"
   ],
   "injectors": {

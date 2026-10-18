@@ -60,8 +60,11 @@ import java.util.Set;
  * <p>What is deliberately absent, and why:
  * <ul>
  *   <li>Container and inventory packets -- the target's items are private.</li>
- *   <li>Chat of every kind -- the target's messages, including DMs, are private. A viewer who
- *       wants to talk has Relay's own chat.</li>
+ *   <li>Private messages -- see {@link ChatFilter}. Public chat <em>is</em> forwarded, so a
+ *       viewer can follow what is happening; whispers are withheld as far as they can be
+ *       recognised, which is reliably for vanilla signed chat and heuristically for the
+ *       pre-formatted text most servers send. A viewer cannot send chat at all: nothing it
+ *       types reaches the target's server.</li>
  *   <li>Advancements, statistics, recipes -- the target's account progress, and useless to a
  *       viewer.</li>
  *   <li>{@code ClientboundLoginPacket} and the configuration-phase packets -- those are replayed
@@ -126,6 +129,11 @@ public final class CaptureFilter {
             // The target changing dimension: re-keys the viewer's level, without which every
             // chunk that follows belongs to a dimension the viewer is not in.
             ClientboundRespawnPacket.class,
+            // Chat the viewer may see. Which of these is actually forwarded is decided per
+            // packet by ChatFilter: public chat passes, private messages do not.
+            net.minecraft.network.protocol.game.ClientboundSystemChatPacket.class,
+            net.minecraft.network.protocol.game.ClientboundPlayerChatPacket.class,
+            net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket.class,
             // Ambient.
             ClientboundSetTimePacket.class,
             // Weather and similar level state. Note the host synthesizes its own
@@ -163,6 +171,12 @@ public final class CaptureFilter {
             return p.getEvent() != ClientboundGameEventPacket.CHANGE_GAME_MODE;
         }
 
+        // Public chat reaches the viewer, private messages do not. See ChatFilter for how far
+        // that can be enforced.
+        if (!ChatFilter.isPublic(packet)) {
+            return false;
+        }
+
         // Movement for a player this client reports itself is dropped: the report is absolute
         // and arrives every tick, while MoveRelative applies a delta to the tracked position
         // that the report has already overwritten. Forwarding both made those players snap
@@ -170,6 +184,27 @@ public final class CaptureFilter {
         // one source and behaved normally.
         Integer moved = movedEntity(packet);
         return moved == null || !dev.spog.spegtate.SpectateRoster.reportsPeer(moved);
+    }
+
+    /**
+     * The packet as a viewer should receive it, with anything that implicitly means "you"
+     * removed.
+     *
+     * <p>An explosion carries the knockback for the player it is sent to, in a field with no
+     * entity id -- a server only sends it to the player it concerns, so none is needed.
+     * Forwarded verbatim, the viewer applied the target's knockback to itself: a wind charge at
+     * the target's feet shoved the spectating camera across the map. The rest of the packet is
+     * what a viewer needs, so the knockback alone is cleared rather than the packet dropped.
+     *
+     * @return the packet to send, which is the argument itself when nothing needed changing
+     */
+    public static Packet<?> sanitize(Packet<?> packet) {
+        if (packet instanceof ClientboundExplodePacket p && p.playerKnockback().isPresent()) {
+            return new ClientboundExplodePacket(p.center(), p.radius(), p.blockCount(),
+                    java.util.Optional.empty(), p.explosionParticle(), p.explosionSound(),
+                    p.blockParticles());
+        }
+        return packet;
     }
 
     /**

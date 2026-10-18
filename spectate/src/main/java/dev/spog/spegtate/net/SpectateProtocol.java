@@ -173,6 +173,30 @@ public final class SpectateProtocol {
     /** Most players one {@link #TYPE_PEER_POSITIONS} frame may carry. */
     public static final int MAX_PEER_POSITIONS = 64;
 
+    /**
+     * The target's inventory, for the viewer's read-only inventory screen.
+     *
+     * <p>Its own frame rather than the server's inventory packets forwarded. Those packets
+     * describe <em>the receiving player</em> -- they carry a sync id and slot indices against
+     * whatever screen handler that client has open -- so applying them on a viewer would
+     * overwrite the viewer's own inventory and fight its spectator state, the same way health
+     * and abilities packets do. This carries the contents only, and the viewer renders them in
+     * a screen of its own that is not backed by a real container.
+     *
+     * <p>Layout: {@code short count}, then that many item stacks each as
+     * {@code short slot, int itemLength, byte[] item}, where the bytes are the stack encoded
+     * with the game's own item codec against the session registries. Slots follow the vanilla
+     * player-inventory numbering: 0-8 hotbar, 9-35 main, 36-39 armour, 40 offhand. An absent
+     * slot is empty.
+     *
+     * <p>Sent on change rather than on request, so the open screen tracks what the target is
+     * doing live; the target sends nothing while no viewer has it open.
+     */
+    public static final byte TYPE_INVENTORY = 0x27;
+
+    /** Slots in a player inventory: 36 main + 4 armour + 1 offhand. */
+    public static final int INVENTORY_SLOTS = 41;
+
     // ---- relay -> target ----
 
     /**

@@ -36,7 +36,7 @@ public final class SpectateClient implements ClientModInitializer {
      * checkable from the log, which during this feature's development was repeatedly assumed and
      * never verified.
      */
-    public static final String BUILD_MARKER = "whitelist-1+26.2";
+    public static final String BUILD_MARKER = "livequeue-1+26.2";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Push the trust set to the service at most this often, in client ticks. */
@@ -112,6 +112,21 @@ public final class SpectateClient implements ClientModInitializer {
     private void onTick(Minecraft client) {
         SpectateManager manager = SpectateManager.get();
         manager.tick();
+
+        // The inventory key opens the target's inventory instead of the viewer's own, which
+        // is empty and meaningless. Consumed here so vanilla does not also open its screen;
+        // only while actually watching, so the key behaves normally everywhere else.
+        //
+        // The open screen is read from client.gui.screen() rather than a field on Minecraft,
+        // which has no public one on this version -- this is the same accessor vanilla itself
+        // uses where it handles this key.
+        var watching = manager.viewing();
+        if (watching != null && client.gui.screen() == null) {
+            while (client.options.keyInventory.consumeClick()) {
+                client.setScreenAndShow(new dev.spog.spegtate.ui.TargetInventoryScreen(
+                        null, targetName(client, watching)));
+            }
+        }
 
         // Refocus only reaches this feature while a session is live, because that is the
         // only time this addon has a world for the client to dispatch keys in. Starting

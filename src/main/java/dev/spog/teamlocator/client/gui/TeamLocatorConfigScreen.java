@@ -2,6 +2,7 @@ package dev.spog.teamlocator.client.gui;
 
 import dev.spog.spore.ui.screen.SporeConfigScreen;
 import dev.spog.spore.ui.screen.SporeTab;
+import dev.spog.spore.ui.theme.SporeDraw;
 import dev.spog.spore.ui.theme.SporeTheme;
 import dev.spog.spore.ui.widget.SporeDropdown;
 import dev.spog.spore.ui.widget.SporeSlider;
@@ -535,10 +536,13 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         // lands beside it rather than under the next one.
         int swatchX = body.controlX() + 78;
         int swatchY = body.y() - SporeTheme.ROW_HEIGHT - 2 - 4;
-        body.graphics().fill(swatchX, swatchY, swatchX + 20, swatchY + SporeTheme.CONTROL_H,
-                0xFFFFFFFF);
-        body.graphics().fill(swatchX + 1, swatchY + 1, swatchX + 19,
-                swatchY + SporeTheme.CONTROL_H - 1, argb);
+        // Rounded like the text box it sits beside, with the colour itself a
+        // step shallower so it follows the white edge rather than poking
+        // through its corners.
+        SporeDraw.roundedFill(body.graphics(), swatchX, swatchY, swatchX + 20,
+                swatchY + SporeTheme.CONTROL_H, SporeTheme.CONTROL_RADIUS, 0xFFFFFFFF);
+        SporeDraw.roundedFill(body.graphics(), swatchX + 1, swatchY + 1, swatchX + 19,
+                swatchY + SporeTheme.CONTROL_H - 1, SporeTheme.CONTROL_RADIUS - 1, argb);
     }
 
     // -------------------------------------------------------- Integrations

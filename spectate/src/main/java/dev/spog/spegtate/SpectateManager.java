@@ -98,6 +98,28 @@ public final class SpectateManager {
     private static final int MAX_FRAMES_IN_FLIGHT = TERRAIN_FRAMES_PER_TICK * 2;
 
     /**
+     * How many bytes of terrain may be handed to the socket in one tick.
+     *
+     * <p>The frame count alone is the wrong unit, which the comment above had already noticed
+     * without acting on: a chunk frame and a block change both count as one. Thirty-two chunk
+     * frames a tick is 640 a second, and a loaded chunk carrying light runs from twenty to a
+     * hundred kilobytes -- so the frame limit permitted tens of megabytes a second, far past any
+     * home uplink. The socket buffered what it could and the rest queued, which the viewer saw
+     * as its ping climbing for a few seconds whenever a sweep ran.
+     *
+     * <p>256 KiB a tick is 5 MB/s at peak. The value is bounded on both sides: too high and the
+     * spike comes back, too low and the sweep misses the client's own 30-second chunk-loading
+     * timeout. Modelled against an 841-chunk sweep (the 29x29 capture radius), this clears in
+     * 3.3 s with 20 KB chunks and 14.1 s with 100 KB ones, so the worst case still has most of
+     * the timeout to spare. 96 KiB was tried first and is too slow: 42 s for the 100 KB case,
+     * which would have traded the ping spike for terrain that never arrives.
+     *
+     * <p>One frame always goes even when it is larger than the whole budget, so an unusually
+     * large chunk cannot wedge the queue.
+     */
+    private static final int TERRAIN_BYTES_PER_TICK = 256 * 1024;
+
+    /**
      * Captured frames still to be handed to the socket, drained by {@link #tick()}.
      *
      * <p>Concurrent because live capture is queued from the Netty event loop while the sweep is
@@ -152,6 +174,10 @@ public final class SpectateManager {
     /** Builds the target's inventory frames; sends only when the inventory actually changed. */
     private final dev.spog.spegtate.capture.InventoryCapture inventoryCapture =
             new dev.spog.spegtate.capture.InventoryCapture();
+
+    /** Sends the target's own equipment, which its server never sends to it. */
+    private final dev.spog.spegtate.capture.EquipmentCapture equipmentCapture =
+            new dev.spog.spegtate.capture.EquipmentCapture();
 
     /**
      * The target's inventory as of the last frame, or null before one has arrived.
@@ -528,10 +554,17 @@ public final class SpectateManager {
         }
         int budget = frameBudget(s);
         int sent = 0;
+        int bytes = 0;
         byte[] wire;
         while (sent < budget && (wire = terrainBacklog.poll()) != null) {
             s.sendGamePacket(wire);
             sent++;
+            bytes += wire.length;
+            // Checked after sending, not before, so a single frame larger than the whole
+            // budget still goes rather than being left in the queue forever.
+            if (bytes >= TERRAIN_BYTES_PER_TICK) {
+                break;
+            }
         }
         if (terrainBacklog.isEmpty() && !reportedSweepDone) {
             reportedSweepDone = true;
@@ -782,6 +815,10 @@ public final class SpectateManager {
             forgetSentTerrain();
         }
         session.addViewer(viewer);
+        // The equipment diff is against what the last viewer was sent, so a new one would get
+        // nothing at all until the target next changed an item. Resend it in full on the next
+        // tick instead.
+        equipmentCapture.reset();
 
         if (!session.handshakeSent()) {
             EncodedHandshake encoded = encodeHandshake();
@@ -1353,6 +1390,17 @@ public final class SpectateManager {
                 inventoryCapture.frameIfChanged(MinecraftClient.getInstance());
         if (inventory != null) {
             s.sendInventory(inventory);
+        }
+
+        // The target's own equipment, which its server never sends to it -- see
+        // EquipmentCapture. Offered to the session rather than sent directly so it is filtered,
+        // encoded, counted and queued exactly like a forwarded packet.
+        CaptureSession capture = CaptureHooks.session();
+        if (capture != null) {
+            var equipment = equipmentCapture.packetIfChanged(MinecraftClient.getInstance());
+            if (equipment != null) {
+                capture.offer(equipment);
+            }
         }
     }
 

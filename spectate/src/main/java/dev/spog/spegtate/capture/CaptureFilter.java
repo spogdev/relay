@@ -204,7 +204,47 @@ public final class CaptureFilter {
                     java.util.Optional.empty(), p.explosionParticle(), p.explosionSound(),
                     p.blockParticles());
         }
+        // Signed player chat is rebuilt as system chat, never forwarded as itself.
+        //
+        // ClientboundPlayerChatPacket carries a globalIndex, and handlePlayerChat increments its
+        // own counter for every one it receives and disconnects with "Detected a missed or
+        // reordered chat message from the server" the moment the two disagree. Forwarding these
+        // breaks that in two independent ways: dropping a whisper leaves a gap in the sequence,
+        // and the indices come from the target's session anyway while the viewer's loopback
+        // connection counts from zero -- so they could never have matched, filter or no filter.
+        //
+        // System chat has no index and no signature, so it is the right shape for a message the
+        // viewer is being shown rather than participating in. The text is decorated here, by the
+        // same ChatTypeDecoration vanilla would have used, so the viewer sees the usual
+        // "<name> message" rather than a bare string.
+        if (packet instanceof net.minecraft.network.protocol.game.ClientboundPlayerChatPacket p) {
+            return new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(
+                    renderChat(p), false);
+        }
         return packet;
+    }
+
+    /**
+     * The displayed form of a signed chat message.
+     *
+     * <p>Prefers the server's unsigned override when there is one -- that is what vanilla
+     * displays in preference to the signed body -- and otherwise decorates the raw content with
+     * the message's own chat type.
+     *
+     * <p>{@code Bound.decorate} resolves the chat type through {@code Holder.value()}, which
+     * throws for a holder that is not bound to a registry entry. A malformed or unknown type
+     * must not take down the target's own session, so the undecorated content is used instead.
+     */
+    private static net.minecraft.network.chat.Component renderChat(
+            net.minecraft.network.protocol.game.ClientboundPlayerChatPacket p) {
+        net.minecraft.network.chat.Component body = p.unsignedContent() != null
+                ? p.unsignedContent()
+                : net.minecraft.network.chat.Component.literal(p.body().content());
+        try {
+            return p.chatType().decorate(body);
+        } catch (RuntimeException e) {
+            return body;
+        }
     }
 
     /**

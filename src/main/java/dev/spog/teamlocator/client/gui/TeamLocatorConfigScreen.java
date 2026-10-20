@@ -530,13 +530,14 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         // lands beside it rather than under the next one.
         int swatchX = body.controlX() + 78;
         int swatchY = body.y() - SporeTheme.ROW_HEIGHT - 2 - 4;
-        // Rounded like the text box it sits beside, with the colour itself a
-        // step shallower so it follows the white edge rather than poking
-        // through its corners.
+        // Rounded like the text box it sits beside. The colour takes the same
+        // radius as the white edge around it, not one less: the pixel of inset
+        // is already what makes that edge visible, and stepping the radius too
+        // would cancel it exactly at the corners.
         SporeDraw.roundedFill(body.graphics(), swatchX, swatchY, swatchX + 20,
                 swatchY + SporeTheme.CONTROL_H, SporeTheme.CONTROL_RADIUS, 0xFFFFFFFF);
         SporeDraw.roundedFill(body.graphics(), swatchX + 1, swatchY + 1, swatchX + 19,
-                swatchY + SporeTheme.CONTROL_H - 1, SporeTheme.CONTROL_RADIUS - 1, argb);
+                swatchY + SporeTheme.CONTROL_H - 1, SporeTheme.CONTROL_RADIUS, argb);
     }
 
     // -------------------------------------------------------- Integrations

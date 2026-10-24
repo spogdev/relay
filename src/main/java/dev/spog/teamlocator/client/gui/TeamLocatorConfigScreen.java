@@ -77,6 +77,13 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
 
     private final TeamConfig config;
 
+    /** How far the remove X sits in from the body's right edge, and its half-extent. */
+    private static final int REMOVE_INSET = 10;
+    private static final int REMOVE_HALF = 7;
+    /** Faint until hovered, so a column of them does not read as a column of warnings. */
+    private static final int REMOVE_COLOR = 0x60FF5555;
+    private static final int REMOVE_COLOR_HOVER = 0xFFFF5555;
+
     private final SporeDropdown<TeamConfig.HudAlign> hudAlign;
     private final SporeDropdown<TeamConfig.ArmorDisplay> armorDisplay;
     private final SporeDropdown<TeamConfig.DurabilityDisplay> durabilityDisplay;
@@ -89,6 +96,9 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
     private final SporeTextBox chatPrefixInput;
     private final SporeTextBox primaryColorInput;
     private final SporeTextBox secondaryColorInput;
+
+    /** Set by a row's remove X and consumed on the next draw; see {@link #drawRemoveX}. */
+    private TrustEntry pendingRemoval;
 
     /** The result of the last name lookup, shown beside the Add button. */
     private Text addStatus;
@@ -614,27 +624,70 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         body.columnHeading(RelayLang.text("relay.config.column.visibility"), 1, 2);
         body.endHeadings();
 
+        // The X's zone fires from mouseClicked, a separate pass from this one, so it records its
+        // target and the removal happens here on the next draw -- also keeping it out of the
+        // iteration below, which a live remove would break.
+        if (pendingRemoval != null) {
+            entries.remove(pendingRemoval);
+            pendingRemoval = null;
+            config.save();
+            TeamLocatorClient.syncToServer();
+            if (entries.isEmpty()) {
+                body.label(RelayLang.text("relay.config.trust_empty"));
+                return;
+            }
+        }
+
         for (TrustEntry entry : entries) {
             if (body.rowHovered()) {
                 body.highlightRow();
             }
 
-            // The switch reads as "alerts on": knob right and green means
-            // this player can alert you, which is the unmuted state. Muting
-            // is the opt-in, so the default sits on.
-            body.columnSwitch(0, 2, !entry.mutePings, true, on -> {
-                entry.mutePings = !on;
+            // Each switch reads as its own column heading, so on means what the heading says.
+            // "Mute" on means silenced, and muting is the opt-in, so a new entry sits off.
+            body.columnSwitch(0, 2, entry.mutePings, true, on -> {
+                entry.mutePings = on;
                 config.save();
             });
+            // "Sharing" on means this player gets our coordinates. That is the default, which is
+            // why the stored field is the negative one: hidden drops them from the sharing set.
             body.columnSwitch(1, 2, !entry.hidden, true, on -> {
                 entry.hidden = !on;
                 config.save();
                 TeamLocatorClient.syncToServer();
             });
 
+            drawRemoveX(body, entry);
+
             drawFaceAndName(body, entry);
             body.advance(SporeTheme.ROW_HEIGHT);
         }
+    }
+
+    /**
+     * The remove X at the right end of a trust row. Drawn by hand rather than with
+     * {@link dev.spog.spore.ui.widget.SporeIconButton}: that is a real widget, so it would not
+     * scroll with the row, and it paints a panel border this row does not want.
+     *
+     * <p>Clicking only records the entry in {@link #pendingRemoval}; the list is edited on the
+     * next draw, since zones fire from {@code mouseClicked} rather than from this pass.
+     */
+    private void drawRemoveX(Body body, TrustEntry entry) {
+        int cx = body.right() - REMOVE_INSET;
+        int cy = body.y() + 4;
+        boolean hovered = SporeDraw.inside(body.mouseX(), body.mouseY(),
+                cx - REMOVE_HALF, cy - REMOVE_HALF, REMOVE_HALF * 2, REMOVE_HALF * 2);
+
+        // Faint until pointed at, so a row of them does not read as a column of warnings.
+        int color = hovered ? REMOVE_COLOR_HOVER : REMOVE_COLOR;
+        for (int d = -4; d <= 4; d++) {
+            body.graphics().fill(cx + d, cy + d, cx + d + 2, cy + d + 1, color);
+            body.graphics().fill(cx + d, cy - d, cx + d + 2, cy - d + 1, color);
+        }
+
+        body.addZone(new dev.spog.spore.ui.screen.Zone(cx - REMOVE_HALF, cy - REMOVE_HALF,
+                cx + REMOVE_HALF, cy + REMOVE_HALF, () -> pendingRemoval = entry,
+                StandardCursors.POINTING_HAND));
     }
 
     /** The name field and the Add button beside it. */

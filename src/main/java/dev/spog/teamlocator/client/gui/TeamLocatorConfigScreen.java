@@ -77,9 +77,15 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
 
     private final TeamConfig config;
 
-    /** How far the remove X sits in from the body's right edge, and its half-extent. */
-    private static final int REMOVE_INSET = 10;
-    private static final int REMOVE_HALF = 7;
+    /**
+     * Where the remove X sits: its centre column, in from the body's right edge, which centres it
+     * between the Sharing switch and the card border.
+     */
+    private static final int REMOVE_INSET = 20;
+    /** Rows above and below the X's centre row; the glyph is 2 * ARM + 2 wide, 2 * ARM + 1 tall. */
+    private static final int REMOVE_ARM = 5;
+    /** Half the click area, a little larger than the glyph so it is not fiddly to hit. */
+    private static final int REMOVE_HALF = 8;
     /** Faint until hovered, so a column of them does not read as a column of warnings. */
     private static final int REMOVE_COLOR = 0x60FF5555;
     private static final int REMOVE_COLOR_HOVER = 0xFFFF5555;
@@ -636,6 +642,15 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                 body.highlightRow();
             }
 
+            // The switches and the X sit a pixel higher than columnSwitch puts them, so they line
+            // up with the player's name. Stepped up and back rather than changed in columnSwitch,
+            // which is shared by every screen that draws a table.
+            body.advance(-1);
+
+            // First, so its zone is registered before the switches': zones are matched in order,
+            // and the Sharing switch's click area runs a few pixels into the X's.
+            drawRemoveX(body, entry);
+
             // Each switch reads as its own column heading, so on means what the heading says.
             // "Mute" on means silenced, and muting is the opt-in, so a new entry sits off.
             body.columnSwitch(0, 2, entry.mutePings, true, on -> {
@@ -649,8 +664,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                 config.save();
                 TeamLocatorClient.syncToServer();
             });
-
-            drawRemoveX(body, entry);
+            body.advance(1);
 
             drawFaceAndName(body, entry);
             body.advance(SporeTheme.ROW_HEIGHT);
@@ -667,20 +681,34 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
      */
     private void drawRemoveX(Body body, TrustEntry entry) {
         int cx = body.right() - REMOVE_INSET;
-        int cy = body.y() + 4;
-        boolean hovered = SporeDraw.inside(body.mouseX(), body.mouseY(),
-                cx - REMOVE_HALF, cy - REMOVE_HALF, REMOVE_HALF * 2, REMOVE_HALF * 2);
+        // Six below the text baseline puts the glyph's centre on the switches' centre line.
+        int cy = body.y() + 6;
+        // The glyph spans cx - ARM to cx + ARM + 2, so its middle is cx + 1.
+        int left = cx + 1 - REMOVE_HALF;
+        int top = cy - REMOVE_HALF;
+        int size = REMOVE_HALF * 2;
+        boolean hovered = SporeDraw.inside(body.mouseX(), body.mouseY(), left, top, size, size);
 
         // Faint until pointed at, so a row of them does not read as a column of warnings.
         int color = hovered ? REMOVE_COLOR_HOVER : REMOVE_COLOR;
-        for (int d = -4; d <= 4; d++) {
-            body.graphics().fill(cx + d, cy + d, cx + d + 2, cy + d + 1, color);
-            body.graphics().fill(cx + d, cy - d, cx + d + 2, cy - d + 1, color);
+        for (int r = -REMOVE_ARM; r <= REMOVE_ARM; r++) {
+            // Each diagonal is two pixels wide on every row. Where the two meet in the middle
+            // they cover the same pixels, and filling those twice with a translucent colour
+            // draws them darker than the arms -- so overlapping runs are filled once.
+            int a = cx + r;
+            int b = cx - r;
+            int lo = Math.min(a, b);
+            int hi = Math.max(a, b);
+            if (hi < lo + 2) {
+                body.graphics().fill(lo, cy + r, hi + 2, cy + r + 1, color);
+            } else {
+                body.graphics().fill(lo, cy + r, lo + 2, cy + r + 1, color);
+                body.graphics().fill(hi, cy + r, hi + 2, cy + r + 1, color);
+            }
         }
 
-        body.addZone(new dev.spog.spore.ui.screen.Zone(cx - REMOVE_HALF, cy - REMOVE_HALF,
-                cx + REMOVE_HALF, cy + REMOVE_HALF, () -> pendingRemoval = entry,
-                CursorTypes.POINTING_HAND));
+        body.addZone(new dev.spog.spore.ui.screen.Zone(left, top, left + size, top + size,
+                () -> pendingRemoval = entry, CursorTypes.POINTING_HAND));
     }
 
     /** The name field and the Add button beside it. */
@@ -692,6 +720,11 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         int top = body.y() - 4;
         nameInput.place(body.graphics(), boxX, top, 130, body.viewTop(), body.viewBottom(),
                 nameInput.isFocused());
+        // A pixel lower than place() centres it, which sits the text a half pixel high in the
+        // frame. Moves only the text: place() has already drawn the frame.
+        if (nameInput.widget().isVisible()) {
+            nameInput.widget().setY(nameInput.widget().getY() + 1);
+        }
         body.addZone(new dev.spog.spore.ui.screen.Zone(boxX, top, boxX + 130,
                 top + SporeTheme.CONTROL_H, () -> setFocused(nameInput.widget()),
                 CursorTypes.IBEAM));

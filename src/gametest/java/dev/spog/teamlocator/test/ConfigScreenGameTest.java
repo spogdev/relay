@@ -1,12 +1,14 @@
 package dev.spog.teamlocator.test;
 
 import dev.spog.teamlocator.client.TeamLocatorClient;
+import dev.spog.teamlocator.client.config.TrustEntry;
 import dev.spog.teamlocator.client.gui.TeamLocatorConfigScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.gui.screen.TitleScreen;
 
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Opens the settings screen and visits every tab in a real client.
@@ -24,6 +26,21 @@ import java.util.Locale;
 public class ConfigScreenGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
+        // Two trust entries, so the Trust tab draws rows rather than its empty-list line. One is
+        // muted and hidden and one is left at the defaults, so both switch states and the remove
+        // X are in the screenshot. Set in memory only; nothing is saved.
+        context.runOnClient(client -> {
+            var trusted = TeamLocatorClient.CONFIG.global.trusted;
+            trusted.clear();
+            TrustEntry muted = new TrustEntry(
+                    UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5"), "Notch");
+            muted.mutePings = true;
+            muted.hidden = true;
+            trusted.add(muted);
+            trusted.add(new TrustEntry(
+                    UUID.fromString("853c80ef-3c37-49fd-aa49-938b674adae6"), "jeb_"));
+        });
+
         // Built on the client thread: the constructor reaches
         // MinecraftClient.getInstance() for the font its text boxes measure
         // with, which throws off it.

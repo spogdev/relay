@@ -296,13 +296,18 @@ public class TeamHud implements HudElement {
                 yColW = Math.max(yColW, font.getWidth(c.y()));
                 zColW = Math.max(zColW, font.getWidth(c.z()));
             }
-            if (!row.armor().isEmpty()) {
-                maxArmorW = Math.max(maxArmorW,
-                        ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE,
-                                config.hudDurabilityDisplay, font)
-                                + (config.hudShowHealth
-                                        ? ARMOR_GAP + HealthRenderer.width(font, row.entry()) : 0));
+            // Health and armor each counted on their own, as the row draws them: a teammate may
+            // share health and no armor, and that health still needs room.
+            int trailing = 0;
+            int healthW = config.hudShowHealth ? HealthRenderer.width(font, row.entry()) : 0;
+            if (healthW > 0) {
+                trailing += ARMOR_GAP + healthW;
             }
+            if (!row.armor().isEmpty()) {
+                trailing += ARMOR_GAP + ArmorRenderer.width(row.armor(), ARMOR_ICON_SCALE,
+                        config.hudDurabilityDisplay, font);
+            }
+            maxArmorW = Math.max(maxArmorW, trailing);
         }
         int total = FACE_SIZE + 3 + nameColW;
         if (anyCoords) {
@@ -319,17 +324,41 @@ public class TeamHud implements HudElement {
      */
     private void renderTableRow(DrawContext graphics, TextRenderer font, Row row, TableLayout t,
                                 int y, int textY, int contentHeight) {
-        int sepW = font.getWidth(", ");
         PlayerSkinDrawer.draw(graphics, row.skin(), 0,
                 y + (contentHeight - FACE_SIZE) / 2 - 1, FACE_SIZE);
         int nameX = FACE_SIZE + 3;
         graphics.drawText(font, row.name(), nameX, textY, row.nameColor(), true);
 
+        // Health and armor follow whatever the row ends with: the coordinate block, or with
+        // coordinates hidden, the name column. Returning after the name here was what left the
+        // table showing nothing but names whenever Show Coords was off.
+        int end = nameX + t.nameColW();
         Coords c = row.coords();
-        if (c == null) {
-            return; // coords hidden: name-only row, nothing more to lay out
+        if (c != null) {
+            end = drawTableCoords(graphics, font, row, t, c, end + TABLE_COL_GAP, textY);
         }
-        int blockX = nameX + t.nameColW() + TABLE_COL_GAP;
+        // Health is drawn independently of armor: a teammate sharing health but no armor must
+        // still show it, so this sits outside the armor guard below.
+        if (config.hudShowHealth && HealthRenderer.has(row.entry())) {
+            end += ARMOR_GAP + HealthRenderer.render(graphics, font, row.entry(),
+                    end + ARMOR_GAP, y, contentHeight, row.sec());
+        }
+        if (!row.armor().isEmpty()) {
+            ArmorRenderer.render(graphics, row.armor(), end + ARMOR_GAP,
+                    y + contentHeight / 2 - 1, ARMOR_ICON_SCALE,
+                    config.hudDurabilityDisplay, font, row.sec());
+        }
+    }
+
+    /**
+     * The X/Y/Z columns of a TABLE row, each value right-aligned in its column, and the
+     * cross-dimension suffix after Z when there is one.
+     *
+     * @return the x where the drawn coordinates end
+     */
+    private int drawTableCoords(DrawContext graphics, TextRenderer font, Row row, TableLayout t,
+                                Coords c, int blockX, int textY) {
+        int sepW = font.getWidth(", ");
         // Each value right-aligned within its column, separators drawn at the column edges in the
         // primary colour, matching the packed layout's "x, y, z".
         int xRight = blockX + t.xColW();
@@ -352,17 +381,7 @@ public class TeamHud implements HudElement {
             graphics.drawText(font, ")", end, textY, row.pri(), true);
             end += font.getWidth(")");
         }
-        // Health is drawn independently of armor: a teammate sharing health but no armor must
-        // still show it, so this sits outside the armor guard below.
-        if (config.hudShowHealth && HealthRenderer.has(row.entry())) {
-            end += ARMOR_GAP + HealthRenderer.render(graphics, font, row.entry(),
-                    end + ARMOR_GAP, y, contentHeight, row.sec());
-        }
-        if (!row.armor().isEmpty()) {
-            ArmorRenderer.render(graphics, row.armor(), end + ARMOR_GAP,
-                    y + contentHeight / 2 - 1, ARMOR_ICON_SCALE,
-                    config.hudDurabilityDisplay, font, row.sec());
-        }
+        return end;
     }
 
     /**

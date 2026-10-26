@@ -297,24 +297,22 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         List<String> palette = pingPalette();
         if (!palette.isEmpty()) {
             int selected = Math.floorMod(config.pingColorIndex, palette.size());
-            // Label each row with its own hex value. A SporeDropdown.Entry carries only a label
-            // and a texture icon -- there is no per-entry colour and the icon is blitted, not
-            // tinted -- so an empty label left every row blank with nothing to tell them apart.
+            // Each row is its own hex value, written in the colour it names, so the list shows the
+            // colours themselves rather than five codes to decode.
             List<SporeDropdown.Entry<Integer>> colors = new java.util.ArrayList<>();
             for (int i = 0; i < palette.size(); i++) {
-                colors.add(new SporeDropdown.Entry<>(i, palette.get(i)));
+                colors.add(new SporeDropdown.Entry<>(i, palette.get(i))
+                        .withColor(PingPalette.argb(palette.get(i))));
             }
             pingColor.setEntries(colors);
             body.dropdown(RelayLang.text("relay.config.ping_color"), pingColor, selected,
                     RelayLang.text("relay.config.ping_color.desc"));
 
             // Back up over the row the dropdown just advanced past, so the swatch lands beside
-            // the control rather than under the next row. The swatch goes in the gap between the
-            // label column and the control: controlX() + CONTROL_W is the right edge every other
-            // control shares, so the old controlX() + CONTROL_W + 8 put it outside the card, and
-            // the control's own width is taken by its label at +6 and its arrow at +width-10.
-            int swatchX = body.controlX() - 26;
-            int swatchY = body.y() - (SporeTheme.ROW_HEIGHT + 2) - 4;
+            // the control rather than under the next row, then up one more pixel. It sits just
+            // past the dropdown's right edge.
+            int swatchX = body.controlX() + SporeTheme.CONTROL_W + 6;
+            int swatchY = body.y() - (SporeTheme.ROW_HEIGHT + 2) - 5;
             body.graphics().fill(swatchX, swatchY, swatchX + 20, swatchY + SporeTheme.CONTROL_H,
                     0xFFFFFFFF);
             body.graphics().fill(swatchX + 1, swatchY + 1, swatchX + 19,

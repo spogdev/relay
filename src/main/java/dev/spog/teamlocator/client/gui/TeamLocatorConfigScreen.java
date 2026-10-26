@@ -809,6 +809,10 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         }
         list.add(new TrustEntry(id, name));
         config.save();
+        // Pushed to the relay now, as every other change to the list is. Without it the relay kept
+        // the old sharing set, so the new player saw nothing until some later change -- in
+        // practice flipping a Sharing switch -- happened to sync.
+        TeamLocatorClient.syncToServer();
     }
 
     private void addTypedPlayer() {

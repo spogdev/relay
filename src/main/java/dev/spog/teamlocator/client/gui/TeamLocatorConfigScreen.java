@@ -212,8 +212,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
     // ------------------------------------------------------------- General
 
     private void drawGeneral(Body body) {
-        body.section(RelayLang.text("relay.config.section.sharing"),
-                RelayLang.text("relay.config.section.sharing.desc"));
+        body.section(RelayLang.text("relay.config.section.sharing"));
         body.toggle(RelayLang.text("relay.config.share_location"), config.globalShareEnabled,
                 RelayLang.text("relay.config.share_location.desc"), on -> {
                     config.globalShareEnabled = on;
@@ -233,8 +232,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                     TeamLocatorClient.syncToServer();
                 });
 
-        body.section(RelayLang.text("relay.config.section.pings"),
-                RelayLang.text("relay.config.section.pings.desc"));
+        body.section(RelayLang.text("relay.config.section.pings"));
         body.toggle(RelayLang.text("relay.config.enable_alerts"), !config.hideAllAlerts, null,
                 on -> {
                     config.hideAllAlerts = !on;
@@ -260,8 +258,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                     TeamLocatorClient.syncToServer();
                 });
 
-        body.section(RelayLang.text("relay.config.section.map_pings"),
-                RelayLang.text("relay.config.section.map_pings.desc"));
+        body.section(RelayLang.text("relay.config.section.map_pings"));
         body.toggle(RelayLang.text("relay.config.show_pings"), config.showPings, null, on -> {
             config.showPings = on;
             config.save();
@@ -376,8 +373,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
      * anything to mark.
      */
     private void drawMarkerSection(Body body) {
-        body.section(RelayLang.text("relay.config.section.player_marker"),
-                RelayLang.text("relay.config.section.player_marker.desc"));
+        body.section(RelayLang.text("relay.config.section.player_marker"));
         body.toggle(RelayLang.text("relay.config.player_markers_enabled"),
                 config.playerMarkersEnabled,
                 RelayLang.text("relay.config.player_markers_enabled.desc"), on -> {
@@ -475,8 +471,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         body.dropdown(RelayLang.text("relay.config.hud_durability"), durabilityDisplay,
                 config.hudDurabilityDisplay, RelayLang.text("relay.config.hud_durability.desc"));
 
-        body.section(RelayLang.text("relay.config.section.hud_colors"),
-                RelayLang.text("relay.config.section.hud_colors.desc"));
+        body.section(RelayLang.text("relay.config.section.hud_colors"));
         drawColorRow(body, "relay.config.hud_primary_color", primaryColorInput,
                 config.hudPrimaryArgb());
         drawColorRow(body, "relay.config.hud_secondary_color", secondaryColorInput,
@@ -562,8 +557,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         boolean minimap = XaeroCompat.isMinimapInstalled();
         boolean worldMap = XaeroCompat.isWorldMapInstalled();
 
-        body.section(RelayLang.text("relay.config.section.xaero"),
-                RelayLang.text("relay.config.section.xaero.desc"));
+        body.section(RelayLang.text("relay.config.section.xaero"));
 
         // Each control is disabled when the mod that acts on it is absent, so
         // a setting that could not possibly do anything reads as unavailable
@@ -599,8 +593,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
             config.save();
         }
 
-        body.section(RelayLang.text("relay.config.section.trust"),
-                RelayLang.text("relay.config.section.trust.desc"));
+        body.section(RelayLang.text("relay.config.section.trust"));
 
         activeMode.setEntries(List.of(
                 new SporeDropdown.Entry<>(TeamConfig.Mode.GLOBAL,

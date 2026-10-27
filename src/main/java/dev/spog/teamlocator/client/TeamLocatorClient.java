@@ -95,7 +95,6 @@ public class TeamLocatorClient implements ClientModInitializer {
 
         // /available — who would actually see an alert sent right now.
         AvailableCommand.register();
-        RelayAdminCommand.register();
         RelayWaypointCommand.register();
         PingRenderer.register();
         // The mod's own in-world teammate icons; the default, so they work with no other mod. Steps

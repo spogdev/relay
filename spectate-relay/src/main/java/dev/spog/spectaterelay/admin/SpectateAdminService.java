@@ -1,8 +1,5 @@
 package dev.spog.spectaterelay.admin;
 
-import dev.spog.teamlocator.relay.admin.AdminStore;
-import dev.spog.teamlocator.relay.admin.MojangNameResolver;
-import dev.spog.teamlocator.relay.admin.NameResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

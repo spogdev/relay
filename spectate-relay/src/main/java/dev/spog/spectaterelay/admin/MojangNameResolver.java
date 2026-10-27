@@ -1,4 +1,4 @@
-package dev.spog.teamlocator.relay.admin;
+package dev.spog.spectaterelay.admin;
 
 import com.mojang.authlib.GameProfileRepository;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;

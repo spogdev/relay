@@ -254,17 +254,9 @@ public final class Messages {
     public static final class AuthOk {
         public String type = "auth-ok";
         public String uuid;
-        /**
-         * Whether this player administers the relay. Purely a UI hint, so the client can hide the
-         * {@code /relay} command from players who cannot use it — authorization is always rechecked
-         * relay-side against the verified UUID, so a patched client that forces this true still has
-         * every command refused. Absent from an older relay, which the client reads as false.
-         */
-        public boolean admin;
 
-        public AuthOk(String uuid, boolean admin) {
+        public AuthOk(String uuid) {
             this.uuid = uuid;
-            this.admin = admin;
         }
     }
 
@@ -433,39 +425,6 @@ public final class Messages {
     }
 
     // ---- admin (client -> relay -> client) ----
-
-    /**
-     * An admin invoking {@code /relay <command> [args]}. Authorization is by the relay-verified
-     * UUID of the sending session against the relay's admin list — never anything in this frame, so
-     * a patched client cannot promote itself by asserting admin here.
-     */
-    public static final class AdminCommand {
-        public String type = "admin-command";
-        public String command;
-        public List<String> args;
-
-        public AdminCommand(String command, List<String> args) {
-            this.command = command;
-            this.args = args;
-        }
-    }
-
-    /**
-     * The relay's reply to an {@link AdminCommand}: lines to print in the admin's chat. A list
-     * rather than one string so multi-line output (a status report) stays one frame and one
-     * coherent block in chat.
-     */
-    public static final class AdminResult {
-        public String type = "admin-result";
-        public List<String> lines;
-        /** True when the command failed, so the client can colour the output as an error. */
-        public boolean error;
-
-        public AdminResult(List<String> lines, boolean error) {
-            this.lines = lines;
-            this.error = error;
-        }
-    }
 
     /** Positions of everyone who shares with this viewer, in the viewer's MC-server scope. */
     public static final class PositionSnapshot {

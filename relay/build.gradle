@@ -17,6 +17,11 @@ repositories {
     mavenCentral()
     // Mojang's authlib (session verification) is published here, not on Maven Central.
     maven { url = 'https://libraries.minecraft.net/' }
+    // SpogStats client: reports connected players to the dashboard and pulls its moderation rules.
+    maven {
+        url = 'https://repo.spog.dev/releases'
+        content { includeGroup 'dev.spog' }
+    }
 }
 
 dependencies {
@@ -25,6 +30,7 @@ dependencies {
     // Same authlib the game uses; lets the relay verify Mojang sessions server-side.
     implementation 'com.mojang:authlib:7.0.63'
     implementation 'org.slf4j:slf4j-simple:2.0.16'
+    implementation 'dev.spog:spogstats:1.0.0'
 
     testImplementation platform('org.junit:junit-bom:5.11.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'

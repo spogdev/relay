@@ -4,8 +4,8 @@ import dev.spog.spectaterelay.admin.SeenStore;
 import dev.spog.spectaterelay.admin.SpectateAdminService;
 import dev.spog.spectaterelay.admin.WhitelistState;
 import dev.spog.spectaterelay.admin.WhitelistStore;
-import dev.spog.teamlocator.relay.admin.AdminStore;
-import dev.spog.teamlocator.relay.admin.NameResolver;
+import dev.spog.spectaterelay.admin.AdminStore;
+import dev.spog.spectaterelay.admin.NameResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

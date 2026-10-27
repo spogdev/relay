@@ -42,7 +42,8 @@ public final class RelayServer extends WebSocketServer {
     private final SessionRegistry registry = new SessionRegistry();
     private final RelayRouter router = new RelayRouter(registry);
     private final Verifier verifier;
-    private final AdminService admins;
+    /** Who may connect and which ping colours an admin forced; open until a dashboard is linked. */
+    private volatile Dashboard dashboard = Dashboard.OPEN;
 
     /** MC-server scope claimed at hello time; applied only once auth succeeds. */
     private final Map<Session, String> pendingScopes = new ConcurrentHashMap<>();
@@ -55,23 +56,32 @@ public final class RelayServer extends WebSocketServer {
     });
 
     public RelayServer(InetSocketAddress address) {
-        this(address, new MojangVerifier(), AdminService.disabled());
-    }
-
-    public RelayServer(InetSocketAddress address, AdminService admins) {
-        this(address, new MojangVerifier(), admins);
+        this(address, new MojangVerifier());
     }
 
     /** Test seam: lets the routing be exercised without live Mojang accounts. */
     RelayServer(InetSocketAddress address, Verifier verifier) {
-        this(address, verifier, AdminService.disabled());
-    }
-
-    RelayServer(InetSocketAddress address, Verifier verifier, AdminService admins) {
         super(address);
         this.verifier = verifier;
-        this.admins = admins;
         setReuseAddr(true);
+    }
+
+    /**
+     * Enforce the dashboard's rules from now on. Admin moderation (blacklist / whitelist, ping
+     * colour overrides) lives entirely in the dashboard; the relay only applies what it is told.
+     */
+    void useDashboard(Dashboard dashboard) {
+        this.dashboard = dashboard;
+        kickDenied();
+    }
+
+    /** Every verified player connected right now, as the dashboard wants them reported. */
+    List<Dashboard.Connected> connectedPlayers() {
+        List<Dashboard.Connected> out = new ArrayList<>();
+        for (Session s : registry.allSessions()) {
+            out.add(new Dashboard.Connected(s.uuid(), s.profileName(), s.protocolVersion(), s.scope()));
+        }
+        return out;
     }
 
     @Override
@@ -144,7 +154,6 @@ public final class RelayServer extends WebSocketServer {
                 case "remove-map-ping" -> router.removeMapPing(session);
                 case "chat" -> handleChat(session, obj);
                 case "share-waypoint" -> handleShareWaypoint(session, obj);
-                case "admin-command" -> handleAdminCommand(session, obj);
                 default -> LOG.debug("unknown message type {}", type);
             }
         } catch (JsonParseException | IllegalStateException | NullPointerException
@@ -198,10 +207,10 @@ public final class RelayServer extends WebSocketServer {
                     fail(session, "mojang did not verify this session");
                     return;
                 }
-                // Enforced only now: the blacklist is keyed by UUID, and the UUID is not known
+                // Enforced only now: the access lists are keyed by UUID, and the UUID is not known
                 // (and must not be believed) until Mojang has vouched for it.
-                if (admins.isBanned(verified)) {
-                    LOG.info("refused blacklisted player {} ({})", profileName, verified);
+                if (!dashboard.allows(verified)) {
+                    LOG.info("refused {} ({}): denied by the dashboard", profileName, verified);
                     pendingScopes.remove(session);
                     fail(session, Messages.REASON_BANNED);
                     return;
@@ -209,12 +218,7 @@ public final class RelayServer extends WebSocketServer {
                 String scope = pendingScopes.remove(session);
                 session.authenticate(verified, scope != null ? scope : "unknown");
                 registry.register(session);
-                admins.recordLogin(verified);
-                // The admin flag is a UI hint only — it lets the client hide /relay from players who
-                // cannot use it. Every command is still authorized relay-side against the verified
-                // UUID, so a client that lies about this to itself gains nothing.
-                registry.send(session, new Messages.AuthOk(verified.toString(),
-                        admins.isAdmin(verified)));
+                registry.send(session, new Messages.AuthOk(verified.toString()));
                 // Populate the newcomer's HUD immediately with anyone already sharing with them.
                 router.sendInitialSnapshot(session);
                 LOG.info("{} ({}) authenticated in scope '{}' (protocol v{})",
@@ -274,7 +278,7 @@ public final class RelayServer extends WebSocketServer {
                 ? obj.get("dimension").getAsString() : "minecraft:overworld";
         String requested = obj.has("color") ? obj.get("color").getAsString() : null;
         router.broadcastMapPing(session, x, y, z, dimension, requested,
-                admins.pingColorOverride(session.uuid()));
+                dashboard.pingColor(session.uuid()));
     }
 
     /** Longest chat message the relay will relay; longer ones are truncated rather than rejected. */
@@ -340,101 +344,15 @@ public final class RelayServer extends WebSocketServer {
         return out.toString().trim();
     }
 
-    /**
-     * Run an admin subcommand for an authenticated session. The name lookup can hit Mojang, so it
-     * goes on the auth pool rather than blocking a WebSocket I/O thread; the permission check runs
-     * inside {@link AdminService#execute} against this session's verified UUID.
-     */
-    private void handleAdminCommand(Session session, JsonObject obj) {
-        String command = obj.has("command") ? obj.get("command").getAsString() : "";
-        List<String> args = new ArrayList<>();
-        if (obj.has("args") && obj.get("args").isJsonArray()) {
-            for (var el : obj.getAsJsonArray("args")) {
-                args.add(el.getAsString());
-            }
-        }
-        String callerName = session.profileName();
-        authPool.submit(() -> {
-            try {
-                AdminService.Result result = admins.execute(
-                        session.uuid(), callerName, command, args, connectedLookup());
-                registry.send(session, new Messages.AdminResult(result.lines(), result.error()));
-                // A ban only takes full effect once the banned player is actually gone; do it here
-                // rather than inside AdminService so the service stays free of session plumbing.
-                if (!result.error() && "blacklist".equalsIgnoreCase(command) && !args.isEmpty()) {
-                    kickBanned();
-                }
-            } catch (RuntimeException e) {
-                LOG.warn("admin command '{}' failed", command, e);
-                registry.send(session, new Messages.AdminResult(
-                        List.of("The command failed. Check the relay log."), true));
-            }
-        });
-    }
-
-    /** Close every live session whose player is now blacklisted. */
-    private void kickBanned() {
+    /** Close every live session the dashboard no longer allows. Runs whenever its rules change. */
+    void kickDenied() {
         for (Session s : registry.allSessions()) {
-            if (admins.isBanned(s.uuid())) {
-                LOG.info("disconnecting newly-blacklisted {}", s.uuid());
+            if (!dashboard.allows(s.uuid())) {
+                LOG.info("disconnecting {} ({}): denied by the dashboard", s.profileName(), s.uuid());
                 registry.send(s, new Messages.AuthFail(Messages.REASON_BANNED));
                 s.conn().close();
             }
         }
-    }
-
-    /** Exposes live-session facts to {@link AdminService} without handing it the registry. */
-    private AdminService.ConnectedLookup connectedLookup() {
-        return new AdminService.ConnectedLookup() {
-            @Override
-            public java.util.Optional<UUID> byName(String name) {
-                for (Session s : registry.allSessions()) {
-                    if (name.equalsIgnoreCase(s.profileName())) {
-                        return java.util.Optional.of(s.uuid());
-                    }
-                }
-                return java.util.Optional.empty();
-            }
-
-            @Override
-            public java.util.Optional<Integer> versionOf(UUID player) {
-                return session(player).map(Session::protocolVersion);
-            }
-
-            @Override
-            public java.util.Optional<String> scopeOf(UUID player) {
-                return session(player).map(Session::scope);
-            }
-
-            @Override
-            public int connectedCount() {
-                int n = 0;
-                for (Session ignored : registry.allSessions()) {
-                    n++;
-                }
-                return n;
-            }
-
-            @Override
-            public int scopeCount() {
-                Set<String> scopes = new java.util.HashSet<>();
-                for (Session s : registry.allSessions()) {
-                    if (s.scope() != null) {
-                        scopes.add(s.scope());
-                    }
-                }
-                return scopes.size();
-            }
-
-            private java.util.Optional<Session> session(UUID player) {
-                for (Session s : registry.allSessions()) {
-                    if (player.equals(s.uuid())) {
-                        return java.util.Optional.of(s);
-                    }
-                }
-                return java.util.Optional.empty();
-            }
-        };
     }
 
     /**
@@ -467,7 +385,7 @@ public final class RelayServer extends WebSocketServer {
         if (obj.has("pingColor") && !obj.get("pingColor").isJsonNull()) {
             session.pingColor = RelayRouter.resolvePingColor(session.uuid(),
                     obj.get("pingColor").getAsString(),
-                    admins.pingColorOverride(session.uuid()));
+                    dashboard.pingColor(session.uuid()));
         }
         session.hasPosition = true;
         router.broadcastPosition(session);

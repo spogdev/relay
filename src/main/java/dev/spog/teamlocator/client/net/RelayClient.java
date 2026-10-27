@@ -156,14 +156,6 @@ public final class RelayClient {
     private volatile boolean notifiedDisconnect;
     /** Whether the "you are banned" toast has been shown for the current run of ban rejections. */
     private volatile boolean notifiedBanned;
-    /**
-     * Whether the relay says this account administers it, from the last successful auth. Drives
-     * only whether {@code /relay} is offered in chat; the relay authorizes every command itself.
-     * Cleared on disconnect so the command disappears rather than lingering against a relay we are
-     * no longer talking to (and which may not even be the same relay next time).
-     */
-    private volatile boolean relayAdmin;
-
     /** Serializes sendText calls; the JDK WebSocket rejects overlapping sends. */
     private CompletableFuture<?> sendChain = CompletableFuture.completedFuture(null);
     private final Object sendLock = new Object();
@@ -177,14 +169,6 @@ public final class RelayClient {
 
     public boolean isReady() {
         return authenticated && socket != null;
-    }
-
-    /**
-     * Whether the relay reported this account as one of its administrators. Used only to decide if
-     * the {@code /relay} command is offered; it is never a permission check in itself.
-     */
-    public boolean isRelayAdmin() {
-        return relayAdmin && isReady();
     }
 
     /** Connect (or switch) to the given relay for the given Minecraft-server scope. */
@@ -258,7 +242,6 @@ public final class RelayClient {
         active = false;
         authenticated = false;
         authedUuid = null;
-        relayAdmin = false;
         // Invalidate every in-flight attempt: a handshake completing after this must abort itself,
         // not install a socket the teardown could no longer see.
         attempt.incrementAndGet();
@@ -507,40 +490,6 @@ public final class RelayClient {
         sendIfReady(o);
     }
 
-    /** The pending {@code /relay} callback; one in flight at a time, newest wins. */
-    private volatile java.util.function.BiConsumer<List<String>, Boolean> adminCallback;
-    private volatile ScheduledFuture<?> adminTimeout;
-
-    /**
-     * Send an admin subcommand. {@code onResult} receives the relay's reply lines and whether it
-     * was an error, or {@code null} lines if the relay never answered — an older relay ignores the
-     * frame entirely, so a timeout is the only signal. Runs on the relay executor thread; hop to
-     * the game thread before touching UI.
-     */
-    public void sendAdminCommand(String command, List<String> args,
-                                 java.util.function.BiConsumer<List<String>, Boolean> onResult) {
-        ScheduledFuture<?> prior = adminTimeout;
-        if (prior != null) {
-            prior.cancel(false);
-        }
-        adminCallback = onResult;
-        adminTimeout = executor.schedule(() -> {
-            var cb = adminCallback;
-            adminCallback = null;
-            if (cb != null) {
-                cb.accept(null, true);
-            }
-        }, AVAILABILITY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "admin-command");
-        o.addProperty("command", command);
-        var arr = new com.google.gson.JsonArray();
-        args.forEach(arr::add);
-        o.add("args", arr);
-        sendIfReady(o);
-    }
-
     /**
      * A teammate's location ping. The colour is whatever the relay settled on — our own choice is
      * never applied to someone else's marker, and an administrator override arrives already applied.
@@ -701,26 +650,6 @@ public final class RelayClient {
         return 0xFFFFFFFF;
     }
 
-    private void onAdminResult(JsonObject obj) {
-        ScheduledFuture<?> pending = adminTimeout;
-        if (pending != null) {
-            pending.cancel(false);
-        }
-        var cb = adminCallback;
-        adminCallback = null;
-        if (cb == null) {
-            return;
-        }
-        List<String> lines = new ArrayList<>();
-        if (obj.has("lines") && obj.get("lines").isJsonArray()) {
-            for (var el : obj.getAsJsonArray("lines")) {
-                lines.add(el.getAsString());
-            }
-        }
-        boolean error = obj.has("error") && obj.get("error").getAsBoolean();
-        cb.accept(lines, error);
-    }
-
     private void sendIfReady(JsonObject o) {
         if (isReady()) {
             sendJson(o);
@@ -804,7 +733,7 @@ public final class RelayClient {
         }
         switch (obj.get("type").getAsString()) {
             case "auth-challenge" -> onChallenge(obj.get("serverId").getAsString(), gen);
-            case "auth-ok" -> onAuthOk(obj.has("admin") && obj.get("admin").getAsBoolean());
+            case "auth-ok" -> onAuthOk();
             case "auth-fail" -> onAuthFail(obj.has("reason") ? obj.get("reason").getAsString() : "?", gen);
             case "position-snapshot" -> onSnapshot(obj);
             case "ping-broadcast" -> onPingBroadcast(obj);
@@ -814,7 +743,6 @@ public final class RelayClient {
             case "map-ping-removed" -> onMapPingRemoved(obj);
             case "chat-broadcast" -> onChat(obj);
             case "waypoint-broadcast" -> onWaypoint(obj);
-            case "admin-result" -> onAdminResult(obj);
             case "availability-result" -> onAvailabilityResult(obj);
             default -> { }
         }
@@ -986,26 +914,13 @@ public final class RelayClient {
         scheduleReconnect(gen);
     }
 
-    private void onAuthOk(boolean admin) {
+    private void onAuthOk() {
         authenticated = true;
-        relayAdmin = admin;
         // Remember which account this socket is verified as, so a later server transfer can reuse it
         // (set-scope, no re-auth) only while the player is still that account. getUser() is who we
         // just called joinServer as, which is exactly what the relay verified.
         var user = Minecraft.getInstance().getUser();
         authedUuid = user != null ? user.getProfileId() : null;
-        // Remember it for next session's command tree, which is built before we get here. Only
-        // write when it actually changed, so a normal connect doesn't touch the config file.
-        TeamConfig config = TeamLocatorClient.CONFIG;
-        if (config.wasRelayAdmin != admin) {
-            config.wasRelayAdmin = admin;
-            config.save();
-            if (admin) {
-                TeamLocatorConstants.LOGGER.info(
-                        "Relay reports this account as an administrator; /relay is available "
-                                + "after the next world join");
-            }
-        }
         // Back to a snappy retry now the relay is known good — unless Mojang rate-limited us
         // recently. A connection that authenticates then drops seconds later (relay restarting, bad
         // link) would otherwise restart the 1s/2s/4s ladder and spend every rung inside authlib's

@@ -1,4 +1,4 @@
-package dev.spog.teamlocator.relay.admin;
+package dev.spog.spectaterelay.admin;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

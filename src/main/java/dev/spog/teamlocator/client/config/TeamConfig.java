@@ -154,19 +154,6 @@ public class TeamConfig {
 
     /** Hostname of the relay service (the {@code wss://} scheme is fixed, not user-editable). */
     public String relayUrl = DEFAULT_RELAY_ADDRESS;
-    /**
-     * Whether the relay reported this account as an administrator on the last successful connect.
-     *
-     * <p>Remembered across sessions purely so {@code /relay} can be offered in chat: Minecraft
-     * builds its command tree (and evaluates each command's visibility) the moment you join a
-     * world, which is <em>before</em> the relay has finished authenticating, so a flag set at auth
-     * time would always arrive too late and hide the command for admins too. Persisting last
-     * session's answer means the tree is built with the right value from the start.
-     *
-     * <p>Never a permission: the relay re-checks every command against the Mojang-verified UUID,
-     * so editing this to true only makes a command visible that the relay will still refuse.
-     */
-    public boolean wasRelayAdmin = false;
 
     public static final String DEFAULT_RELAY_ADDRESS = "relay.spog.dev";
 

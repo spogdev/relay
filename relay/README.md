@@ -44,7 +44,26 @@ Produces `relay/build/libs/teamlocator-relay-all.jar` (self-contained).
 java -jar teamlocator-relay-all.jar --port 8080
 ```
 
-Flags: `--port` (default 8080), `--host` (default 0.0.0.0).
+Flags: `--port` (default 8080), `--host` (default 0.0.0.0), `--data-dir` (default: working
+directory), `--dashboard-url` (default `https://dash.spog.dev/`), `--dashboard-secret`.
+
+## Moderation (SpogStats dashboard)
+
+There are no in-game admin commands. The blacklist / whitelist, the global blacklist and ping-colour
+overrides are all managed on the relay's page of the SpogStats dashboard. The relay reports its
+connected players there once a minute and pulls the rules back, then enforces them itself: a denied
+player is refused at auth and disconnected if they are already connected.
+
+Give the relay the project secret from the dashboard (Relay page → Integration) through the
+environment, so it does not show up in `ps`:
+
+```ini
+# in the [Service] section
+Environment=RELAY_DASHBOARD_SECRET=...
+```
+
+The last rules received are cached in `dashboard-cache.json` in the data dir, so a relay restarted
+while the dashboard is down keeps enforcing them. Without a secret the relay runs open to everyone.
 
 Run it under systemd so it survives logout:
 

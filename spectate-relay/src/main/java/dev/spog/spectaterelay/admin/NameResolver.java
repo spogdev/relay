@@ -1,4 +1,4 @@
-package dev.spog.teamlocator.relay.admin;
+package dev.spog.spectaterelay.admin;
 
 import java.util.UUID;
 

@@ -75,10 +75,21 @@ public final class RelayServer extends WebSocketServer {
         kickDenied();
     }
 
-    /** Every verified player connected right now, as the dashboard wants them reported. */
+    /** Scopes that mean "not on a multiplayer server": the mod stays connected there for pings. */
+    private static final Set<String> OFF_SERVER_SCOPES = Set.of("menu", "singleplayer", "unknown");
+
+    /**
+     * Every verified player on a multiplayer server right now, as the dashboard wants them
+     * reported. The mod stays connected on the title screen and in singleplayer, so counting every
+     * session would turn the dashboard's online and playtime figures into "game open" time; players
+     * in those scopes are left out. Only counting: the access rules still apply to every session.
+     */
     List<Dashboard.Connected> connectedPlayers() {
         List<Dashboard.Connected> out = new ArrayList<>();
         for (Session s : registry.allSessions()) {
+            if (s.scope() == null || OFF_SERVER_SCOPES.contains(s.scope())) {
+                continue;
+            }
             out.add(new Dashboard.Connected(s.uuid(), s.profileName(), s.protocolVersion(), s.scope()));
         }
         return out;

@@ -13,6 +13,7 @@ import dev.spog.teamlocator.client.RelayToasts;
 import dev.spog.teamlocator.client.TrackedPos;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.loader.api.FabricLoader;
 import dev.spog.teamlocator.client.RelayChatMessages;
 import dev.spog.teamlocator.client.RelaySounds;
 import net.minecraft.client.MinecraftClient;
@@ -351,6 +352,9 @@ public final class RelayClient {
         o.addProperty("protocolVersion", PROTOCOL_VERSION);
         o.addProperty("mcServer", mcServerKey);
         o.addProperty("profileName", mc.getSession().getUsername());
+        // Only for the dashboard's version breakdown; relays that predate it ignore the field.
+        FabricLoader.getInstance().getModContainer(TeamLocatorConstants.MOD_ID).ifPresent(c ->
+                o.addProperty("modVersion", c.getMetadata().getVersion().getFriendlyString()));
         return o;
     }
 

@@ -5,6 +5,7 @@ import dev.spog.stats.PlayerRef;
 
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,7 +24,7 @@ interface Dashboard {
     String pingColor(UUID player);
 
     /** A connected player as reported to the dashboard. */
-    record Connected(UUID uuid, String name, int protocol, String server) {
+    record Connected(UUID uuid, String name, String modVersion, int protocol, String server) {
     }
 
     /** No dashboard configured: everyone is allowed and nobody has an override. */
@@ -49,9 +50,7 @@ interface Dashboard {
                 .endpoint(endpoint)
                 .cacheFile(cacheFile)
                 .players(() -> players.get().stream()
-                        .map(c -> new PlayerRef(c.uuid(), c.name(), Map.of(
-                                "protocol", "v" + c.protocol(),
-                                "server", c.server() == null ? "unknown" : c.server())))
+                        .map(c -> new PlayerRef(c.uuid(), c.name(), attrs(c)))
                         .toList())
                 .onPolicy(policy -> onRulesChanged.run())
                 .start();
@@ -66,5 +65,16 @@ interface Dashboard {
                 return link.pingColor(player);
             }
         };
+    }
+
+    /** In the order the dashboard shows them; mods older than the modVersion hello field leave it out. */
+    private static Map<String, String> attrs(Connected c) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (c.modVersion() != null) {
+            out.put("modVersion", c.modVersion());
+        }
+        out.put("protocol", "v" + c.protocol());
+        out.put("server", c.server() == null ? "unknown" : c.server());
+        return out;
     }
 }

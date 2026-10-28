@@ -90,7 +90,11 @@ class DashboardEnforcementTest {
     }
 
     private TestClient connect(String name) throws Exception {
-        TestClient c = new TestClient(name, server.getPort());
+        return connect(name, "play.example.net");
+    }
+
+    private TestClient connect(String name, String mcServer) throws Exception {
+        TestClient c = new TestClient(name, mcServer, server.getPort());
         clients.add(c);
         assertTrue(c.connectBlocking(5, TimeUnit.SECONDS));
         return c;
@@ -128,17 +132,42 @@ class DashboardEnforcementTest {
         assertTrue(c.closed.await(5, TimeUnit.SECONDS), "socket should be closed");
     }
 
+    @Test
+    void onlyPlayersOnAMultiplayerServerAreReported() throws Exception {
+        start();
+        TestClient onServer = connect("on-server");
+        TestClient inMenu = connect("in-menu", "menu");
+        TestClient inSingleplayer = connect("in-singleplayer", "singleplayer");
+        for (TestClient c : List.of(onServer, inMenu, inSingleplayer)) {
+            assertTrue(c.authed.await(5, TimeUnit.SECONDS), c.name + " should still be let in");
+        }
+        // Online and playtime come from this list, so menu and singleplayer time must not count.
+        assertEquals(List.of(uuidOf("on-server")),
+                server.connectedPlayers().stream().map(Dashboard.Connected::uuid).toList());
+    }
+
+    @Test
+    void aDeniedPlayerInTheMenuIsStillRefused() throws Exception {
+        start();
+        dashboard.denied.add(uuidOf("menu-griefer"));
+        TestClient c = connect("menu-griefer", "menu");
+        assertTrue(c.failed.await(5, TimeUnit.SECONDS), "leaving menu players out of the counts must not exempt them");
+        assertEquals(Messages.REASON_BANNED, c.failReason);
+    }
+
     private static final class TestClient extends WebSocketClient {
         final String name;
+        final String mcServer;
         final UUID uuid;
         final CountDownLatch authed = new CountDownLatch(1);
         final CountDownLatch failed = new CountDownLatch(1);
         final CountDownLatch closed = new CountDownLatch(1);
         volatile String failReason;
 
-        TestClient(String name, int port) throws Exception {
+        TestClient(String name, String mcServer, int port) throws Exception {
             super(new URI("ws://127.0.0.1:" + port));
             this.name = name;
+            this.mcServer = mcServer;
             this.uuid = uuidOf(name);
         }
 
@@ -147,7 +176,7 @@ class DashboardEnforcementTest {
             JsonObject hello = new JsonObject();
             hello.addProperty("type", "hello");
             hello.addProperty("protocolVersion", Messages.PROTOCOL_VERSION);
-            hello.addProperty("mcServer", "play.example.net");
+            hello.addProperty("mcServer", mcServer);
             hello.addProperty("profileName", name);
             send(GSON.toJson(hello));
         }

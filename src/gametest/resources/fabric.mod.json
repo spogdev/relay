@@ -9,7 +9,8 @@
   "entrypoints": {
     "fabric-client-gametest": [
       "dev.spog.teamlocator.test.ConfigScreenGameTest",
-      "dev.spog.teamlocator.test.HudGameTest"
+      "dev.spog.teamlocator.test.HudGameTest",
+      "dev.spog.teamlocator.test.TrustListGameTest"
     ]
   },
   "depends": {

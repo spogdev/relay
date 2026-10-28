@@ -99,6 +99,11 @@ fabricApi {
         enableClientGameTests = true
         // A client mod: there is no server behaviour to test.
         enableGameTests = false
+        // Lets a client gametest start a dedicated server, which will not run without it: the
+        // trust list test joins one to check lists survive the address resolving to a new IP.
+        // Writes eula=true into the test run directory only. The Minecraft EULA was read and
+        // accepted by the project owner before this was turned on.
+        eula = true
     }
 }
 

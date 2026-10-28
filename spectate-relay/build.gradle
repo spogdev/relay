@@ -14,6 +14,12 @@ def mainClassName = 'dev.spog.spectaterelay.SpectateRelayMain'
 repositories {
     mavenCentral()
     maven { url = 'https://libraries.minecraft.net/' }
+    // The relay's SpogStats client comes through project(':relay') below, and a project dependency
+    // is resolved with this project's repositories, not the relay's.
+    maven {
+        url = 'https://repo.spog.dev/releases'
+        content { includeGroup 'dev.spog' }
+    }
 }
 
 dependencies {

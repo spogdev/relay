@@ -350,7 +350,9 @@ public class TeamLocatorClient implements ClientModInitializer {
             RELAY.disconnect();
             return;
         }
-        String serverKey = TeamConfig.currentServerKey();
+        // The relay scope, not the storage key: two players on one server must land in one scope
+        // however they typed its address. See TeamConfig#currentRelayScope.
+        String serverKey = TeamConfig.currentRelayScope();
         String scope = serverKey != null ? serverKey : "menu";
         sharePositions = serverKey != null && !"singleplayer".equals(serverKey);
         RELAY.setScope(CONFIG.relayWebSocketUrl(), scope);

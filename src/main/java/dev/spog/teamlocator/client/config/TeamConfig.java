@@ -362,11 +362,31 @@ public class TeamConfig {
     // ---- server-address keying ----
 
     /**
-     * Normalized key for the currently connected server, or {@code null} if not connected.
-     * Singleplayer/LAN maps to {@code "singleplayer"}.
+     * The key this client saves the current server's trust list and active-list choice under, or
+     * {@code null} at the menu. Singleplayer/LAN maps to {@code "singleplayer"}.
      *
-     * <p>Keyed on the live connection's <em>resolved</em> peer — the IP and port the client is
-     * actually talking to — as {@code ip:port}, rather than on the address the user typed. Two
+     * <p>Keyed on the address the player typed, normalized, not on the IP it resolved to. The IP is
+     * right for the relay's routing scope (see {@link #currentRelayScope()}) but wrong for storage:
+     * many networks hand out a different IP from a pool on every connection -- one address showed up
+     * as ninety-odd keys in a single config -- so a list saved under the IP was lost on the next
+     * session. What the player typed is the one thing that stays the same between their sessions.
+     * Falls back to the resolved peer when there is no typed address to use.
+     */
+    public static String currentServerKey() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.isLocalServer()) {
+            return "singleplayer";
+        }
+        String typed = typedServerKey(mc);
+        return typed != null ? typed : resolvedServerKey(mc);
+    }
+
+    /**
+     * The scope the relay files this client under, or {@code null} at the menu. Singleplayer/LAN
+     * maps to {@code "singleplayer"}.
+     *
+     * <p>Keyed on the live connection's <em>resolved</em> peer -- the IP and port the client is
+     * actually talking to -- as {@code ip:port}, rather than on the address the user typed. Two
      * players on one server must produce the same key or the relay files them under different
      * scopes and they never see each other, and the typed address does not guarantee that: one can
      * use the hostname while the other uses the IP, and both are correct. The socket is the same
@@ -375,20 +395,20 @@ public class TeamConfig {
      *
      * <p>The port stays in the key: shared hosts (Folium and friends) put unrelated servers on one
      * box, distinguished only by port, and dropping it would merge strangers into one scope.
-     * {@code :25565} is no longer special-cased — the resolved port is always present and explicit,
-     * so there is no {@code host} vs {@code host:25565} ambiguity left to paper over.
      */
-    public static String currentServerKey() {
+    public static String currentRelayScope() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.isLocalServer()) {
             return "singleplayer";
         }
         String resolved = resolvedServerKey(mc);
-        if (resolved != null) {
-            return resolved;
-        }
         // No live connection yet (called between joining and the channel coming up): fall back to
-        // the typed address so a key exists at all, normalized the old way.
+        // the typed address so a scope exists at all.
+        return resolved != null ? resolved : typedServerKey(mc);
+    }
+
+    /** The typed server address, trimmed and lowercased, with a default {@code :25565} dropped. */
+    private static String typedServerKey(Minecraft mc) {
         ServerData data = mc.getCurrentServer();
         if (data == null || data.ip == null || data.ip.isBlank()) {
             return null;
@@ -431,12 +451,57 @@ public class TeamConfig {
         if (key == null) {
             activeMode = Mode.GLOBAL; // at the menu: no server list exists to be active
         } else {
+            adoptResolvedKey(key);
             activeMode = serverModes.getOrDefault(key, activeMode);
             // Remember the inherited choice so this server is pinned from now on.
             serverModes.put(key, activeMode);
         }
         save();
         return activeMode != previous;
+    }
+
+    /**
+     * Carries a server's list and active-list choice over from the resolved-IP key earlier versions
+     * saved them under to {@code key}, the typed address they are saved under now -- once, the first
+     * time this server is joined, and only while nothing is saved under {@code key} yet.
+     *
+     * <p>Copied, not moved: two typed addresses can share one IP, and each should start from the
+     * same list rather than the first one joined taking it. A network that rotates IPs only has its
+     * list under the IP it happened to resolve to in that session, so this finds the old list when
+     * the IP still matches and starts empty when it does not -- which is no worse than before.
+     */
+    private void adoptResolvedKey(String key) {
+        String legacy = resolvedServerKey(Minecraft.getInstance());
+        if (legacy == null || legacy.equals(key)) {
+            return;
+        }
+        TrustList old = servers.get(legacy);
+        if (old != null && !servers.containsKey(key)) {
+            TrustList copy = new TrustList();
+            for (TrustEntry e : old.trusted) {
+                TrustEntry c = new TrustEntry();
+                c.uuid = e.uuid;
+                c.name = e.name;
+                c.hidden = e.hidden;
+                c.mutePings = e.mutePings;
+                copy.trusted.add(c);
+            }
+            servers.put(key, copy);
+        }
+        Mode oldMode = serverModes.get(legacy);
+        if (oldMode != null && !serverModes.containsKey(key)) {
+            serverModes.put(key, oldMode);
+        }
+    }
+
+    /**
+     * The player picked an active list: use it, remember it for this server so the next join
+     * restores it, and save. The caller pushes the new sharing set to the relay.
+     */
+    public void chooseActiveMode(Mode mode) {
+        activeMode = mode;
+        rememberActiveMode();
+        save();
     }
 
     /** Record the user's active-list choice for the current server, if we are on one. */

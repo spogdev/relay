@@ -132,9 +132,12 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
             config.alertSound = value;
             config.save();
         });
+        // Remembered for this server, so the next join restores it, and pushed to the relay now:
+        // switching lists changes who we share with, and without the push the relay kept the old
+        // list's sharing set until something else -- a Sharing switch -- happened to sync.
         activeMode = new SporeDropdown<>(value -> {
-            config.activeMode = value;
-            config.save();
+            config.chooseActiveMode(value);
+            TeamLocatorClient.syncToServer();
         });
         pingColor = new SporeDropdown<>(value -> {
             config.pingColorIndex = value;

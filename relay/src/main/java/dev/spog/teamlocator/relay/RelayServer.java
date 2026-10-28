@@ -90,7 +90,7 @@ public final class RelayServer extends WebSocketServer {
             if (s.scope() == null || OFF_SERVER_SCOPES.contains(s.scope())) {
                 continue;
             }
-            out.add(new Dashboard.Connected(s.uuid(), s.profileName(), s.protocolVersion(), s.scope()));
+            out.add(new Dashboard.Connected(s.uuid(), s.profileName(), s.modVersion, s.protocolVersion(), s.scope()));
         }
         return out;
     }
@@ -193,6 +193,10 @@ public final class RelayServer extends WebSocketServer {
         String profileName = obj.get("profileName").getAsString();
         String scope = normalizeScope(obj.get("mcServer").getAsString());
         session.beginChallenge(verifier.newChallenge(), profileName, negotiated);
+        if (obj.has("modVersion") && obj.get("modVersion").isJsonPrimitive()) {
+            String v = obj.get("modVersion").getAsString();
+            session.modVersion = v.length() > 32 ? v.substring(0, 32) : v;
+        }
         pendingScopes.put(session, scope);
 
         registry.send(session, new Messages.AuthChallenge(session.pendingServerId()));

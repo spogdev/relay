@@ -45,6 +45,8 @@ public final class Session {
      * their pings.
      */
     public volatile String pingColor;
+    /** The mod version the client reported in its hello, or null for mods too old to send one. */
+    public volatile String modVersion;
     public volatile String dimension = "minecraft:overworld";
     public volatile boolean hasPosition;
 

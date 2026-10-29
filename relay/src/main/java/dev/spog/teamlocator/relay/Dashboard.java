@@ -67,14 +67,23 @@ interface Dashboard {
         };
     }
 
-    /** In the order the dashboard shows them; mods older than the modVersion hello field leave it out. */
-    private static Map<String, String> attrs(Connected c) {
+    /**
+     * In the order the dashboard shows them; mods older than the modVersion hello field leave it out.
+     * scope is where the game is, the same names SpogTiers sends ("server", "singleplayer", "menu"),
+     * and only a player on a server has a server address to report.
+     */
+    static Map<String, String> attrs(Connected c) {
+        String scope = c.server() == null || c.server().equals("menu") || c.server().equals("unknown") ? "menu"
+                : c.server().equals("singleplayer") ? "singleplayer" : "server";
         Map<String, String> out = new LinkedHashMap<>();
+        out.put("scope", scope);
         if (c.modVersion() != null) {
             out.put("modVersion", c.modVersion());
         }
         out.put("protocol", "v" + c.protocol());
-        out.put("server", c.server() == null ? "unknown" : c.server());
+        if (scope.equals("server")) {
+            out.put("server", c.server());
+        }
         return out;
     }
 }

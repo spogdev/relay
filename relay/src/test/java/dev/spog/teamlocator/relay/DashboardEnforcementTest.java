@@ -133,7 +133,7 @@ class DashboardEnforcementTest {
     }
 
     @Test
-    void onlyPlayersOnAMultiplayerServerAreReported() throws Exception {
+    void everyPlayerWithTheGameOpenIsReportedWithTheirScope() throws Exception {
         start();
         TestClient onServer = connect("on-server");
         TestClient inMenu = connect("in-menu", "menu");
@@ -141,9 +141,13 @@ class DashboardEnforcementTest {
         for (TestClient c : List.of(onServer, inMenu, inSingleplayer)) {
             assertTrue(c.authed.await(5, TimeUnit.SECONDS), c.name + " should still be let in");
         }
-        // Online and playtime come from this list, so menu and singleplayer time must not count.
-        assertEquals(List.of(uuidOf("on-server")),
-                server.connectedPlayers().stream().map(Dashboard.Connected::uuid).toList());
+        // Online means the game is open; the dashboard counts playtime only from the scope.
+        java.util.Map<UUID, String> scopes = new java.util.HashMap<>();
+        for (Dashboard.Connected c : server.connectedPlayers()) {
+            scopes.put(c.uuid(), Dashboard.attrs(c).get("scope"));
+        }
+        assertEquals(java.util.Map.of(uuidOf("on-server"), "server", uuidOf("in-menu"), "menu",
+                uuidOf("in-singleplayer"), "singleplayer"), scopes);
     }
 
     @Test

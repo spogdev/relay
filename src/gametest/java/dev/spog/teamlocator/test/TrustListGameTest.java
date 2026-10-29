@@ -81,8 +81,11 @@ public class TrustListGameTest implements FabricClientGameTest {
 
             // Let the client finish leaving first: the mod resets the menu to Global and saves on
             // disconnect, queued on the client thread, and reading the file before that runs would
-            // see the session's choice rather than what a later launch starts from.
-            context.waitTicks(5);
+            // see the session's choice rather than what a later launch starts from. Waited for
+            // rather than given a few ticks: how long the connection takes to close varies, and a
+            // fixed wait sometimes read the file before the reset.
+            context.waitFor(client -> client.getConnection() == null
+                    && TeamLocatorClient.CONFIG.activeMode == TeamConfig.Mode.GLOBAL, 200);
 
             // A restart, as far as the config is concerned: a fresh copy read back from disk.
             context.runOnClient(client -> {

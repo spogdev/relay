@@ -10,7 +10,8 @@
     "fabric-client-gametest": [
       "dev.spog.teamlocator.test.ConfigScreenGameTest",
       "dev.spog.teamlocator.test.HudGameTest",
-      "dev.spog.teamlocator.test.TrustListGameTest"
+      "dev.spog.teamlocator.test.TrustListGameTest",
+      "dev.spog.teamlocator.test.PathFindingGameTest"
     ]
   },
   "depends": {

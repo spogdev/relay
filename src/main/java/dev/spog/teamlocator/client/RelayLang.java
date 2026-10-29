@@ -123,7 +123,8 @@ public final class RelayLang {
             "key.relay.open_config", "Open Relay Menu",
             "key.relay.toggle_hud", "Toggle HUD",
             "key.relay.toggle_in_world_icons", "Toggle Player Markers",
-            "key.relay.map_ping", "Place Ping");
+            "key.relay.map_ping", "Place Ping",
+            "key.relay.show_paths", "Show Paths (Hold)");
 
     /**
      * Set while a screen that legitimately shows keybind names is on screen.

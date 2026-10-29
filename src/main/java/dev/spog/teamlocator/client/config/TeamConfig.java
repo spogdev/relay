@@ -53,6 +53,13 @@ public class TeamConfig {
      */
     public enum DurabilityDisplay { BAR, NUMBER_ONLY, BOTH }
 
+    /**
+     * When routes to teammates are drawn without holding the Show Paths key, which always shows them.
+     * {@link #UNDERGROUND} is while you or the teammate are under a roof: the tunnels the routes are
+     * for, and not open ground where the marker is enough.
+     */
+    public enum PathFindingMode { UNDERGROUND, ALWAYS }
+
     /** A named trust list (a set of entries). */
     public static class TrustList {
         public List<TrustEntry> trusted = new ArrayList<>();
@@ -255,6 +262,9 @@ public class TeamConfig {
      * a decision about whether to go to them.
      */
     public boolean playerMarkerShowDistance = true;
+
+    /** When routes to teammates in render distance are drawn; see {@link PathFindingMode}. */
+    public PathFindingMode pathFindingMode = PathFindingMode.UNDERGROUND;
     /** Show relay teammates on Xaero's Minimap / World Map (when those mods are installed). */
     public boolean xaeroMapIcons = true;
     /**
@@ -308,6 +318,7 @@ public class TeamConfig {
         if (serverModes == null) serverModes = new java.util.HashMap<>();
         serverModes.values().removeIf(java.util.Objects::isNull);
         if (alertSound == null) alertSound = AlertSound.ALARM;
+        if (pathFindingMode == null) pathFindingMode = PathFindingMode.UNDERGROUND;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
         if (hudAlign == null) hudAlign = HudAlign.LEFT;
         // Carry the pre-enum boolean over once, then drop it so it never overrides the enum again.

@@ -58,6 +58,7 @@ public class TeamLocatorClient implements ClientModInitializer {
     private static KeyBinding configKey;
     private static KeyBinding hudToggleKey;
     private static KeyBinding inWorldIconsToggleKey;
+    private static KeyBinding showPathsKey;
     private int positionTickCounter;
 
     /**
@@ -87,6 +88,8 @@ public class TeamLocatorClient implements ClientModInitializer {
                 "key.relay.toggle_in_world_icons", InputUtil.Type.KEYSYM, unbound, category));
         mapPingKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.relay.map_ping", InputUtil.Type.KEYSYM, unbound, category));
+        showPathsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.relay.show_paths", InputUtil.Type.KEYSYM, unbound, category));
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
@@ -97,6 +100,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         AvailableCommand.register();
         RelayWaypointCommand.register();
         PingRenderer.register();
+        dev.spog.teamlocator.client.render.PathRenderer.register();
         // The mod's own in-world teammate icons; the default, so they work with no other mod. Steps
         // aside per-frame when the player prefers Xaero's and Xaero is installed.
         // Registered as a HUD element, not a world-render hook: the icons are drawn in screen space
@@ -169,7 +173,15 @@ public class TeamLocatorClient implements ClientModInitializer {
                 toggleInWorldIcons();
             }
             broadcastOwnPosition(client);
+            // Worked out every tick, whether or not they are shown, so holding the key draws them
+            // straight away.
+            dev.spog.teamlocator.client.path.PathTracker.tick(client);
         });
+    }
+
+    /** Whether the Show Paths key is being held, which draws every route regardless of setting. */
+    public static boolean showPathsHeld() {
+        return showPathsKey != null && showPathsKey.isPressed();
     }
 
     /**

@@ -143,7 +143,10 @@ public class TeamLocatorClient implements ClientModInitializer {
             // populated at this point, which would re-pin the departed server's mode.
             CONFIG.activeMode = TeamConfig.Mode.GLOBAL;
             CONFIG.save();
-            connectRelay(); // back to the "menu" scope, not a full disconnect
+            // Back to the "menu" scope, not a full disconnect. Named outright: the departed server's
+            // connection can still be readable here, and currentRelayScope() would then file us
+            // under that server again, keeping us "on" it for as long as we sit in the menu.
+            connectRelay(null);
         }));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -337,14 +340,18 @@ public class TeamLocatorClient implements ClientModInitializer {
      * the mod off authlib's shared rate limiter on every server join.
      */
     public static void connectRelay() {
+        // The relay scope, not the storage key: two players on one server must land in one scope
+        // however they typed its address. See TeamConfig#currentRelayScope.
+        connectRelay(TeamConfig.currentRelayScope());
+    }
+
+    /** As {@link #connectRelay()}, for a scope already known; {@code null} is the menu. */
+    private static void connectRelay(String serverKey) {
         if (CONFIG.relayUrl.isBlank()) {
             sharePositions = false;
             RELAY.disconnect();
             return;
         }
-        // The relay scope, not the storage key: two players on one server must land in one scope
-        // however they typed its address. See TeamConfig#currentRelayScope.
-        String serverKey = TeamConfig.currentRelayScope();
         String scope = serverKey != null ? serverKey : "menu";
         sharePositions = serverKey != null && !"singleplayer".equals(serverKey);
         RELAY.setScope(CONFIG.relayWebSocketUrl(), scope);

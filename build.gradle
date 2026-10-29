@@ -143,3 +143,15 @@ dependencies {
     // so this is the plain configuration.
     gametestImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
+
+// Plain unit tests, for logic with no Minecraft in it -- the pathfinder, run on made-up worlds.
+// Far quicker than a gametest, and they never crash on the graphics driver.
+dependencies {
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+test {
+    useJUnitPlatform()
+}

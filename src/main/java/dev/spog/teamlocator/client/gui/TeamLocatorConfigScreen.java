@@ -96,6 +96,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
     private final SporeDropdown<TeamConfig.AlertSound> alertSound;
     private final SporeDropdown<TeamConfig.Mode> activeMode;
     private final SporeDropdown<Integer> pingColor;
+    private final SporeDropdown<TeamConfig.PathFindingMode> pathFinding;
 
     private final SporeTextBox nameInput;
     private final SporeTextBox relayUrlInput;
@@ -141,6 +142,10 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         });
         pingColor = new SporeDropdown<>(value -> {
             config.pingColorIndex = value;
+            config.save();
+        });
+        pathFinding = new SporeDropdown<>(value -> {
+            config.pathFindingMode = value;
             config.save();
         });
 
@@ -333,6 +338,14 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                 RelayLang.text("relay.config.chat_prefix.desc"));
 
         drawMarkerSection(body);
+
+        body.section(RelayLang.text("relay.config.section.path_finding"));
+        pathFinding.setEnumEntries(TeamConfig.PathFindingMode.values(),
+                value -> RelayLang.text(value == TeamConfig.PathFindingMode.ALWAYS
+                        ? "relay.config.path_finding.always"
+                        : "relay.config.path_finding.underground").getString());
+        body.dropdown(RelayLang.text("relay.config.path_finding"), pathFinding,
+                config.pathFindingMode, RelayLang.text("relay.config.path_finding.desc"));
 
         body.section(RelayLang.text("relay.config.section.advanced"));
         drawRelayAddress(body);

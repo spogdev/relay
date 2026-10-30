@@ -25,12 +25,13 @@ import java.util.List;
 /**
  * Draws the route to each teammate as a line along the ground, see-through so it can be followed
  * round corners and through the floor. Stretches that need an ender pearl are a dashed purple arc
- * from where to throw it to where it lands.
+ * from the floor where to throw it, through the gap, to the floor where it lands, with a ring on the
+ * floor at each end.
  *
  * <p>The routes come from {@link PathTracker}, which keeps them ready; this only decides when to
  * show them. Holding the Show Paths key always does. Otherwise the Path Finding setting does: always,
- * or only while you or the teammate are underground -- in the tunnels the feature is for, and not
- * over open ground where you can see them anyway.
+ * only while you or the teammate are underground -- in the tunnels the feature is for, and not over
+ * open ground where you can see them anyway -- or never, leaving it to the key.
  */
 @Environment(EnvType.CLIENT)
 public final class PathRenderer {
@@ -44,11 +45,11 @@ public final class PathRenderer {
     private static final int ALPHA = 190;
     /** Ender pearl purple, for stretches that need one. */
     private static final int PEARL_RGB = 0xB04BFF;
-    /** How high a pearl's arc rises above the straight line between its ends. */
-    private static final double ARC_HEIGHT = 0.6;
-    private static final int ARC_SEGMENTS = 12;
-    /** Where on a pearl's arc it is thrown from: about eye height. */
-    private static final double THROW_HEIGHT = 1.5;
+    private static final int ARC_SEGMENTS = 20;
+    /** Radius of the ring marking where to throw a pearl from, and of the smaller one where it lands. */
+    private static final double THROW_RING = 0.4;
+    private static final double LAND_RING = 0.25;
+    private static final int RING_SEGMENTS = 20;
 
     private PathRenderer() {
     }
@@ -82,7 +83,7 @@ public final class PathRenderer {
                 continue;
             }
             boolean show = held || config.pathFindingMode == TeamConfig.PathFindingMode.ALWAYS;
-            if (!show) {
+            if (!show && config.pathFindingMode == TeamConfig.PathFindingMode.UNDERGROUND) {
                 double[] at = PathTracker.position(mc.world, teammate);
                 show = selfUnder || PathTracker.underground(mc.world, at[0], at[1], at[2]);
             }
@@ -107,18 +108,51 @@ public final class PathRenderer {
                 ribbon(buffer, pose, from, to, rgb);
                 continue;
             }
-            // Thrown from about eye height, falling to where the player will stand. Every other
+            // From the route on this side, through the middle of the gap, down to the route on the
+            // other: a curve through three points, with the gap at its halfway mark. Every other
             // piece is left out, which is what makes it read as dashed.
-            Vec3d start = from.add(0, THROW_HEIGHT - LIFT, 0);
-            Vec3d prev = start;
+            Vec3d gap = new Vec3d(b.gapX(), b.gapY(), b.gapZ()).subtract(cam);
+            Vec3d control = gap.multiply(2).subtract(from.add(to).multiply(0.5));
+            Vec3d prev = from;
             for (int s = 1; s <= ARC_SEGMENTS; s++) {
                 double t = s / (double) ARC_SEGMENTS;
-                Vec3d p = start.lerp(to, t).add(0, ARC_HEIGHT * 4 * t * (1 - t), 0);
+                double u = 1 - t;
+                Vec3d p = from.multiply(u * u).add(control.multiply(2 * u * t)).add(to.multiply(t * t));
                 if (s % 2 == 1) {
                     ribbon(buffer, pose, prev, p, PEARL_RGB);
                 }
                 prev = p;
             }
+            // Where to stand and throw, and where you land.
+            ring(buffer, pose, from, THROW_RING, PEARL_RGB);
+            ring(buffer, pose, to, LAND_RING, PEARL_RGB);
+        }
+    }
+
+    /** A flat ring lying on the floor, centred on a point of the route. */
+    private static void ring(VertexConsumer buffer, MatrixStack.Entry pose, Vec3d centre, double radius,
+                             int rgb) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int bl = rgb & 0xFF;
+        double inner = radius - 2 * HALF_WIDTH;
+        for (int i = 0; i < RING_SEGMENTS; i++) {
+            double a0 = i * Math.PI * 2 / RING_SEGMENTS;
+            double a1 = (i + 1) * Math.PI * 2 / RING_SEGMENTS;
+            Vec3d in0 = centre.add(Math.cos(a0) * inner, 0, Math.sin(a0) * inner);
+            Vec3d out0 = centre.add(Math.cos(a0) * radius, 0, Math.sin(a0) * radius);
+            Vec3d out1 = centre.add(Math.cos(a1) * radius, 0, Math.sin(a1) * radius);
+            Vec3d in1 = centre.add(Math.cos(a1) * inner, 0, Math.sin(a1) * inner);
+            // Wound both ways: the layer drops faces turned away, and the ring is seen from above
+            // and, through the floor, from below.
+            vertex(buffer, pose, in0, 0, 0, r, g, bl);
+            vertex(buffer, pose, out0, 1, 0, r, g, bl);
+            vertex(buffer, pose, out1, 1, 1, r, g, bl);
+            vertex(buffer, pose, in1, 0, 1, r, g, bl);
+            vertex(buffer, pose, in1, 0, 1, r, g, bl);
+            vertex(buffer, pose, out1, 1, 1, r, g, bl);
+            vertex(buffer, pose, out0, 1, 0, r, g, bl);
+            vertex(buffer, pose, in0, 0, 0, r, g, bl);
         }
     }
 

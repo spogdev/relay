@@ -58,7 +58,7 @@ class PathFinderTest {
     }
 
     private static PathFinder run(Grid grid, int sx, int sz, int gx, int gz) {
-        PathFinder search = new PathFinder(grid, sx, 1, sz, gx, 1, gz, 50_000);
+        PathFinder search = new PathFinder(grid, sx, 1, sz, gx, 1, gz, 50_000, 1.0);
         while (search.step(1000) == PathFinder.State.RUNNING) {
             // keep going
         }
@@ -88,6 +88,10 @@ class PathFinderTest {
         assertEquals(1, pearls(search.path()));
         PathFinder.Point landed = search.path().stream().filter(PathFinder.Point::pearl).findFirst().orElseThrow();
         assertEquals(6.5, landed.x(), 1e-9, "lands just past the wall, not further on");
+        // The arc is drawn through the gap: the middle of the hole, which is at the player's feet.
+        assertEquals(5.5, landed.gapX(), 1e-9, "the gap is in the wall");
+        assertEquals(0.5, landed.gapZ(), 1e-9);
+        assertEquals(1.5, landed.gapY(), 1e-9, "half way up the hole");
     }
 
     @Test
@@ -146,7 +150,7 @@ class PathFinderTest {
                     }
                 }
             }
-            PathFinder search = new PathFinder(grid, 0, 1, 0, 6, 1 - depth, 0, 50_000);
+            PathFinder search = new PathFinder(grid, 0, 1, 0, 6, 1 - depth, 0, 50_000, 1.0);
             while (search.step(1000) == PathFinder.State.RUNNING) {
                 // keep going
             }
@@ -172,7 +176,7 @@ class PathFinderTest {
         for (int y = 1; y <= 4; y++) {
             grid.set(4, y, 0, LADDER);
         }
-        PathFinder search = new PathFinder(grid, 0, 1, 0, 8, 5, 0, 50_000);
+        PathFinder search = new PathFinder(grid, 0, 1, 0, 8, 5, 0, 50_000, 1.0);
         while (search.step(1000) == PathFinder.State.RUNNING) {
             // keep going
         }

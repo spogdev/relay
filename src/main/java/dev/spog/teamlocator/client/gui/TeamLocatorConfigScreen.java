@@ -341,9 +341,11 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
 
         body.section(RelayLang.text("relay.config.section.path_finding"));
         pathFinding.setEnumEntries(TeamConfig.PathFindingMode.values(),
-                value -> RelayLang.text(value == TeamConfig.PathFindingMode.ALWAYS
-                        ? "relay.config.path_finding.always"
-                        : "relay.config.path_finding.underground").getString());
+                value -> RelayLang.text(switch (value) {
+                    case ALWAYS -> "relay.config.path_finding.always";
+                    case KEYBIND -> "relay.config.path_finding.keybind";
+                    default -> "relay.config.path_finding.underground";
+                }).getString());
         body.dropdown(RelayLang.text("relay.config.path_finding"), pathFinding,
                 config.pathFindingMode, RelayLang.text("relay.config.path_finding.desc"));
 

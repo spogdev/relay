@@ -2,9 +2,7 @@ package dev.spog.teamlocator.client.path;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
@@ -21,20 +19,31 @@ import java.util.PriorityQueue;
  * standing on a fence lifts it half a block into the one above.
  *
  * <p><b>Pearl gaps.</b> A pearl is 0.25 blocks across, so it fits through a gap a player cannot: a
- * one-block hole in a wall, the space between a slab and the block above it, and so on. From each
- * position the search looks straight ahead at feet, head and above-head height for a run of up to
- * {@value #PEARL_REACH} blocks that a pearl can pass through and the player cannot, and links the
+ * one-block hole in a wall, the space between a slab and the block above it, and so on. From a
+ * position up against a wall the search looks straight into it at feet, head and above-head height
+ * for a gap up to {@value #PEARL_REACH} blocks deep that a pearl can pass through, and links the
  * position to where the player would stand just past it. Pearling costs more than walking the same
  * distance, so a route only uses one when walking round is longer.
+ *
+ * <p><b>Speed.</b> The search can be weighted: a weight above 1 trusts the straight-line distance to
+ * the goal more than the cost so far, which finds a route after looking at a small fraction of the
+ * positions, at the price of one that may be a little longer than the best. The tracker runs a
+ * weighted search to show a route quickly, then an unweighted one to replace it with the best.
  */
 public final class PathFinder {
     public enum State { RUNNING, FOUND, FAILED }
 
     /**
      * A point on the route: the middle of a block, at the height the player stands. {@code pearl}
-     * marks a point reached by pearling from the one before it rather than by walking.
+     * marks a point reached by pearling from the one before it rather than by walking, and the gap
+     * is then the middle of the hole the pearl goes through.
      */
-    public record Point(double x, double y, double z, boolean pearl) {
+    public record Point(double x, double y, double z, boolean pearl,
+                        double gapX, double gapY, double gapZ) {
+        /** A point reached on foot, with no gap to go through. */
+        public Point(double x, double y, double z) {
+            this(x, y, z, false, Double.NaN, Double.NaN, Double.NaN);
+        }
     }
 
     static final double PLAYER_HEIGHT = 1.8;
@@ -73,8 +82,9 @@ public final class PathFinder {
 
     private final Terrain terrain;
     private final int maxNodes;
-    private final Map<Long, Double> floors = new HashMap<>();
-    private final Map<Long, Node> nodes = new HashMap<>();
+    private final double weight;
+    private final LongTable<Void> floors = new LongTable<>(4096);
+    private final LongTable<Node> nodes = new LongTable<>(4096);
     private final PriorityQueue<Node> open = new PriorityQueue<>();
 
     private final int gx;
@@ -83,6 +93,7 @@ public final class PathFinder {
 
     private State state = State.RUNNING;
     private List<Point> path = List.of();
+    private double pathCost = Double.POSITIVE_INFINITY;
 
     private static final class Node implements Comparable<Node> {
         final int x;
@@ -93,6 +104,10 @@ public final class PathFinder {
         double estimate;
         Node parent;
         boolean pearl;
+        /** For a node reached by pearl, the middle of the gap the pearl goes through. */
+        double gapX;
+        double gapY;
+        double gapZ;
         boolean closed;
 
         Node(int x, int y, int z, double floor) {
@@ -114,10 +129,14 @@ public final class PathFinder {
      * the nearest one in a small area, and the search fails at once if there is none.
      *
      * @param maxNodes the most positions to visit before giving up on a route
+     * @param weight   how far to trust the distance to the goal: 1 finds the best route, more
+     *                 finds a near-best one much sooner
      */
-    public PathFinder(Terrain terrain, int sx, int sy, int sz, int gx, int gy, int gz, int maxNodes) {
+    public PathFinder(Terrain terrain, int sx, int sy, int sz, int gx, int gy, int gz, int maxNodes,
+                      double weight) {
         this.terrain = terrain;
         this.maxNodes = maxNodes;
+        this.weight = weight;
         int[] start = nearestNode(sx, sy, sz);
         int[] goal = nearestNode(gx, gy, gz);
         if (start == null || goal == null) {
@@ -132,7 +151,7 @@ public final class PathFinder {
         this.gz = goal[2];
         Node first = node(start[0], start[1], start[2], floor(start[0], start[1], start[2]));
         first.cost = 0;
-        first.estimate = heuristic(first);
+        first.estimate = weight * heuristic(first);
         open.add(first);
     }
 
@@ -143,6 +162,11 @@ public final class PathFinder {
     /** The route, start first, once {@link #state} is {@link State#FOUND}; empty otherwise. */
     public List<Point> path() {
         return path;
+    }
+
+    /** What the route costs to follow, in about the time it takes to walk a block; infinite if none. */
+    public double pathCost() {
+        return pathCost;
     }
 
     /** How many positions the search has looked at so far. */
@@ -168,6 +192,7 @@ public final class PathFinder {
             n.closed = true;
             if (Math.abs(n.x - gx) <= 1 && Math.abs(n.y - gy) <= 1 && Math.abs(n.z - gz) <= 1) {
                 path = trace(n);
+                pathCost = n.cost;
                 state = State.FOUND;
                 break;
             }
@@ -226,7 +251,7 @@ public final class PathFinder {
                 if (swimming || terrain.cell(nx, ty, nz).water()) {
                     cost *= SWIM;
                 }
-                relax(n, nx, ty, nz, tf, cost, false);
+                relax(n, nx, ty, nz, tf, cost);
                 break;
             }
         }
@@ -241,7 +266,7 @@ public final class PathFinder {
             if (moves) {
                 double tf = floor(n.x, ty, n.z);
                 if (!Double.isNaN(tf)) {
-                    relax(n, n.x, ty, n.z, tf, here.water() ? SWIM : CLIMB, false);
+                    relax(n, n.x, ty, n.z, tf, here.water() ? SWIM : CLIMB);
                 }
             }
         }
@@ -257,45 +282,65 @@ public final class PathFinder {
         for (int d = 0; d < 4; d++) {
             int dx = HORIZONTAL[d][0];
             int dz = HORIZONTAL[d][1];
+            // Only up against a wall: a pearl is charged its distance, so throwing from further back
+            // never beats walking up to it first, and most positions are ruled out here, cheaply.
+            if (clear(n.x + dx, n.z + dz, f, f + PLAYER_HEIGHT)) {
+                continue;
+            }
             for (int row = n.y; row <= n.y + 2; row++) {
                 int heights = (1 << PEARL_HEIGHTS.length) - 1;
-                boolean walled = false;
                 for (int k = 1; k <= PEARL_REACH; k++) {
                     int cx = n.x + dx * k;
                     int cz = n.z + dz * k;
-                    if (!terrain.loaded(cx, cz)) {
-                        break;
-                    }
                     // The pearl keeps one height all the way through the gap.
                     heights &= pearlHeights(terrain.cell(cx, row, cz), dx != 0);
                     if (heights == 0) {
                         break;
                     }
-                    // A hole, not open air: the player cannot walk on here, and the pearl's way
-                    // is roofed over or squeezed -- a gap in a wall rather than a throw over a
+                    // Still a hole, not open air: the player cannot walk on here, and the pearl's
+                    // way is roofed over or squeezed -- a gap in a wall rather than a throw over a
                     // ledge, which the routes are not meant to suggest.
                     boolean hole = !clear(cx, cz, f, f + PLAYER_HEIGHT)
                             && (top(terrain.cell(cx, row, cz)) >= 0
                             || top(terrain.cell(cx, row + 1, cz)) >= 0);
                     if (!hole) {
-                        if (walled) {
-                            break; // through the wall: the landing was the block before this one
-                        }
-                        continue; // not at the wall yet
+                        break; // through the wall: the landing was the block before this one
                     }
-                    walled = true;
                     int lx = n.x + dx * (k + 1);
                     int lz = n.z + dz * (k + 1);
                     for (int ty = row; ty >= row - MAX_DROP - 1; ty--) {
                         double tf = floor(lx, ty, lz);
                         if (!Double.isNaN(tf)) {
-                            relax(n, lx, ty, lz, tf, PEARL + (k + 1) * WALK, true);
+                            Node to = relax(n, lx, ty, lz, tf, PEARL + (k + 1) * WALK);
+                            if (to != null) {
+                                // The middle of the gap, at the height nearest its centre that the
+                                // pearl fits through.
+                                double mid = (1 + k) / 2.0;
+                                to.pearl = true;
+                                to.gapX = n.x + 0.5 + dx * mid;
+                                to.gapY = row + PEARL_HEIGHTS[centralHeight(heights)];
+                                to.gapZ = n.z + 0.5 + dz * mid;
+                            }
                             break;
                         }
                     }
                 }
             }
         }
+    }
+
+    /** Of the heights set in a mask, the one nearest the middle of the block. */
+    private static int centralHeight(int heights) {
+        int middle = PEARL_HEIGHTS.length / 2;
+        for (int off = 0; off <= middle; off++) {
+            if ((heights & (1 << (middle - off))) != 0) {
+                return middle - off;
+            }
+            if (middle + off < PEARL_HEIGHTS.length && (heights & (1 << (middle + off))) != 0) {
+                return middle + off;
+            }
+        }
+        return middle;
     }
 
     /**
@@ -325,21 +370,29 @@ public final class PathFinder {
         return mask;
     }
 
-    private void relax(Node from, int x, int y, int z, double floor, double step, boolean pearl) {
+    /**
+     * Records a cheaper way to a position, if this is one.
+     *
+     * @return the position's node when its way there changed, so a pearl can be noted on it, or
+     *         {@code null} when the way it already had was as cheap
+     */
+    private Node relax(Node from, int x, int y, int z, double floor, double step) {
         Node to = node(x, y, z, floor);
         if (to.closed) {
-            return;
+            return null;
         }
         double cost = from.cost + step;
-        if (cost < to.cost - EPS) {
-            to.cost = cost;
-            to.parent = from;
-            to.pearl = pearl;
-            to.estimate = cost + heuristic(to);
-            // A cheaper way to an open node is queued again rather than re-sorted in place; the
-            // stale entry is skipped when it comes up, being already closed by then.
-            open.add(to);
+        if (cost >= to.cost - EPS) {
+            return null;
         }
+        to.cost = cost;
+        to.parent = from;
+        to.pearl = false;
+        to.estimate = cost + weight * heuristic(to);
+        // A cheaper way to an open node is queued again rather than re-sorted in place; the stale
+        // entry is skipped when it comes up, being already closed by then.
+        open.add(to);
+        return to;
     }
 
     private double heuristic(Node n) {
@@ -350,13 +403,22 @@ public final class PathFinder {
     }
 
     private Node node(int x, int y, int z, double floor) {
-        return nodes.computeIfAbsent(key(x, y, z), k -> new Node(x, y, z, floor));
+        long k = key(x, y, z);
+        int slot = nodes.find(k);
+        if (slot >= 0) {
+            return nodes.object(slot);
+        }
+        Node n = new Node(x, y, z, floor);
+        nodes.putObject(k, n);
+        return n;
     }
 
     private static List<Point> trace(Node end) {
         List<Point> out = new ArrayList<>();
         for (Node n = end; n != null; n = n.parent) {
-            out.add(new Point(n.x + 0.5, n.floor, n.z + 0.5, n.pearl));
+            out.add(n.pearl
+                    ? new Point(n.x + 0.5, n.floor, n.z + 0.5, true, n.gapX, n.gapY, n.gapZ)
+                    : new Point(n.x + 0.5, n.floor, n.z + 0.5));
         }
         Collections.reverse(out);
         return List.copyOf(out);
@@ -387,12 +449,12 @@ public final class PathFinder {
      */
     double floor(int x, int y, int z) {
         long k = key(x, y, z);
-        Double cached = floors.get(k);
-        if (cached != null) {
-            return cached;
+        int slot = floors.find(k);
+        if (slot >= 0) {
+            return floors.number(slot);
         }
         double f = computeFloor(x, y, z);
-        floors.put(k, f);
+        floors.putNumber(k, f);
         return f;
     }
 

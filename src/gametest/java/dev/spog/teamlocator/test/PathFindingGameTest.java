@@ -55,6 +55,12 @@ public class PathFindingGameTest implements FabricClientGameTest {
             check(pearled.stream().anyMatch(PathFinder.Point::pearl),
                     "the route pearls through the hole, got " + pearled);
             context.takeScreenshot("path-pearl-hole");
+            // From the side and above, where the arc's shape and the rings at its ends show.
+            world.getServer().runCommand("tp @a " + (x + 2) + " " + y + " " + (z - 3)
+                    + " -55 30");
+            report(context, x + 10, y, z);
+            context.takeScreenshot("path-pearl-side");
+            world.getServer().runCommand("tp @a " + x + " " + y + " " + z + " -90 25");
 
             // A doorway beside the hole: walking through it is quicker than throwing a pearl.
             world.getServer().runCommand("fill " + (x + 5) + " " + y + " " + (z + 1) + " "
@@ -69,6 +75,14 @@ public class PathFindingGameTest implements FabricClientGameTest {
             check(walked.stream().noneMatch(PathFinder.Point::pearl),
                     "the route walks through the doorway, got " + walked);
             context.takeScreenshot("path-doorway");
+
+            // Keybind Only: the route is still kept ready, but nothing is drawn without the key.
+            context.runOnClient(client ->
+                    TeamLocatorClient.CONFIG.pathFindingMode = TeamConfig.PathFindingMode.KEYBIND);
+            report(context, x + 10, y, z);
+            check(context.computeOnClient(client -> PathTracker.route(NOTCH)) != null,
+                    "a route is kept ready in Keybind Only");
+            context.takeScreenshot("path-keybind-only");
 
             context.runOnClient(client -> {
                 TeamLocatorClient.CONFIG.pathFindingMode = TeamConfig.PathFindingMode.UNDERGROUND;

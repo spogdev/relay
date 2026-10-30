@@ -9,6 +9,7 @@ import dev.spog.spore.ui.widget.SporeSlider;
 import dev.spog.spore.ui.widget.SporeTextBox;
 import dev.spog.teamlocator.client.PingPalette;
 import dev.spog.teamlocator.client.RelayLang;
+import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import dev.spog.teamlocator.client.config.TeamConfig;
@@ -685,6 +686,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
             body.columnSwitch(0, 2, entry.mutePings, true, on -> {
                 entry.mutePings = on;
                 config.save();
+                TeamLocatorClient.syncToServer();
             });
             // "Sharing" on means this player gets our coordinates. That is the default, which is
             // why the stored field is the negative one: hidden drops them from the sharing set.
@@ -791,7 +793,7 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         if (id != null && Minecraft.getInstance().getConnection() != null) {
             PlayerInfo info =
                     Minecraft.getInstance().getConnection().getPlayerInfo(id);
-            skin = info != null ? info.getSkin() : DefaultPlayerSkin.get(id);
+            skin = Skins.of(Minecraft.getInstance(), id);
             if (info != null) {
                 name = info.getProfile().name();
             }

@@ -37,6 +37,8 @@ public final class RelayServer extends WebSocketServer {
     private static final int MAX_ARMOR_PIECES = 4;
     /** Generous bound for a namespaced item id; keeps a hostile client from sending a huge string. */
     private static final int MAX_ITEM_ID_LENGTH = 256;
+    /** A position's server-and-world tag: an address and a hex seed, well under this. */
+    private static final int MAX_WORLD_LENGTH = 300;
 
     private final Gson gson = new Gson();
     private final SessionRegistry registry = new SessionRegistry();
@@ -393,6 +395,10 @@ public final class RelayServer extends WebSocketServer {
         // double the chattiest path in the protocol for no benefit. Absent from older clients,
         // which the -1 default leaves as "unknown".
         session.health = obj.has("health") ? obj.get("health").getAsFloat() : -1.0f;
+        // Opaque, but untrusted: bounded so a client cannot make every snapshot carry a novel.
+        String world = obj.has("world") && !obj.get("world").isJsonNull()
+                ? obj.get("world").getAsString() : null;
+        session.world = world != null && world.length() <= MAX_WORLD_LENGTH ? world : null;
         // Ping colour rides along for the same reasons, so teammates can tint this player's HUD row
         // to match their pings. Re-resolved rather than trusted: it goes through exactly the
         // validation a ping does, so a client cannot claim a colour outside its own palette, and an

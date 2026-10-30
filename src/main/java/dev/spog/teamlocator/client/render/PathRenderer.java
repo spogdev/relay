@@ -6,6 +6,7 @@ import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.path.PathFinder;
 import dev.spog.teamlocator.client.path.PathTracker;
@@ -97,7 +98,7 @@ public final class PathRenderer {
             // Where you are this frame, between ticks, so the join does not lag or jitter.
             Vec3 feet = mc.player.getPosition(mc.getDeltaTracker().getGameTimeDeltaPartialTick(false))
                     .add(0, LIFT, 0);
-            for (TrackedPos teammate : ClientState.latest()) {
+            for (TrackedPos teammate : ClientState.onServer(WorldIdentity.current(mc))) {
                 List<PathFinder.Point> route = PathTracker.route(teammate.id());
                 if (route == null || route.size() < 2) {
                     continue;

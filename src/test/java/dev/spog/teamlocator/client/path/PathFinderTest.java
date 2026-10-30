@@ -17,8 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PathFinderTest {
     private static final int SIZE = 20;
     private static final Cell BOTTOM_SLAB = new Cell(new double[] {0, 0, 0, 1, 0.5, 1}, false, false, false, false);
-    /** A post through the middle, like iron bars or a fence: too narrow to walk past, but in the way. */
-    private static final Cell POST = new Cell(new double[] {0.4375, 0, 0.4375, 0.5625, 1, 0.5625}, false, false, false, false);
+    /**
+     * Iron bars joined to the wall on both sides: a thin sheet right across the hole. (A lone post
+     * leaves room for a pearl beside it, as a fence post does.)
+     */
+    private static final Cell BARS = new Cell(new double[] {0.4375, 0, 0, 0.5625, 1, 1}, false, false, false, false);
+    /** A thin panel along the -X face, like a closed door or an open trapdoor across the way. */
+    private static final Cell PANEL_ACROSS_X = new Cell(new double[] {0, 0, 0, 0.1875, 1, 0.75}, false, false, false, false);
+    /** A thin panel along the -Z face, running the same way as someone walking along X. */
+    private static final Cell PANEL_ALONG_X = new Cell(new double[] {0, 0, 0, 1, 1, 0.1875}, false, false, false, false);
     private static final Cell LADDER = new Cell(new double[] {0, 0, 0, 0.1875, 1, 1}, false, true, false, false);
 
     private static final class Grid implements Terrain {
@@ -31,7 +38,7 @@ class PathFinderTest {
 
         @Override
         public Cell cell(int x, int y, int z) {
-            if (!loaded(x, z) || y < -4) {
+            if (!loaded(x, z) || y < -40) {
                 return Cell.VOID;
             }
             Cell c = cells.get(PathFinder.key(x, y, z));
@@ -58,7 +65,12 @@ class PathFinderTest {
     }
 
     private static PathFinder run(Grid grid, int sx, int sz, int gx, int gz) {
-        PathFinder search = new PathFinder(grid, sx, 1, sz, gx, 1, gz, 50_000, 1.0);
+        return run(grid, sx, 1, sz, gx, 1, gz, true);
+    }
+
+    private static PathFinder run(Grid grid, int sx, int sy, int sz, int gx, int gy, int gz,
+                                  boolean pearls) {
+        PathFinder search = new PathFinder(grid, sx, sy, sz, gx, gy, gz, 50_000, 1.0, pearls);
         while (search.step(1000) == PathFinder.State.RUNNING) {
             // keep going
         }
@@ -105,7 +117,7 @@ class PathFinderTest {
 
     @Test
     void noRouteWhenTheHoleIsBarred() {
-        Grid grid = new Grid().wall(5, 4).set(5, 1, 0, POST);
+        Grid grid = new Grid().wall(5, 4).set(5, 1, 0, BARS);
         PathFinder search = run(grid, 0, 0, 10, 0);
         assertEquals(PathFinder.State.FAILED, search.state(), () -> "found " + search.path());
     }
@@ -139,9 +151,9 @@ class PathFinderTest {
     }
 
     @Test
-    void dropsThreeBlocksButNotFive() {
-        // A pit dug into the floor, with the goal at its bottom. Three deep is a safe drop; five is not.
-        for (int depth : new int[] {3, 5}) {
+    void dropsDownLongFallsButNotDeadlyOnes() {
+        // A pit dug into the floor, with the goal at its bottom and no other way down.
+        for (int depth : new int[] {5, 15, 30}) {
             Grid grid = new Grid();
             for (int x = 3; x <= 8; x++) {
                 for (int z = -2; z <= 2; z++) {
@@ -150,16 +162,59 @@ class PathFinderTest {
                     }
                 }
             }
-            PathFinder search = new PathFinder(grid, 0, 1, 0, 6, 1 - depth, 0, 50_000, 1.0);
-            while (search.step(1000) == PathFinder.State.RUNNING) {
-                // keep going
-            }
-            if (depth == 3) {
-                assertEquals(PathFinder.State.FOUND, search.state());
+            PathFinder search = run(grid, 0, 1, 0, 6, 1 - depth, 0, true);
+            if (depth < PathFinder.MAX_FALL) {
+                assertEquals(PathFinder.State.FOUND, search.state(), "a " + depth + "-block fall is taken");
             } else {
-                assertEquals(PathFinder.State.FAILED, search.state(), "a five-block drop is never taken");
+                assertEquals(PathFinder.State.FAILED, search.state(), "a " + depth + "-block fall would kill");
             }
         }
+    }
+
+    @Test
+    void dropsAnyDistanceIntoWater() {
+        Grid grid = new Grid();
+        Cell water = new Cell(null, true, false, false, false);
+        for (int x = 3; x <= 8; x++) {
+            for (int z = -2; z <= 2; z++) {
+                for (int y = 0; y > -30; y--) {
+                    grid.set(x, y, z, y > -28 ? Cell.AIR : water);
+                }
+            }
+        }
+        assertEquals(PathFinder.State.FOUND, run(grid, 0, 1, 0, 6, -28, 0, true).state());
+    }
+
+    @Test
+    void pearlsThroughASlitBesideAPartialBlock() {
+        // The hole holds a panel across the way that covers three quarters of it, leaving a slit a
+        // quarter of a block wide down one side: room for a pearl, not a player.
+        Grid grid = new Grid().wall(5, 4).set(5, 1, 0, PANEL_ACROSS_X).set(5, 2, 0, PANEL_ACROSS_X);
+        PathFinder search = run(grid, 0, 0, 10, 0);
+        assertEquals(PathFinder.State.FOUND, search.state());
+        PathFinder.Point landed = search.path().stream().filter(PathFinder.Point::pearl).findFirst().orElseThrow();
+        assertEquals(0.875, landed.gapZ(), 1e-9, "through the slit, not the middle of the block");
+    }
+
+    @Test
+    void walksAlongsideAThinPanelButNotThroughOne() {
+        // The same panel turned to run along the way: there is room beside it to walk past.
+        Grid alongside = new Grid().wall(5, 4).set(5, 1, 0, PANEL_ALONG_X).set(5, 2, 0, PANEL_ALONG_X);
+        PathFinder search = run(alongside, 0, 0, 10, 0);
+        assertEquals(PathFinder.State.FOUND, search.state());
+        assertEquals(0, pearls(search.path()));
+
+        // Turned across the way and covering it all, it stops the player, and with pearls off,
+        // there is no route.
+        Cell across = new Cell(new double[] {0, 0, 0, 0.1875, 1, 1}, false, false, false, false);
+        Grid blocked = new Grid().wall(5, 4).set(5, 1, 0, across).set(5, 2, 0, across);
+        assertEquals(PathFinder.State.FAILED, run(blocked, 0, 1, 0, 10, 1, 0, false).state());
+    }
+
+    @Test
+    void neverPearlsWhenPearlsAreOff() {
+        Grid grid = new Grid().wall(5, 4).set(5, 1, 0, Cell.AIR);
+        assertEquals(PathFinder.State.FAILED, run(grid, 0, 1, 0, 10, 1, 0, false).state());
     }
 
     @Test
@@ -176,10 +231,7 @@ class PathFinderTest {
         for (int y = 1; y <= 4; y++) {
             grid.set(4, y, 0, LADDER);
         }
-        PathFinder search = new PathFinder(grid, 0, 1, 0, 8, 5, 0, 50_000, 1.0);
-        while (search.step(1000) == PathFinder.State.RUNNING) {
-            // keep going
-        }
+        PathFinder search = run(grid, 0, 1, 0, 8, 5, 0, true);
         assertEquals(PathFinder.State.FOUND, search.state());
         assertTrue(search.path().stream().anyMatch(p -> p.x() == 4.5 && p.y() >= 3), "goes up the ladder");
         assertFalse(search.path().stream().anyMatch(PathFinder.Point::pearl));

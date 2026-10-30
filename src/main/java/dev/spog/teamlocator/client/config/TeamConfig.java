@@ -56,9 +56,10 @@ public class TeamConfig {
     /**
      * When routes to teammates are drawn without holding the Show Paths key, which always shows them.
      * {@link #UNDERGROUND} is while you or the teammate are under a roof: the tunnels the routes are
-     * for, and not open ground where the marker is enough.
+     * for, and not open ground where the marker is enough. {@link #KEYBIND} is never: only while the
+     * key is held.
      */
-    public enum PathFindingMode { UNDERGROUND, ALWAYS }
+    public enum PathFindingMode { UNDERGROUND, ALWAYS, KEYBIND }
 
     /** A named trust list (a set of entries). */
     public static class TrustList {

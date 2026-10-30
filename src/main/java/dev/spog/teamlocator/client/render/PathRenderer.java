@@ -17,6 +17,7 @@ import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
@@ -31,7 +32,8 @@ import java.util.Map;
  * from the floor where to throw it, through the gap, to the floor where it lands, with a ring on the
  * floor at each end. The walked stretches have their corners rounded off, so the line reads as a way
  * to go rather than a staircase of block centres, and are drawn as one unbroken strip; the line
- * starts at your feet and curves onto the route, wherever on it you are.
+ * starts at your feet and curves onto the route, wherever on it you are, and curves off it at the
+ * other end to finish at the teammate's feet.
  *
  * <p>The routes come from {@link PathTracker}, which keeps them ready; this only decides when to
  * show them. Holding the Show Paths key always does. Otherwise the Path Finding setting does: always,
@@ -60,11 +62,11 @@ public final class PathRenderer {
      * points a quarter of the way along its sides; three turn a right angle into a smooth bend.
      */
     private static final int SMOOTHING = 3;
-    /** How far along the route, in blocks, the line from your feet joins it. */
+    /** How far along the route, in blocks, the line from your feet -- or to theirs -- joins it. */
     private static final double JOIN_AHEAD = 1.5;
-    /** Further from the route than this, in blocks, the line does not reach out to you. */
+    /** Further from the route than this, in blocks, the line does not reach out to you or them. */
     private static final double JOIN_REACH = 6.0;
-    /** Smoothed points of the first stretch searched for the one nearest you. */
+    /** Smoothed points at each end searched for the one nearest you, or them. */
     private static final int JOIN_SEARCH = 64;
     private static final int JOIN_SEGMENTS = 8;
 
@@ -118,7 +120,8 @@ public final class PathRenderer {
                 int rgb = teammate.nameColor(0xFFFFFFFF) & 0xFFFFFF;
                 List<List<Vec3d>> walks = smoothed.computeIfAbsent(route, PathRenderer::smoothWalks);
                 live.put(route, walks);
-                drawRoute(buffer, pose, cam, feet, route, walks, rgb);
+                Vec3d theirs = theirFeet(mc, teammate);
+                drawRoute(buffer, pose, cam, feet, theirs, route, walks, rgb);
             }
         }
         // Keep only what was drawn this frame, so replaced routes do not pile up.
@@ -129,10 +132,30 @@ public final class PathRenderer {
         }
     }
 
+    /**
+     * Where the teammate's feet are this frame: their player between ticks when it is loaded, as it
+     * is drawn, else where the relay last put them.
+     */
+    private static Vec3d theirFeet(MinecraftClient mc, TrackedPos teammate) {
+        PlayerEntity entity = mc.world.getPlayerByUuid(teammate.id());
+        Vec3d at = entity != null
+                ? entity.getLerpedPos(mc.getRenderTickCounter().getTickProgress(false))
+                : new Vec3d(teammate.x(), teammate.y(), teammate.z());
+        return at.add(0, LIFT, 0);
+    }
+
     private static void drawRoute(VertexConsumer buffer, MatrixStack.Entry pose, Vec3d cam, Vec3d feet,
-                                  List<PathFinder.Point> route, List<List<Vec3d>> walks, int rgb) {
+                                  Vec3d theirs, List<PathFinder.Point> route, List<List<Vec3d>> walks,
+                                  int rgb) {
         for (int w = 0; w < walks.size(); w++) {
-            List<Vec3d> walk = w == 0 ? joinedToPlayer(walks.get(0), feet) : walks.get(w);
+            List<Vec3d> walk = walks.get(w);
+            if (w == 0) {
+                walk = joinedTo(walk, feet);
+            }
+            if (w == walks.size() - 1) {
+                // The same join at the far end, worked from that end.
+                walk = joinedTo(walk.reversed(), theirs).reversed();
+            }
             List<Vec3d> relative = new ArrayList<>(walk.size());
             for (Vec3d p : walk) {
                 relative.add(p.subtract(cam));
@@ -169,11 +192,11 @@ public final class PathRenderer {
     }
 
     /**
-     * The first stretch, starting at your feet: a curve from you onto the route a little ahead of
-     * the point on it nearest you, then the rest of the route from there. Left as it is when you
-     * are well off the route, which is about to be searched again anyway.
+     * A stretch starting at someone's feet: a curve from them onto the route a little ahead of the
+     * point on it nearest them, then the rest of the route from there. Left as it is when they are
+     * well off the route, which is about to be searched again anyway.
      */
-    private static List<Vec3d> joinedToPlayer(List<Vec3d> walk, Vec3d feet) {
+    private static List<Vec3d> joinedTo(List<Vec3d> walk, Vec3d feet) {
         int limit = Math.min(walk.size(), JOIN_SEARCH);
         int nearest = 0;
         double nearestDistance = Double.MAX_VALUE;

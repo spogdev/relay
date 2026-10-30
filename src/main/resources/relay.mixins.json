@@ -13,7 +13,9 @@
     "client.KeyBindsListMixin",
     "client.KeyBindsScreenMixin",
     "client.LanguageManagerMixin",
-    "client.KeybindContentsMixin"
+    "client.KeybindContentsMixin",
+    "client.BiomeManagerAccessor",
+    "client.ConnectScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

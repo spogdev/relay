@@ -132,7 +132,11 @@ public final class PingHandler {
 
     /** Cached trust-list name first (works cross-server), then tab list, then a UUID stub. */
     public static String displayName(Minecraft mc, UUID player) {
-        String name = TeamLocatorClient.CONFIG.nameFor(player);
+        String name = TestPlayers.name(player);
+        if (name != null) {
+            return name;
+        }
+        name = TeamLocatorClient.CONFIG.nameFor(player);
         if (name != null) {
             return name;
         }

@@ -23,8 +23,13 @@ import java.util.UUID;
  * Paths key draws them at once instead of waiting on a search.
  *
  * <p>Runs on the client tick, within a time budget: searches are spread over as many ticks as they
- * need rather than holding up one. A route is redone when either end moves to another block, and now
- * and then regardless, since the blocks along it can change.
+ * need rather than holding up one.
+ *
+ * <p>Each route is found twice. A weighted search finds a good route after looking at a fraction of
+ * the positions, so one shows almost at once even far away; an exact search then replaces it with the
+ * quickest, in the time left over. Walking along a route only trims it to start where you are, so it
+ * keeps up with you for free; it is searched again when you leave it, when the teammate moves, and
+ * now and then regardless, since the blocks along it can change.
  */
 @Environment(EnvType.CLIENT)
 public final class PathTracker {
@@ -34,10 +39,18 @@ public final class PathTracker {
     private static final int BATCH = 128;
     /** The most positions one search looks at before deciding there is no route. */
     private static final int MAX_NODES = 60_000;
+    /** How far the first, quick search trusts the distance to the teammate; see PathFinder. */
+    private static final double QUICK_WEIGHT = 2.0;
     /** Minimum gap between searches for one teammate, in ticks, while either end moves. */
     private static final int MOVED_INTERVAL = 5;
     /** Gap after which a route is redone even if nobody moved, in ticks. */
-    private static final int REFRESH_INTERVAL = 40;
+    private static final int REFRESH_INTERVAL = 100;
+    /**
+     * How close to a point on the route you must be to count as on it, in blocks across; and how
+     * many points from its start are checked, since you only ever walk off the front of it.
+     */
+    private static final double ON_ROUTE = 1.5;
+    private static final int ON_ROUTE_POINTS = 16;
     /** Gap before trying again after no route was found, in ticks. */
     private static final int FAILED_INTERVAL = 20;
     /** Teammates closer than this have no route drawn: they are right there. */
@@ -46,10 +59,12 @@ public final class PathTracker {
     private static final class Route {
         List<PathFinder.Point> points;
         PathFinder search;
-        long searchFrom;
+        /** Whether the running search is the exact one, replacing a quick route. */
+        boolean exact;
         long searchTo;
-        long shownFrom;
         long shownTo;
+        /** Whether the shown route came from an exact search, so there is nothing to improve. */
+        boolean best;
         int sinceSearch = Integer.MAX_VALUE;
         boolean failed;
     }
@@ -92,6 +107,32 @@ public final class PathTracker {
         return new double[] {pos.x(), pos.y(), pos.z()};
     }
 
+    /**
+     * Cuts the route to start at the point you are standing on, if you are on it.
+     *
+     * @return whether you are on the route
+     */
+    private static boolean trim(Route r, double x, double y, double z) {
+        List<PathFinder.Point> points = r.points;
+        int limit = Math.min(points.size(), ON_ROUTE_POINTS);
+        int nearest = -1;
+        double nearestDistance = ON_ROUTE * ON_ROUTE;
+        for (int i = 0; i < limit; i++) {
+            PathFinder.Point p = points.get(i);
+            double dx = p.x() - x;
+            double dz = p.z() - z;
+            double d = dx * dx + dz * dz;
+            if (d <= nearestDistance && Math.abs(p.y() - y) <= 2.0) {
+                nearest = i;
+                nearestDistance = d;
+            }
+        }
+        if (nearest > 0) {
+            r.points = List.copyOf(points.subList(nearest, points.size()));
+        }
+        return nearest >= 0;
+    }
+
     public static void tick(Minecraft mc) {
         LocalPlayer player = mc.player;
         ClientLevel level = mc.level;
@@ -109,7 +150,6 @@ public final class PathTracker {
         int sx = Mth.floor(player.getX());
         int sy = Mth.floor(player.getY() + 0.01);
         int sz = Mth.floor(player.getZ());
-        long from = PathFinder.key(sx, sy, sz);
 
         Set<UUID> wanted = new HashSet<>();
         for (TrackedPos pos : ClientState.latest()) {
@@ -139,16 +179,27 @@ public final class PathTracker {
             int gy = Mth.floor(at[1] + 0.01);
             int gz = Mth.floor(at[2]);
             long to = PathFinder.key(gx, gy, gz);
+            boolean onRoute = r.points != null && trim(r, player.getX(), player.getY(), player.getZ());
+            boolean stale = to != r.shownTo || !onRoute;
+
             if (r.search != null) {
-                continue;
+                // An exact search is only worth finishing for the route it set out to improve.
+                if (!r.exact || (!stale && to == r.searchTo)) {
+                    continue;
+                }
+                r.search = null;
             }
-            boolean moved = from != r.shownFrom || to != r.shownTo;
-            int wait = r.failed ? FAILED_INTERVAL : moved ? MOVED_INTERVAL : REFRESH_INTERVAL;
+            int wait = r.failed ? FAILED_INTERVAL : stale ? MOVED_INTERVAL : REFRESH_INTERVAL;
             if (r.sinceSearch >= wait) {
-                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES);
-                r.searchFrom = from;
+                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, QUICK_WEIGHT);
+                r.exact = false;
                 r.searchTo = to;
                 r.sinceSearch = 0;
+            } else if (!r.best && !stale) {
+                // The quick route is showing: look for the quickest in the time left over.
+                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, 1.0);
+                r.exact = true;
+                r.searchTo = to;
             }
         }
         routes.keySet().retainAll(wanted);
@@ -166,10 +217,18 @@ public final class PathTracker {
                     working = true;
                     continue;
                 }
-                r.failed = state == PathFinder.State.FAILED;
-                r.points = r.failed ? null : r.search.path();
-                r.shownFrom = r.searchFrom;
-                r.shownTo = r.searchTo;
+                if (r.exact) {
+                    // No better route found within the limit: keep the quick one.
+                    if (state == PathFinder.State.FOUND) {
+                        r.points = r.search.path();
+                    }
+                    r.best = true;
+                } else {
+                    r.failed = state == PathFinder.State.FAILED;
+                    r.points = r.failed ? null : r.search.path();
+                    r.best = false;
+                    r.shownTo = r.searchTo;
+                }
                 r.search = null;
             }
         }

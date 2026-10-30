@@ -20,13 +20,17 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Draws the route to each teammate as a line along the ground, see-through so it can be followed
  * round corners and through the floor. Stretches that need an ender pearl are a dashed purple arc
  * from the floor where to throw it, through the gap, to the floor where it lands, with a ring on the
- * floor at each end.
+ * floor at each end. The walked stretches have their corners rounded off, so the line reads as a way
+ * to go rather than a staircase of block centres.
  *
  * <p>The routes come from {@link PathTracker}, which keeps them ready; this only decides when to
  * show them. Holding the Show Paths key always does. Otherwise the Path Finding setting does: always,
@@ -50,6 +54,17 @@ public final class PathRenderer {
     private static final double THROW_RING = 0.4;
     private static final double LAND_RING = 0.25;
     private static final int RING_SEGMENTS = 20;
+    /**
+     * Rounds of corner cutting on the walked stretches. Each one replaces every corner with two
+     * points a quarter of the way along its sides; three turn a right angle into a smooth bend.
+     */
+    private static final int SMOOTHING = 3;
+
+    /**
+     * Each route's walked stretches, smoothed, by the route list they came from. Routes are replaced
+     * rather than changed, so the list's identity says whether the smoothing is still good.
+     */
+    private static final Map<List<PathFinder.Point>, List<List<Vec3d>>> smoothed = new IdentityHashMap<>();
 
     private PathRenderer() {
     }
@@ -74,6 +89,7 @@ public final class PathRenderer {
         boolean selfUnder = PathTracker.underground(
                 mc.world, mc.player.getX(), mc.player.getY(), mc.player.getZ());
         Vec3d cam = mc.gameRenderer.getCamera().getCameraPos();
+        Map<List<PathFinder.Point>, List<List<Vec3d>>> live = new IdentityHashMap<>();
         MatrixStack.Entry pose = matrices.peek();
         RenderLayer layer = RenderLayers.textSeeThrough(WHITE);
         VertexConsumer buffer = consumers.getBuffer(layer);
@@ -89,25 +105,34 @@ public final class PathRenderer {
             }
             if (show) {
                 int rgb = teammate.nameColor(0xFFFFFFFF) & 0xFFFFFF;
-                drawRoute(buffer, pose, cam, route, rgb);
+                List<List<Vec3d>> walks = smoothed.computeIfAbsent(route, PathRenderer::smoothWalks);
+                live.put(route, walks);
+                drawRoute(buffer, pose, cam, route, walks, rgb);
             }
         }
+        // Keep only what was drawn this frame, so replaced routes do not pile up.
+        smoothed.clear();
+        smoothed.putAll(live);
         if (consumers instanceof VertexConsumerProvider.Immediate immediate) {
             immediate.draw(layer);
         }
     }
 
     private static void drawRoute(VertexConsumer buffer, MatrixStack.Entry pose, Vec3d cam,
-                                  List<PathFinder.Point> route, int rgb) {
+                                  List<PathFinder.Point> route, List<List<Vec3d>> walks, int rgb) {
+        for (List<Vec3d> walk : walks) {
+            for (int i = 1; i < walk.size(); i++) {
+                ribbon(buffer, pose, walk.get(i - 1).subtract(cam), walk.get(i).subtract(cam), rgb);
+            }
+        }
         for (int i = 1; i < route.size(); i++) {
-            PathFinder.Point a = route.get(i - 1);
             PathFinder.Point b = route.get(i);
-            Vec3d from = new Vec3d(a.x(), a.y() + LIFT, a.z()).subtract(cam);
-            Vec3d to = new Vec3d(b.x(), b.y() + LIFT, b.z()).subtract(cam);
             if (!b.pearl()) {
-                ribbon(buffer, pose, from, to, rgb);
                 continue;
             }
+            PathFinder.Point a = route.get(i - 1);
+            Vec3d from = new Vec3d(a.x(), a.y() + LIFT, a.z()).subtract(cam);
+            Vec3d to = new Vec3d(b.x(), b.y() + LIFT, b.z()).subtract(cam);
             // From the route on this side, through the middle of the gap, down to the route on the
             // other: a curve through three points, with the gap at its halfway mark. Every other
             // piece is left out, which is what makes it read as dashed.
@@ -127,6 +152,51 @@ public final class PathRenderer {
             ring(buffer, pose, from, THROW_RING, PEARL_RGB);
             ring(buffer, pose, to, LAND_RING, PEARL_RGB);
         }
+    }
+
+    /**
+     * The route's walked stretches -- split where a pearl is thrown -- as lines in the world with
+     * their corners rounded. The ends of each stretch stay put, so they still meet the pearl arcs.
+     */
+    private static List<List<Vec3d>> smoothWalks(List<PathFinder.Point> route) {
+        List<List<Vec3d>> walks = new ArrayList<>();
+        List<Vec3d> walk = new ArrayList<>();
+        for (PathFinder.Point p : route) {
+            Vec3d at = new Vec3d(p.x(), p.y() + LIFT, p.z());
+            if (p.pearl()) {
+                walks.add(walk);
+                walk = new ArrayList<>();
+            }
+            walk.add(at);
+        }
+        walks.add(walk);
+        List<List<Vec3d>> out = new ArrayList<>(walks.size());
+        for (List<Vec3d> w : walks) {
+            List<Vec3d> line = w;
+            for (int round = 0; round < SMOOTHING && line.size() > 2; round++) {
+                line = cutCorners(line);
+            }
+            out.add(line);
+        }
+        return out;
+    }
+
+    /** One round of corner cutting: each inside corner becomes two points either side of it. */
+    private static List<Vec3d> cutCorners(List<Vec3d> line) {
+        List<Vec3d> out = new ArrayList<>(line.size() * 2);
+        out.add(line.get(0));
+        for (int i = 1; i < line.size(); i++) {
+            Vec3d a = line.get(i - 1);
+            Vec3d b = line.get(i);
+            if (i > 1) {
+                out.add(a.lerp(b, 0.25));
+            }
+            if (i < line.size() - 1) {
+                out.add(a.lerp(b, 0.75));
+            }
+        }
+        out.add(line.get(line.size() - 1));
+        return out;
     }
 
     /** A flat ring lying on the floor, centred on a point of the route. */

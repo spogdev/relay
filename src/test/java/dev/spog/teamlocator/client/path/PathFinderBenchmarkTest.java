@@ -38,7 +38,7 @@ class PathFinderBenchmarkTest {
     }
 
     private static PathFinder run(double weight) {
-        PathFinder search = new PathFinder(new Maze(), -100, 1, -100, 100, 1, 100, 400_000, weight);
+        PathFinder search = new PathFinder(new Maze(), -100, 1, -100, 100, 1, 100, 400_000, weight, true);
         while (search.step(128) == PathFinder.State.RUNNING) {
             // keep going
         }

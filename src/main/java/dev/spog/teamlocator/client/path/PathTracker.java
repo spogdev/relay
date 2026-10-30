@@ -1,7 +1,9 @@
 package dev.spog.teamlocator.client.path;
 
 import dev.spog.teamlocator.client.ClientState;
+import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
@@ -9,6 +11,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.HashMap;
@@ -63,6 +66,9 @@ public final class PathTracker {
         boolean exact;
         long searchTo;
         long shownTo;
+        /** Whether the running search, and the one behind the shown route, could use pearls. */
+        boolean searchPearls;
+        boolean shownPearls;
         /** Whether the shown route came from an exact search, so there is nothing to improve. */
         boolean best;
         int sinceSearch = Integer.MAX_VALUE;
@@ -150,6 +156,12 @@ public final class PathTracker {
         int sx = Mth.floor(player.getX());
         int sy = Mth.floor(player.getY() + 0.01);
         int sz = Mth.floor(player.getZ());
+        boolean pearls = switch (TeamLocatorClient.CONFIG.pathPearls) {
+            case ON -> true;
+            case OFF -> false;
+            // Only suggest pearling with a pearl to throw.
+            default -> player.getInventory().contains(stack -> stack.is(Items.ENDER_PEARL));
+        };
 
         Set<UUID> wanted = new HashSet<>();
         for (TrackedPos pos : ClientState.latest()) {
@@ -180,26 +192,35 @@ public final class PathTracker {
             int gz = Mth.floor(at[2]);
             long to = PathFinder.key(gx, gy, gz);
             boolean onRoute = r.points != null && trim(r, player.getX(), player.getY(), player.getZ());
-            boolean stale = to != r.shownTo || !onRoute;
+            // Picking up or using up the last pearl, or changing the setting, changes which routes
+            // are possible: redo it straight away.
+            boolean pearlsChanged = r.shownPearls != pearls;
+            boolean stale = to != r.shownTo || !onRoute || pearlsChanged;
 
             if (r.search != null) {
-                // An exact search is only worth finishing for the route it set out to improve.
-                if (!r.exact || (!stale && to == r.searchTo)) {
+                // A quick search is left to finish unless pearls changed under it; an exact one is
+                // only worth finishing for the route it set out to improve.
+                boolean sameEnds = to == r.searchTo && r.searchPearls == pearls;
+                if (r.exact ? !stale && sameEnds : r.searchPearls == pearls) {
                     continue;
                 }
                 r.search = null;
             }
-            int wait = r.failed ? FAILED_INTERVAL : stale ? MOVED_INTERVAL : REFRESH_INTERVAL;
+            int wait = pearlsChanged ? 0
+                    : r.failed ? FAILED_INTERVAL : stale ? MOVED_INTERVAL : REFRESH_INTERVAL;
             if (r.sinceSearch >= wait) {
-                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, QUICK_WEIGHT);
+                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, QUICK_WEIGHT,
+                        pearls);
                 r.exact = false;
                 r.searchTo = to;
+                r.searchPearls = pearls;
                 r.sinceSearch = 0;
             } else if (!r.best && !stale) {
                 // The quick route is showing: look for the quickest in the time left over.
-                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, 1.0);
+                r.search = new PathFinder(terrain, sx, sy, sz, gx, gy, gz, MAX_NODES, 1.0, pearls);
                 r.exact = true;
                 r.searchTo = to;
+                r.searchPearls = pearls;
             }
         }
         routes.keySet().retainAll(wanted);
@@ -228,6 +249,7 @@ public final class PathTracker {
                     r.points = r.failed ? null : r.search.path();
                     r.best = false;
                     r.shownTo = r.searchTo;
+                    r.shownPearls = r.searchPearls;
                 }
                 r.search = null;
             }

@@ -46,9 +46,20 @@ public class PathFindingGameTest implements FabricClientGameTest {
             context.runOnClient(client -> {
                 TeamConfig config = TeamLocatorClient.CONFIG;
                 config.pathFindingMode = TeamConfig.PathFindingMode.ALWAYS;
+                config.pathPearls = TeamConfig.PathPearls.AUTO;
             });
             context.waitTicks(10);
 
+            // Ender Pearls on Auto, with none to throw: the hole is no way through, and the route
+            // walks round the end of the wall instead.
+            world.getServer().runCommand("clear @a minecraft:ender_pearl");
+            report(context, x + 10, y, z);
+            List<PathFinder.Point> round = context.computeOnClient(client -> PathTracker.route(NOTCH));
+            check(round == null || round.stream().noneMatch(PathFinder.Point::pearl),
+                    "no pearl in the route without a pearl to throw, got " + round);
+
+            // Picking one up opens the hole as a way through.
+            world.getServer().runCommand("give @a minecraft:ender_pearl");
             report(context, x + 10, y, z);
             List<PathFinder.Point> pearled = context.computeOnClient(client -> PathTracker.route(NOTCH));
             check(pearled != null, "a route was found through the hole");

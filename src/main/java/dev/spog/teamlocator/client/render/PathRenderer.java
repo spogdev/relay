@@ -28,7 +28,8 @@ import java.util.Map;
  * round corners and through the floor. Stretches that need an ender pearl are a dashed purple arc
  * from the floor where to throw it, through the gap, to the floor where it lands, with a ring on the
  * floor at each end. The walked stretches have their corners rounded off, so the line reads as a way
- * to go rather than a staircase of block centres.
+ * to go rather than a staircase of block centres, and are drawn as one unbroken strip; the line
+ * starts at your feet and curves onto the route, wherever on it you are.
  *
  * <p>The routes come from {@link PathTracker}, which keeps them ready; this only decides when to
  * show them. Holding the Show Paths key always does. Otherwise the Path Finding setting does: always,
@@ -57,6 +58,13 @@ public final class PathRenderer {
      * points a quarter of the way along its sides; three turn a right angle into a smooth bend.
      */
     private static final int SMOOTHING = 3;
+    /** How far along the route, in blocks, the line from your feet joins it. */
+    private static final double JOIN_AHEAD = 1.5;
+    /** Further from the route than this, in blocks, the line does not reach out to you. */
+    private static final double JOIN_REACH = 6.0;
+    /** Smoothed points of the first stretch searched for the one nearest you. */
+    private static final int JOIN_SEARCH = 64;
+    private static final int JOIN_SEGMENTS = 8;
 
     /**
      * Each route's walked stretches, smoothed, by the route list they came from. Routes are replaced
@@ -84,6 +92,9 @@ public final class PathRenderer {
                     mc.level, mc.player.getX(), mc.player.getY(), mc.player.getZ());
             Vec3 cam = mc.gameRenderer.mainCamera().position();
             Map<List<PathFinder.Point>, List<List<Vec3>>> live = new IdentityHashMap<>();
+            // Where you are this frame, between ticks, so the join does not lag or jitter.
+            Vec3 feet = mc.player.getPosition(mc.getDeltaTracker().getGameTimeDeltaPartialTick(false))
+                    .add(0, LIFT, 0);
             for (TrackedPos teammate : ClientState.latest()) {
                 List<PathFinder.Point> route = PathTracker.route(teammate.id());
                 if (route == null || route.size() < 2) {
@@ -99,7 +110,7 @@ public final class PathRenderer {
                     List<List<Vec3>> walks = smoothed.computeIfAbsent(route, PathRenderer::smoothWalks);
                     live.put(route, walks);
                     collector.submitCustomGeometry(matrices, RenderTypes.textSeeThrough(WHITE),
-                            (pose, buffer) -> drawRoute(buffer, pose, cam, route, walks, rgb));
+                            (pose, buffer) -> drawRoute(buffer, pose, cam, feet, route, walks, rgb));
                 }
             }
             // Keep only what was drawn this frame, so replaced routes do not pile up.
@@ -108,12 +119,15 @@ public final class PathRenderer {
         });
     }
 
-    private static void drawRoute(VertexConsumer buffer, PoseStack.Pose pose, Vec3 cam,
+    private static void drawRoute(VertexConsumer buffer, PoseStack.Pose pose, Vec3 cam, Vec3 feet,
                                   List<PathFinder.Point> route, List<List<Vec3>> walks, int rgb) {
-        for (List<Vec3> walk : walks) {
-            for (int i = 1; i < walk.size(); i++) {
-                ribbon(buffer, pose, walk.get(i - 1).subtract(cam), walk.get(i).subtract(cam), rgb);
+        for (int w = 0; w < walks.size(); w++) {
+            List<Vec3> walk = w == 0 ? joinedToPlayer(walks.get(0), feet) : walks.get(w);
+            List<Vec3> relative = new ArrayList<>(walk.size());
+            for (Vec3 p : walk) {
+                relative.add(p.subtract(cam));
             }
+            strip(buffer, pose, relative, rgb);
         }
         for (int i = 1; i < route.size(); i++) {
             PathFinder.Point b = route.get(i);
@@ -145,6 +159,86 @@ public final class PathRenderer {
     }
 
     /**
+     * The first stretch, starting at your feet: a curve from you onto the route a little ahead of
+     * the point on it nearest you, then the rest of the route from there. Left as it is when you
+     * are well off the route, which is about to be searched again anyway.
+     */
+    private static List<Vec3> joinedToPlayer(List<Vec3> walk, Vec3 feet) {
+        int limit = Math.min(walk.size(), JOIN_SEARCH);
+        int nearest = 0;
+        double nearestDistance = Double.MAX_VALUE;
+        for (int i = 0; i < limit; i++) {
+            double d = walk.get(i).distanceToSqr(feet);
+            if (d < nearestDistance) {
+                nearest = i;
+                nearestDistance = d;
+            }
+        }
+        if (nearestDistance > JOIN_REACH * JOIN_REACH) {
+            return walk;
+        }
+        int join = nearest;
+        double along = 0;
+        while (join < walk.size() - 1 && along < JOIN_AHEAD) {
+            along += walk.get(join).distanceTo(walk.get(join + 1));
+            join++;
+        }
+        // A curve from your feet that bends through the nearest point and meets the route heading
+        // the way it goes, so the two read as one line.
+        Vec3 bend = walk.get(nearest);
+        Vec3 end = walk.get(join);
+        List<Vec3> out = new ArrayList<>(JOIN_SEGMENTS + walk.size() - join);
+        for (int s = 0; s < JOIN_SEGMENTS; s++) {
+            double t = s / (double) JOIN_SEGMENTS;
+            double u = 1 - t;
+            out.add(feet.scale(u * u).add(bend.scale(2 * u * t)).add(end.scale(t * t)));
+        }
+        out.addAll(walk.subList(join, walk.size()));
+        return out;
+    }
+
+    /**
+     * A line as one unbroken strip facing the camera: each point's edges are shared by the pieces
+     * either side of it, turned to the direction through that point, so a bend has no notch in it.
+     */
+    private static void strip(VertexConsumer buffer, PoseStack.Pose pose, List<Vec3> line, int rgb) {
+        int n = line.size();
+        if (n < 2) {
+            return;
+        }
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int bl = rgb & 0xFF;
+        Vec3[] side = new Vec3[n];
+        Vec3 last = null;
+        for (int i = 0; i < n; i++) {
+            Vec3 along = line.get(Math.min(i + 1, n - 1)).subtract(line.get(Math.max(i - 1, 0)));
+            // Across the line and across the view to this point, which is the point itself: the
+            // pose is centred on the camera.
+            Vec3 across = along.cross(line.get(i));
+            double len = across.length();
+            side[i] = len < 1.0e-6 ? last : across.scale(HALF_WIDTH / len);
+            last = side[i];
+        }
+        for (int i = n - 1; i >= 0 && side[i] == null; i--) {
+            side[i] = new Vec3(0, 0, 0);
+        }
+        for (int i = 0; i < n; i++) {
+            if (side[i] == null) {
+                side[i] = new Vec3(0, 0, 0);
+            }
+        }
+        for (int i = 0; i < n - 1; i++) {
+            Vec3 a = line.get(i);
+            Vec3 b = line.get(i + 1);
+            vertex(buffer, pose, a.add(side[i]), 0, 0, r, g, bl);
+            vertex(buffer, pose, a.subtract(side[i]), 1, 0, r, g, bl);
+            vertex(buffer, pose, b.subtract(side[i + 1]), 1, 1, r, g, bl);
+            vertex(buffer, pose, b.add(side[i + 1]), 0, 1, r, g, bl);
+        }
+    }
+
+    /**
      * The route's walked stretches -- split where a pearl is thrown -- as lines in the world with
      * their corners rounded. The ends of each stretch stay put, so they still meet the pearl arcs.
      */
@@ -171,7 +265,15 @@ public final class PathRenderer {
         return out;
     }
 
-    /** One round of corner cutting: each inside corner becomes two points either side of it. */
+    /**
+     * One round of corner cutting: each inside corner becomes two points either side of it.
+     *
+     * <p>Between points at different heights, a new point takes the higher of the two, not a height
+     * in between: a straight cut would slope from the upper block's centre down through its edge,
+     * into the block. Holding the height means the line leaves the upper block level and only drops
+     * once past its edge -- or, going up, rises before reaching the block in front. Straight up and
+     * down, on a ladder or in water, there is no edge to clear, and the height is cut as usual.
+     */
     private static List<Vec3> cutCorners(List<Vec3> line) {
         List<Vec3> out = new ArrayList<>(line.size() * 2);
         out.add(line.get(0));
@@ -179,14 +281,24 @@ public final class PathRenderer {
             Vec3 a = line.get(i - 1);
             Vec3 b = line.get(i);
             if (i > 1) {
-                out.add(a.lerp(b, 0.25));
+                out.add(cut(a, b, 0.25));
             }
             if (i < line.size() - 1) {
-                out.add(a.lerp(b, 0.75));
+                out.add(cut(a, b, 0.75));
             }
         }
         out.add(line.get(line.size() - 1));
         return out;
+    }
+
+    private static Vec3 cut(Vec3 a, Vec3 b, double t) {
+        Vec3 p = a.lerp(b, t);
+        double dx = b.x - a.x;
+        double dz = b.z - a.z;
+        if (dx * dx + dz * dz < 1.0e-4) {
+            return p;
+        }
+        return new Vec3(p.x, Math.max(a.y, b.y), p.z);
     }
 
     /** A flat ring lying on the floor, centred on a point of the route. */

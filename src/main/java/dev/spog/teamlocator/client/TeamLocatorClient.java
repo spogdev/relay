@@ -69,6 +69,9 @@ public class TeamLocatorClient implements ClientModInitializer {
      */
     private static volatile boolean sharePositions;
 
+    /** Joined a server and not yet tidied up after leaving it; see {@link #leftServer}. Client thread. */
+    private static boolean inServer;
+
     @Override
     public void onInitializeClient() {
         KeyBinding.Category category = new KeyBinding.Category(
@@ -137,21 +140,13 @@ public class TeamLocatorClient implements ClientModInitializer {
             // "RateLimiter disallowed request", and if vanilla loses, this very join can fail.
             RELAY.noteServerJoin();
             connectRelay();
+            inServer = true;
         }));
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
-            ClientState.reset();
-            PingState.reset();
-            // Leaving a server: the server list is unreachable at the menu, so fall back to GLOBAL
-            // without touching serverModes — the next join restores that server's own choice. Done
-            // explicitly rather than via onScopeChanged() because getCurrentServer() may still be
-            // populated at this point, which would re-pin the departed server's mode.
-            CONFIG.activeMode = TeamConfig.Mode.GLOBAL;
-            CONFIG.save();
-            // Back to the "menu" scope, not a full disconnect. Named outright: the departed server's
-            // connection can still be readable here, and currentRelayScope() would then file us
-            // under that server again, keeping us "on" it for as long as we sit in the menu.
-            connectRelay(null);
-        }));
+        // Fabric's disconnect event comes from the network thread when the channel closes, and was
+        // seen not to arrive at all for some leaves. The tick below catches those, so leaving is
+        // handled either way, once.
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                client.execute(() -> leftServer(client)));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (pingKey.wasPressed()) {
@@ -172,11 +167,36 @@ public class TeamLocatorClient implements ClientModInitializer {
             while (inWorldIconsToggleKey.wasPressed()) {
                 toggleInWorldIcons();
             }
+            leftServer(client);
             broadcastOwnPosition(client);
             // Worked out every tick, whether or not they are shown, so holding the key draws them
             // straight away.
             dev.spog.teamlocator.client.path.PathTracker.tick(client);
         });
+    }
+
+    /**
+     * Tidies up after leaving a server, once the connection is gone. Does nothing while still
+     * connected -- including to the next server, if the disconnect event for the last one arrives
+     * late -- or if it has already run for this server.
+     */
+    private static void leftServer(MinecraftClient client) {
+        if (!inServer || client.getNetworkHandler() != null) {
+            return;
+        }
+        inServer = false;
+        ClientState.reset();
+        PingState.reset();
+        // Leaving a server: the server list is unreachable at the menu, so fall back to GLOBAL
+        // without touching serverModes — the next join restores that server's own choice. Done
+        // explicitly rather than via onScopeChanged() because getCurrentServer() may still be
+        // populated at this point, which would re-pin the departed server's mode.
+        CONFIG.activeMode = TeamConfig.Mode.GLOBAL;
+        CONFIG.save();
+        // Back to the "menu" scope, not a full disconnect. Named outright: the departed server's
+        // connection can still be readable here, and currentRelayScope() would then file us
+        // under that server again, keeping us "on" it for as long as we sit in the menu.
+        connectRelay(null);
     }
 
     /** Whether the Show Paths key is being held, which draws every route regardless of setting. */

@@ -351,6 +351,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         RELAY.sendPosition(
                 player.getX(), player.getY(), player.getZ(),
                 player.getEntityWorld().getRegistryKey().getValue().toString(),
+                WorldIdentity.current(client),
                 // Health rides the position update, gated by the same sharing trust — a player who
                 // shares no position shares no health either — plus its own opt-out. Sending the
                 // unknown marker rather than omitting the field means opting out actively clears

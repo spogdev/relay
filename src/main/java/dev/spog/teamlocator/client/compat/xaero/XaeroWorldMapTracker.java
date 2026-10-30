@@ -4,8 +4,10 @@ import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.world.World;
@@ -82,7 +84,8 @@ public final class XaeroWorldMapTracker implements IPlayerTrackerSystem<TrackedP
         if (!TeamLocatorClient.CONFIG.xaeroMapIcons) {
             return Collections.emptyIterator();
         }
-        List<TrackedPos> live = ClientState.latest();
+        // Not those on another server of the network: their coordinates are somewhere else.
+        List<TrackedPos> live = ClientState.onServer(WorldIdentity.current(MinecraftClient.getInstance()));
         Set<UUID> seen = new HashSet<>();
         List<TrackedPos> out = new ArrayList<>(live.size());
         for (TrackedPos pos : live) {

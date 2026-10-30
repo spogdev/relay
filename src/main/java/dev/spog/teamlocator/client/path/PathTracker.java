@@ -3,6 +3,7 @@ package dev.spog.teamlocator.client.path;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -164,7 +165,7 @@ public final class PathTracker {
         };
 
         Set<UUID> wanted = new HashSet<>();
-        for (TrackedPos pos : ClientState.latest()) {
+        for (TrackedPos pos : ClientState.onServer(WorldIdentity.current(mc))) {
             if (pos.id().equals(player.getUuid())
                     || !pos.dimension().equals(level.getRegistryKey().getValue())) {
                 continue;

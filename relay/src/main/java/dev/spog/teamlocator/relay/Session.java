@@ -48,6 +48,8 @@ public final class Session {
     /** The mod version the client reported in its hello, or null for mods too old to send one. */
     public volatile String modVersion;
     public volatile String dimension = "minecraft:overworld";
+    /** Which server and world of a network the client reported, passed on as is; null if none. */
+    public volatile String world;
     public volatile boolean hasPosition;
 
     /**

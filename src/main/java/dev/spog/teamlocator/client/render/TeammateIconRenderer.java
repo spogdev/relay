@@ -2,8 +2,10 @@ package dev.spog.teamlocator.client.render;
 
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -13,10 +15,8 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.util.DefaultSkinHelper;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.util.Identifier;
@@ -142,7 +142,7 @@ public final class TeammateIconRenderer implements HudElement {
             return;
         }
         Identifier dimension = mc.player.getEntityWorld().getRegistryKey().getValue();
-        List<TrackedPos> teammates = ClientState.latest();
+        List<TrackedPos> teammates = ClientState.onServer(WorldIdentity.current(mc));
         if (teammates.isEmpty()) {
             return;
         }
@@ -403,8 +403,7 @@ public final class TeammateIconRenderer implements HudElement {
 
     /**
      * The teammate's skin: the live entity's if it is loaded (so it matches what you see in the
-     * world), else the one their {@link PlayerListEntry} carries on the connection, else the default
-     * skin derived from their UUID while a real one loads.
+     * world), else the tab list's, else one fetched by UUID -- see {@link Skins}.
      */
     private static SkinTextures skin(MinecraftClient mc, UUID id) {
         if (mc.world != null) {
@@ -413,12 +412,6 @@ public final class TeammateIconRenderer implements HudElement {
                 return clientPlayer.getSkin();
             }
         }
-        if (mc.getNetworkHandler() != null) {
-            PlayerListEntry info = mc.getNetworkHandler().getPlayerListEntry(id);
-            if (info != null && info.getSkinTextures() != null) {
-                return info.getSkinTextures();
-            }
-        }
-        return DefaultSkinHelper.getSkinTextures(id);
+        return Skins.of(mc, id);
     }
 }

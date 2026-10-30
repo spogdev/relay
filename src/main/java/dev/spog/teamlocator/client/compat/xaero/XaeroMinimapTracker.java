@@ -4,8 +4,10 @@ import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.world.World;
@@ -69,7 +71,8 @@ public final class XaeroMinimapTracker implements IRenderedPlayerTracker<Tracked
         if (!TeamLocatorClient.CONFIG.xaeroMapIcons) {
             return Collections.emptyIterator();
         }
-        return ClientState.latest().iterator();
+        // Not those on another server of the network: their coordinates are somewhere else.
+        return ClientState.onServer(WorldIdentity.current(MinecraftClient.getInstance())).iterator();
     }
 
     private static final class Reader implements ITrackedPlayerReader<TrackedPos> {

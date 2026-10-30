@@ -56,6 +56,16 @@ public class TestPlayerGameTest implements FabricClientGameTest {
             });
             context.takeScreenshot("test-player");
 
+            // A raised strip across the way: the route steps up onto it and down off it, and the
+            // line has to stay on top of the blocks rather than slope through their edges.
+            world.getServer().runCommand("fill " + (at[0] + 5) + " " + at[1] + " " + (at[2] - 20) + " "
+                    + (at[0] + 8) + " " + at[1] + " " + (at[2] + 20) + " minecraft:stone");
+            world.getServer().runCommand("tp @a " + (at[0] + 14) + " " + at[1] + " " + at[2] + " 90 30");
+            context.waitTicks(120);
+            context.runOnClient(client -> check(PathTracker.route(ClientState.latest().get(0).id()) != null,
+                    "a route over the step"));
+            context.takeScreenshot("test-player-step");
+
             // A second one, then clear both.
             context.runOnClient(client -> client.getNetworkHandler().sendChatCommand("relaytestplayer"));
             context.waitTicks(5);

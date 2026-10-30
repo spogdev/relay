@@ -238,6 +238,18 @@ class RelayRoutingTest {
             send(GSON.toJson(o));
         }
 
+        /** A position tagged with the server and world of a network it was sent from. */
+        void sendPosition(double x, double y, double z, String dim, String world) {
+            JsonObject o = new JsonObject();
+            o.addProperty("type", "position-update");
+            o.addProperty("x", x);
+            o.addProperty("y", y);
+            o.addProperty("z", z);
+            o.addProperty("dimension", dim);
+            o.addProperty("world", world);
+            send(GSON.toJson(o));
+        }
+
         void sendAttackPing() {
             JsonObject o = new JsonObject();
             o.addProperty("type", "ping");
@@ -279,6 +291,23 @@ class RelayRoutingTest {
                         if (entry.get("id").getAsString().equals(other.uuid.toString())
                                 && entry.has("armor") && !entry.get("armor").isJsonNull()) {
                             last = entry.getAsJsonArray("armor");
+                        }
+                    }
+                }
+                return last;
+            }
+        }
+
+        /** The world tag last seen on {@code other}'s position, or null if none carried one. */
+        String worldSeenFor(TestClient other) {
+            synchronized (snapshots) {
+                String last = null;
+                for (JsonObject s : snapshots) {
+                    for (var e : s.getAsJsonArray("entries")) {
+                        JsonObject entry = e.getAsJsonObject();
+                        if (entry.get("id").getAsString().equals(other.uuid.toString())
+                                && entry.has("world") && !entry.get("world").isJsonNull()) {
+                            last = entry.get("world").getAsString();
                         }
                     }
                 }
@@ -395,6 +424,34 @@ class RelayRoutingTest {
 
         assertTrue(bob.sawPositionOf(alice), "Bob is trusted and must see Alice");
         assertFalse(mallory.sawPositionOf(alice), "Mallory is NOT trusted and must never see Alice");
+    }
+
+    @Test
+    void positionCarriesTheServerItWasSentFrom() throws Exception {
+        TestClient alice = connect("alice", "play.example.net");
+        TestClient bob = connect("bob", "play.example.net");
+        alice.sendTrust("bob");
+        settle();
+
+        // Passed on as is, so Bob can tell Alice is on another backend behind the same address.
+        CountDownLatch tagged = bob.expect("snapshot");
+        alice.sendPosition(1, 64, 1, "minecraft:overworld", "/1a2b3c");
+        assertTrue(tagged.await(5, TimeUnit.SECONDS), "Bob should receive Alice's position");
+        assertEquals("/1a2b3c", bob.worldSeenFor(alice));
+
+        // Anything absurdly long is dropped rather than relayed to every viewer.
+        CountDownLatch huge = bob.expect("snapshot");
+        alice.sendPosition(2, 64, 2, "minecraft:overworld", "x".repeat(5000));
+        assertTrue(huge.await(5, TimeUnit.SECONDS), "Bob should still receive Alice's position");
+        CountDownLatch untagged = bob.expect("snapshot");
+        alice.sendPosition(3, 64, 3, "minecraft:overworld");
+        assertTrue(untagged.await(5, TimeUnit.SECONDS));
+        synchronized (bob.snapshots) {
+            JsonObject last = bob.snapshots.get(bob.snapshots.size() - 1);
+            JsonObject entry = last.getAsJsonArray("entries").get(0).getAsJsonObject();
+            assertFalse(entry.has("world") && !entry.get("world").isJsonNull(),
+                    "a position without a tag must not keep an old one");
+        }
     }
 
     @Test

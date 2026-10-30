@@ -6,6 +6,7 @@ import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import dev.spog.teamlocator.client.path.PathFinder;
 import dev.spog.teamlocator.client.path.PathTracker;
@@ -99,7 +100,7 @@ public final class PathRenderer {
                     .add(0, LIFT, 0);
             PoseStack.Pose pose = matrices.last();
             VertexConsumer buffer = consumers.getBuffer(RenderTypes.textSeeThrough(WHITE));
-            for (TrackedPos teammate : ClientState.latest()) {
+            for (TrackedPos teammate : ClientState.onServer(WorldIdentity.current(mc))) {
                 List<PathFinder.Point> route = PathTracker.route(teammate.id());
                 if (route == null || route.size() < 2) {
                     continue;

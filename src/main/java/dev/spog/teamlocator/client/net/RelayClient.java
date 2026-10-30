@@ -368,6 +368,17 @@ public final class RelayClient {
         // An old relay simply ignores this field and keeps its single-set behavior.
         o.add("alertsWith", uuidArray(alertsWith));
         sendIfReady(o);
+        // Muted players ride along with every trust push, so the relay drops their chat, pings and
+        // waypoints before they reach us. The relay has always honoured this, but nothing sent it.
+        JsonObject blocked = new JsonObject();
+        blocked.addProperty("type", "block-update");
+        blocked.add("blocked", uuidArray(TeamLocatorClient.CONFIG.mutedPingSet()));
+        sendIfReady(blocked);
+    }
+
+    /** Whether {@code player} is muted here. Checked on arrival too, for relays that drop nothing. */
+    private static boolean muted(UUID player) {
+        return TeamLocatorClient.CONFIG.mutedPingSet().contains(player);
     }
 
     private static com.google.gson.JsonArray uuidArray(Set<UUID> ids) {
@@ -376,10 +387,15 @@ public final class RelayClient {
         return arr;
     }
 
-    public void sendPosition(double x, double y, double z, String dimension, float health) {
+    public void sendPosition(double x, double y, double z, String dimension, String world,
+                             float health) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "position-update");
         o.addProperty("health", health);
+        // Which server of a network we are on, so teammates elsewhere on it do not draw us here.
+        if (world != null) {
+            o.addProperty("world", world);
+        }
         o.addProperty("x", x);
         o.addProperty("y", y);
         o.addProperty("z", z);
@@ -503,7 +519,7 @@ public final class RelayClient {
             UUID owner = UUID.fromString(obj.get("player").getAsString());
             Identifier dim = Identifier.tryParse(obj.get("dimension").getAsString());
             String color = obj.has("color") ? obj.get("color").getAsString() : null;
-            if (!mapPingAllowed(owner)) {
+            if (muted(owner) || !mapPingAllowed(owner)) {
                 return;
             }
             PingState.put(new PingState.Ping(
@@ -607,6 +623,9 @@ public final class RelayClient {
         }
         try {
             UUID sender = UUID.fromString(obj.get("player").getAsString());
+            if (muted(sender)) {
+                return;
+            }
             String text = obj.get("text").getAsString();
             List<UUID> recipients = new ArrayList<>();
             if (obj.has("recipients")) {
@@ -629,6 +648,9 @@ public final class RelayClient {
     private void onWaypoint(JsonObject obj) {
         try {
             UUID sender = UUID.fromString(obj.get("player").getAsString());
+            if (muted(sender)) {
+                return;
+            }
             String name = obj.get("name").getAsString();
             int x = obj.get("x").getAsInt();
             int y = obj.get("y").getAsInt();
@@ -964,7 +986,10 @@ public final class RelayClient {
                         e.has("health") ? e.get("health").getAsFloat()
                                 : TrackedPos.UNKNOWN_HEALTH,
                         e.has("pingColor") && !e.get("pingColor").isJsonNull()
-                                ? e.get("pingColor").getAsString() : null));
+                                ? e.get("pingColor").getAsString() : null,
+                        // Absent from an older client or relay: taken to be our own server.
+                        e.has("world") && !e.get("world").isJsonNull()
+                                ? e.get("world").getAsString() : null));
             } catch (RuntimeException ex) {
                 TeamLocatorConstants.LOGGER.debug("Bad snapshot entry: {}", ex.toString());
             }

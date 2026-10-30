@@ -2,8 +2,10 @@ package dev.spog.teamlocator.client.render;
 
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.compat.xaero.XaeroCompat;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -14,7 +16,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
-import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
@@ -141,7 +142,7 @@ public final class TeammateIconRenderer implements HudElement {
             return;
         }
         Identifier dimension = mc.player.level().dimension().identifier();
-        List<TrackedPos> teammates = ClientState.latest();
+        List<TrackedPos> teammates = ClientState.onServer(WorldIdentity.current(mc));
         if (teammates.isEmpty()) {
             return;
         }
@@ -387,8 +388,7 @@ public final class TeammateIconRenderer implements HudElement {
 
     /**
      * The teammate's skin: the live entity's if it is loaded (so it matches what you see in the
-     * world), else the one their {@link PlayerInfo} carries on the connection, else the default skin
-     * derived from their UUID while a real one loads.
+     * world), else the tab list's, else one fetched by UUID -- see {@link Skins}.
      */
     private static PlayerSkin skin(Minecraft mc, UUID id) {
         if (mc.level != null) {
@@ -397,12 +397,6 @@ public final class TeammateIconRenderer implements HudElement {
                 return clientPlayer.getSkin();
             }
         }
-        if (mc.getConnection() != null) {
-            PlayerInfo info = mc.getConnection().getPlayerInfo(id);
-            if (info != null && info.getSkin() != null) {
-                return info.getSkin();
-            }
-        }
-        return net.minecraft.client.resources.DefaultPlayerSkin.get(id);
+        return Skins.of(mc, id);
     }
 }

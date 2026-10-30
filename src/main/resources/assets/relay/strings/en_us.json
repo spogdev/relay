@@ -30,6 +30,7 @@
   "relay.config.tab.trust": "Trust List",
   "relay.config.column.player": "Player",
   "relay.config.column.alerts": "Mute",
+  "relay.hud.other_server": "Other server",
   "relay.config.column.visibility": "Sharing",
   "relay.config.no_server": "Not connected to a server",
   "relay.config.lookup_pending": "Looking up %s...",

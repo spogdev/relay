@@ -132,6 +132,16 @@ public final class ClientState {
         return out;
     }
 
+    /**
+     * {@link #latest()}, less anyone on another server of the network -- for everything that draws
+     * teammates in the world, where their coordinates would point at somewhere else entirely.
+     */
+    public static List<TrackedPos> onServer(String ourWorld) {
+        List<TrackedPos> out = latest();
+        out.removeIf(p -> !p.onServer(ourWorld));
+        return out;
+    }
+
     public static void flagAttacked(UUID player) {
         attackUntil.put(player, System.currentTimeMillis() + ATTACK_FLASH_MS);
     }

@@ -115,6 +115,12 @@ public final class Messages {
          * passing it on, so a client cannot paint itself a colour it has no claim to.
          */
         public String pingColor;
+        /**
+         * Which server and world of a network the sender is on, so teammates on another backend
+         * behind the same address do not draw them at coordinates that mean somewhere else there.
+         * Opaque to the relay, which only passes it on. Null from older clients.
+         */
+        public String world;
     }
 
     /** "I'm being attacked." The relay fans it out to mutual-trust peers who haven't blocked us. */
@@ -460,9 +466,16 @@ public final class Messages {
              * than waiting for each player's next position update.
              */
             public String pingColor;
+            /** The player's reported server and world on the network, or null if not reported. */
+            public String world;
 
             public Entry(String id, double x, double y, double z, String dimension,
                          List<ArmorPiece> armor, float health, String pingColor) {
+                this(id, x, y, z, dimension, armor, health, pingColor, null);
+            }
+
+            public Entry(String id, double x, double y, double z, String dimension,
+                         List<ArmorPiece> armor, float health, String pingColor, String world) {
                 this.id = id;
                 this.x = x;
                 this.y = y;
@@ -471,6 +484,7 @@ public final class Messages {
                 this.armor = armor;
                 this.health = health;
                 this.pingColor = pingColor;
+                this.world = world;
             }
         }
     }

@@ -3,7 +3,10 @@ package dev.spog.teamlocator.client.hud;
 import dev.spog.teamlocator.client.ArmorPiece;
 import dev.spog.teamlocator.client.ClientState;
 import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.RelayLang;
+import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TrackedPos;
+import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.config.TeamConfig;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -13,8 +16,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.PlayerFaceExtractor;
-import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerSkin;
 
@@ -25,7 +26,9 @@ import java.util.Locale;
 /**
  * Draws one row per tracked player: {@code <face> <name> <x>, <y>, <z>}, with the dimension
  * appended (in parentheses, prettified) only when that player is in a different dimension than the
- * local viewer. A player flashes red while they are signalling that they are under attack.
+ * local viewer. A player on another server of the network shows "Other server" in place of the
+ * coordinates, which would point somewhere else entirely. A player flashes red while they are
+ * signalling that they are under attack.
  */
 @Environment(EnvType.CLIENT)
 public class TeamHud implements HudElement {
@@ -60,10 +63,11 @@ public class TeamHud implements HudElement {
     /**
      * @param nameColor the player's ping colour, kept separate from {@code pri} because only the
      *                  name is tinted — the punctuation and dimension stay the configured primary
+     * @param server    "Other server" when they are on another server of the network, else null
      */
     private record Row(TrackedPos entry, PlayerSkin skin, List<Segment> segments, int width,
                        List<ArmorPiece> armor, int textWidth, String name, Coords coords,
-                       int pri, int sec, int nameColor) {
+                       String server, int pri, int sec, int nameColor) {
     }
 
     /**
@@ -123,6 +127,8 @@ public class TeamHud implements HudElement {
 
         Font font = mc.font;
         Identifier viewerDim = mc.player.level().dimension().identifier();
+        String ourWorld = WorldIdentity.current(mc);
+        String otherServer = RelayLang.text("relay.hud.other_server").getString();
 
         // First pass: build the rows so we know their widths before placing anything. A player
         // with no PlayerInfo has left this server — drop the row immediately instead of showing a
@@ -132,11 +138,9 @@ public class TeamHud implements HudElement {
         int primary = config.hudPrimaryArgb();
         int secondary = config.hudSecondaryArgb();
         for (TrackedPos e : entries) {
-            // Absent PlayerInfo means the teammate is not in OUR tab list — which on a proxy network
-            // routinely means "on a different backend", not "gone". Dropping the row here was why the
-            // HUD could sit empty while the in-world marker drew the same teammate perfectly well:
-            // the marker falls back to a default skin and a stored name, and the HUD now does too.
-            PlayerInfo info = mc.getConnection().getPlayerInfo(e.id());
+            // A teammate missing from OUR tab list is, on a proxy network, routinely on a different
+            // backend rather than gone, so the row stays: the name comes from the trust list and the
+            // face is fetched by UUID.
             boolean attacked = ClientState.isUnderAttack(e.id());
             int pri = attacked ? COLOR_ATTACKED : primary;
             int sec = attacked ? COLOR_ATTACKED : secondary;
@@ -150,13 +154,18 @@ public class TeamHud implements HudElement {
             List<Segment> segments = new ArrayList<>();
             // Trailing spaces only pad toward what follows; without coords the name would
             // otherwise carry a dangling gap before the armor icons.
-            boolean showCoords = config.hudShowCoords;
+            // Shown whether or not coords are: which server they are on matters either way.
+            String server = e.onServer(ourWorld) ? null : otherServer;
+            boolean showCoords = config.hudShowCoords && server == null;
             // Same resolution order the in-world marker uses: the name stored against this player in
             // the trust list (always present for someone you trust), then the tab list, then a short
             // UUID so a row is never nameless.
             String name = PingHandler.displayName(mc, e.id());
             Coords coords = null;
-            segments.add(new Segment(showCoords ? name + "  " : name, nameColor));
+            segments.add(new Segment(showCoords || server != null ? name + "  " : name, nameColor));
+            if (server != null) {
+                segments.add(new Segment(server, sec));
+            }
             if (showCoords) {
                 boolean shorten = config.hudShortenCoords;
                 String xs = coord(e.x(), shorten);
@@ -190,10 +199,10 @@ public class TeamHud implements HudElement {
                 healthWidth += ARMOR_GAP;
             }
             int rowWidth = FACE_SIZE + 3 + textWidth + healthWidth + armorWidth;
-            // Default skin when the teammate is not in our tab list, rather than dropping the row.
-            PlayerSkin skin = info != null ? info.getSkin() : DefaultPlayerSkin.get(e.id());
+            // Fetched by UUID when the teammate is not in our tab list -- on another shard, say.
+            PlayerSkin skin = Skins.of(mc, e.id());
             rows.add(new Row(e, skin, segments, rowWidth, armor, textWidth, name, coords,
-                    pri, sec, nameColor));
+                    server, pri, sec, nameColor));
             maxWidth = Math.max(maxWidth, rowWidth);
         }
         if (rows.isEmpty()) {
@@ -287,9 +296,13 @@ public class TeamHud implements HudElement {
         int yColW = 0;
         int zColW = 0;
         int maxArmorW = 0;
+        int serverW = 0;
         boolean anyCoords = false;
         for (Row row : rows) {
             nameColW = Math.max(nameColW, font.width(row.name()));
+            if (row.server() != null) {
+                serverW = Math.max(serverW, font.width(row.server()));
+            }
             Coords c = row.coords();
             if (c != null) {
                 anyCoords = true;
@@ -311,8 +324,11 @@ public class TeamHud implements HudElement {
             maxArmorW = Math.max(maxArmorW, trailing);
         }
         int total = FACE_SIZE + 3 + nameColW;
-        if (anyCoords) {
-            total += TABLE_COL_GAP + xColW + sepW + yColW + sepW + zColW;
+        // The coordinate block, or "Other server" in its place, whichever is wider.
+        int block = anyCoords ? xColW + sepW + yColW + sepW + zColW : 0;
+        block = Math.max(block, serverW);
+        if (block > 0) {
+            total += TABLE_COL_GAP + block;
         }
         total += maxArmorW;
         return new TableLayout(nameColW, xColW, yColW, zColW, total);
@@ -337,6 +353,10 @@ public class TeamHud implements HudElement {
         Coords c = row.coords();
         if (c != null) {
             end = drawTableCoords(graphics, font, row, t, c, end + TABLE_COL_GAP, textY);
+        } else if (row.server() != null) {
+            end += TABLE_COL_GAP;
+            graphics.text(font, row.server(), end, textY, row.sec(), true);
+            end += font.width(row.server());
         }
         // Health is drawn independently of armor: a teammate sharing health but no armor must
         // still show it, so this sits outside the armor guard below.

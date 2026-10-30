@@ -102,6 +102,7 @@ public class TeamLocatorClient implements ClientModInitializer {
         // /available — who would actually see an alert sent right now.
         AvailableCommand.register();
         RelayWaypointCommand.register();
+        TestPlayers.register();
         PingRenderer.register();
         dev.spog.teamlocator.client.render.PathRenderer.register();
         // The mod's own in-world teammate icons; the default, so they work with no other mod. Steps
@@ -168,6 +169,7 @@ public class TeamLocatorClient implements ClientModInitializer {
                 toggleInWorldIcons();
             }
             leftServer(client);
+            TestPlayers.tick();
             broadcastOwnPosition(client);
             // Worked out every tick, whether or not they are shown, so holding the key draws them
             // straight away.
@@ -185,6 +187,7 @@ public class TeamLocatorClient implements ClientModInitializer {
             return;
         }
         inServer = false;
+        TestPlayers.clear();
         ClientState.reset();
         PingState.reset();
         // Leaving a server: the server list is unreachable at the menu, so fall back to GLOBAL

@@ -141,6 +141,13 @@ public final class ClientState {
         return until != null && System.currentTimeMillis() < until;
     }
 
+    /** Forget one player's position at once, rather than waiting for it to expire. */
+    public static void remove(UUID player) {
+        positions.remove(player);
+        interp.remove(player);
+        attackUntil.remove(player);
+    }
+
     /** Clear everything on disconnect so stale positions don't linger into the next session. */
     public static void reset() {
         positions.clear();

@@ -115,6 +115,22 @@ public class TrustListGameTest implements FabricClientGameTest {
                     check(config.activeMode == TeamConfig.Mode.SERVER,
                             "This Server is still chosen after a restart, got " + config.activeMode);
                     check(hasNotch(config.activeList()), "the list is there after a restart");
+
+                    // Muted in the global list, not in this server's: only the selected list counts.
+                    TrustEntry globalNotch = new TrustEntry(NOTCH, "Notch");
+                    globalNotch.mutePings = true;
+                    config.global.trusted.add(globalNotch);
+                    check(!config.mutedPingSet().contains(NOTCH),
+                            "a global mute is ignored while this server's list is selected");
+                    config.activeMode = TeamConfig.Mode.GLOBAL;
+                    check(config.mutedPingSet().contains(NOTCH),
+                            "and applies once the global list is selected");
+                    // And the other way round: a server mute is ignored with Global selected.
+                    globalNotch.mutePings = false;
+                    config.servers.get(typed).trusted.forEach(e -> e.mutePings = true);
+                    check(!config.mutedPingSet().contains(NOTCH),
+                            "a server mute is ignored while the global list is selected");
+                    config.global.trusted.remove(globalNotch);
                 });
             }
 

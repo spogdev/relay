@@ -605,18 +605,16 @@ public class TeamConfig {
     }
 
     /**
-     * Players whose attack pings should be silenced locally. Pings can arrive from anyone in the
-     * {@link #alertTrustSet() alert-trust set} (mutual trust is enforced relay-side), so a mute on
-     * either the global or the active list wins — including at the menu, where no server list
-     * exists.
+     * Players muted here: hidden from the HUD, markers, routes and maps, and their pings, chat and
+     * waypoints dropped. Only the selected list's mutes count, as only its sharing settings do -- a
+     * mute in the global list does not follow you onto a server whose own list is selected, or
+     * the other way round. The global list stands in when there is no server list to select, at
+     * the menu.
      */
     public Set<UUID> mutedPingSet() {
         Set<UUID> out = new HashSet<>();
-        collectMuted(global, out);
         TrustList list = activeList();
-        if (list != null && list != global) {
-            collectMuted(list, out);
-        }
+        collectMuted(list != null ? list : global, out);
         return out;
     }
 

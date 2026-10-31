@@ -56,6 +56,16 @@ public class TestPlayerGameTest implements FabricClientGameTest {
             });
             context.takeScreenshot("test-player");
 
+            // Looking off to the side, so the marker idles see-through, and drawn large: the skin
+            // should show plainly, not tinted the ping colour by the frame behind it.
+            int size = context.computeOnClient(client -> TeamLocatorClient.CONFIG.playerMarkerSize);
+            context.runOnClient(client -> TeamLocatorClient.CONFIG.playerMarkerSize = 32);
+            world.getServer().runCommand("tp @a " + (at[0] + 15) + " " + at[1] + " " + at[2] + " 75 20");
+            context.waitTicks(10);
+            context.takeScreenshot("test-player-marker-idle");
+            context.runOnClient(client -> TeamLocatorClient.CONFIG.playerMarkerSize = size);
+            world.getServer().runCommand("tp @a " + (at[0] + 15) + " " + at[1] + " " + at[2] + " 90 20");
+
             // A raised strip across the way: the route steps up onto it and down off it, and the
             // line has to stay on top of the blocks rather than slope through their edges.
             world.getServer().runCommand("fill " + (at[0] + 5) + " " + at[1] + " " + (at[2] - 20) + " "

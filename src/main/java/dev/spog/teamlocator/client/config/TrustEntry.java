@@ -7,7 +7,8 @@ import java.util.UUID;
  * online-mode servers); {@link #name} is a display cache refreshed from the tab list and never
  * used for routing. {@link #hidden} hides us from this specific player while keeping them on the
  * list — it drops them from the sharing set, so they lose coordinates and armor alike;
- * {@link #mutePings} keeps sharing with them but silences their attack pings locally.
+ * {@link #mutePings} keeps sharing with them but hides them here: no HUD row, marker, route or
+ * map icon, and none of their pings, chat or waypoints.
  */
 public class TrustEntry {
     public String uuid;

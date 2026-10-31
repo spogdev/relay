@@ -188,14 +188,17 @@ class AvailabilityQueryTest {
         return c;
     }
 
+    /** A client from before alerts were removed: the only kind that is probed. */
+    private static final int ALERTS = Messages.NO_ALERTS_VERSION - 1;
+
     private static void settle() throws InterruptedException {
         Thread.sleep(300);
     }
 
     @Test
     void aPeerThatConfirmsIsListedAndTheProbeCarriesTheSendersIdentity() throws Exception {
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient bob = connect("bob", Messages.PROTOCOL_VERSION, ProbeReply.YES);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient bob = connect("bob", ALERTS, ProbeReply.YES);
         alice.sendTrust("bob");
         bob.sendTrust("alice");
         settle();
@@ -217,8 +220,8 @@ class AvailabilityQueryTest {
 
     @Test
     void aPeerThatDeclinesIsNotListed() throws Exception {
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient bob = connect("bob", Messages.PROTOCOL_VERSION, ProbeReply.NO);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient bob = connect("bob", ALERTS, ProbeReply.NO);
         alice.sendTrust("bob");
         bob.sendTrust("alice");
         settle();
@@ -231,8 +234,8 @@ class AvailabilityQueryTest {
 
     @Test
     void aPeerWithoutMutualTrustIsNeverProbed() throws Exception {
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient mallory = connect("mallory", Messages.PROTOCOL_VERSION, ProbeReply.YES);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient mallory = connect("mallory", ALERTS, ProbeReply.YES);
         alice.sendTrust("mallory"); // one-way: mallory does not trust alice back
         settle();
 
@@ -247,10 +250,27 @@ class AvailabilityQueryTest {
     }
 
     @Test
+    void aClientWithoutAlertsIsNeitherProbedNorListed() throws Exception {
+        // A v4 client has no alerts, so it would never show one: not a receiver, not asked.
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient bob = connect("bob", Messages.NO_ALERTS_VERSION, ProbeReply.YES);
+        alice.sendTrust("bob");
+        bob.sendTrust("alice");
+        settle();
+
+        CountDownLatch done = alice.query();
+        assertTrue(done.await(5, TimeUnit.SECONDS), "the result must still arrive at once");
+        assertTrue(alice.lastResult().isEmpty(), "a client without alerts must not be promised");
+        synchronized (bob.probesReceived) {
+            assertTrue(bob.probesReceived.isEmpty(), "a client without alerts must not be probed");
+        }
+    }
+
+    @Test
     void anOldClientIsNeitherProbedNorListed() throws Exception {
         // A v2 client would display a real alert, but it cannot answer a probe, and /available
         // promises only verified receivers — so it is excluded rather than guessed at.
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
         ProbeClient oldBob = connect("bob", 2, ProbeReply.YES);
         alice.sendTrust("bob");
         oldBob.sendTrust("alice");
@@ -268,8 +288,8 @@ class AvailabilityQueryTest {
 
     @Test
     void aSilentPeerIsDroppedWhenTheProbeWindowCloses() throws Exception {
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient bob = connect("bob", Messages.PROTOCOL_VERSION, ProbeReply.IGNORE);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient bob = connect("bob", ALERTS, ProbeReply.IGNORE);
         alice.sendTrust("bob");
         bob.sendTrust("alice");
         settle();
@@ -283,10 +303,10 @@ class AvailabilityQueryTest {
 
     @Test
     void aMixedGroupListsExactlyTheConfirmedPeers() throws Exception {
-        ProbeClient alice = connect("alice", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient yes = connect("yes", Messages.PROTOCOL_VERSION, ProbeReply.YES);
-        ProbeClient no = connect("no", Messages.PROTOCOL_VERSION, ProbeReply.NO);
-        ProbeClient silent = connect("silent", Messages.PROTOCOL_VERSION, ProbeReply.IGNORE);
+        ProbeClient alice = connect("alice", ALERTS, ProbeReply.YES);
+        ProbeClient yes = connect("yes", ALERTS, ProbeReply.YES);
+        ProbeClient no = connect("no", ALERTS, ProbeReply.NO);
+        ProbeClient silent = connect("silent", ALERTS, ProbeReply.IGNORE);
         alice.sendTrust("yes", "no", "silent");
         yes.sendTrust("alice");
         no.sendTrust("alice");

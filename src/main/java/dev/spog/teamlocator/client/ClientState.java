@@ -9,8 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Client-side view state: the last known position of each teammate and the set of players
- * currently flashing red (they signalled they are under attack). Written by the relay client's
+ * Client-side view state: the last known position of each teammate. Written by the relay client's
  * receiver thread, read by the HUD each frame — all containers are concurrent.
  *
  * <p>The relay fans positions out one player at a time, so entries are merged per-UUID rather than
@@ -18,8 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * or lost connection) so stale coordinates never linger on the HUD.
  */
 public final class ClientState {
-    /** How long a player stays red after an attack ping, in milliseconds. */
-    private static final long ATTACK_FLASH_MS = 5_000L;
 
     /** Drop a teammate from the HUD if we haven't heard a position for this long. */
     private static final long POSITION_EXPIRE_MS = 10_000L;
@@ -45,7 +42,6 @@ public final class ClientState {
     private static final Map<UUID, Timestamped> positions = new ConcurrentHashMap<>();
     /** Two-point history per player; only the interpolating readers (world map) consult it. */
     private static final Map<UUID, Interp> interp = new ConcurrentHashMap<>();
-    private static final Map<UUID, Long> attackUntil = new ConcurrentHashMap<>();
 
     private ClientState() {
     }
@@ -149,26 +145,15 @@ public final class ClientState {
         return out;
     }
 
-    public static void flagAttacked(UUID player) {
-        attackUntil.put(player, System.currentTimeMillis() + ATTACK_FLASH_MS);
-    }
-
-    public static boolean isUnderAttack(UUID player) {
-        Long until = attackUntil.get(player);
-        return until != null && System.currentTimeMillis() < until;
-    }
-
     /** Forget one player's position at once, rather than waiting for it to expire. */
     public static void remove(UUID player) {
         positions.remove(player);
         interp.remove(player);
-        attackUntil.remove(player);
     }
 
     /** Clear everything on disconnect so stale positions don't linger into the next session. */
     public static void reset() {
         positions.clear();
         interp.clear();
-        attackUntil.clear();
     }
 }

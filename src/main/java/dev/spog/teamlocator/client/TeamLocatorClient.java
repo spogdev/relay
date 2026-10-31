@@ -52,7 +52,6 @@ public class TeamLocatorClient implements ClientModInitializer {
     /** How far the toggle-target keybind searches along the crosshair ray, in blocks. */
     private static final double TARGET_RANGE = 64.0;
 
-    private static KeyMapping pingKey;
     private static KeyMapping toggleTargetKey;
     private static KeyMapping mapPingKey;
     private static KeyMapping configKey;
@@ -77,10 +76,6 @@ public class TeamLocatorClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "main"));
         int unbound = InputConstants.UNKNOWN.getValue();
-        // Unbound by default, like the rest: an accidental alert pings every mutually-trusted
-        // teammate, so sending one should be a deliberate binding choice, not a default key.
-        pingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.relay.ping", InputConstants.Type.KEYBOARD, unbound, category));
         toggleTargetKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.relay.toggle_target", InputConstants.Type.KEYBOARD, unbound, category));
         configKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
@@ -96,11 +91,9 @@ public class TeamLocatorClient implements ClientModInitializer {
 
         HudElementRegistry.addLast(TeamHud.ID, new TeamHud(CONFIG));
 
-        // Register our custom alert sound event (client-only mod, safe at client init).
+        // Register the map ping sound event (client-only mod, safe at client init).
         RelaySounds.register();
 
-        // /available — who would actually see an alert sent right now.
-        AvailableCommand.register();
         RelayWaypointCommand.register();
         TestPlayers.register();
         PingRenderer.register();
@@ -150,9 +143,6 @@ public class TeamLocatorClient implements ClientModInitializer {
                 client.execute(() -> leftServer(client)));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (pingKey.consumeClick()) {
-                RELAY.sendAttackPing();
-            }
             while (toggleTargetKey.consumeClick()) {
                 toggleTargetedPlayer(client);
             }

@@ -305,10 +305,15 @@ public final class RelayRouter {
         registry.send(attacker, new Messages.PingAck(receivers));
     }
 
-    /** The relay-side ping gate: mutual alert trust, not self, and the viewer hasn't blocked us. */
+    /**
+     * The relay-side ping gate: a client that still has alerts, mutual alert trust, not self, and
+     * the viewer hasn't blocked us. A v4+ client has no alerts to show, so it is neither sent one
+     * nor counted among the receivers an older client is told about.
+     */
     private boolean wouldDeliverPing(UUID attackerId, Session viewer) {
         UUID viewerId = viewer.uuid();
-        if (viewerId.equals(attackerId)) {
+        if (viewerId.equals(attackerId)
+                || viewer.protocolVersion() >= Messages.NO_ALERTS_VERSION) {
             return false;
         }
         if (!(alerts(attackerId, viewerId) && alerts(viewerId, attackerId))) {

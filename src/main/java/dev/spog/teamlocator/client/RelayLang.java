@@ -118,7 +118,6 @@ public final class RelayLang {
      */
     private static final Map<String, String> KEYBINDS = Map.of(
             "key.category.relay.main", "Relay",
-            "key.relay.ping", "Send Help Alert",
             "key.relay.toggle_target", "Toggle Trust for Targeted Player",
             "key.relay.open_config", "Open Relay Menu",
             "key.relay.toggle_hud", "Toggle HUD",

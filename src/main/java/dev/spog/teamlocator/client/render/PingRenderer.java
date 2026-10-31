@@ -3,7 +3,7 @@ package dev.spog.teamlocator.client.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.spog.teamlocator.TeamLocatorConstants;
-import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PlayerNames;
 import dev.spog.teamlocator.client.PingState;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import net.fabricmc.api.EnvType;
@@ -287,7 +287,7 @@ public final class PingRenderer {
         pushBillboard(matrices, camera, ping, trueDistance, d.x, d.y, d.z);
         // The distance is the true straight-line distance, not the clamped draw distance, so it
         // always tells the truth about how far the spot is.
-        String name = PingHandler.displayName(mc, ping.owner());
+        String name = PlayerNames.displayName(mc, ping.owner());
         String dist = Math.round(trueDistance) + "m";
         drawLabels(mc.font, collector, matrices, name, dist, alpha, ping.argb());
         matrices.popPose();

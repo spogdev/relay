@@ -1,7 +1,7 @@
 package dev.spog.teamlocator.client.render;
 
 import dev.spog.teamlocator.client.ClientState;
-import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PlayerNames;
 import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
@@ -299,7 +299,7 @@ public final class TeammateIconRenderer implements HudElement {
         //    edge, and drawing them before the frame and face is what puts them behind. The name goes
         //    on the left, the distance (when enabled) on the right. Only shown while looked at.
         if (looked) {
-            drawSideLabel(mc, graphics, PingHandler.displayName(mc, teammate.id()),
+            drawSideLabel(mc, graphics, PlayerNames.displayName(mc, teammate.id()),
                     faceX - BORDER, screenY, fade, faceSize, true);
             if (TeamLocatorClient.CONFIG.playerMarkerShowDistance) {
                 drawSideLabel(mc, graphics, Math.round(distance) + "m",

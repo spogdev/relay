@@ -1,7 +1,7 @@
 package dev.spog.teamlocator.test;
 
 import dev.spog.teamlocator.client.ClientState;
-import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PlayerNames;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.config.TeamConfig;
@@ -40,8 +40,8 @@ public class TestPlayerGameTest implements FabricClientGameTest {
                 List<TrackedPos> teammates = ClientState.latest();
                 check(teammates.size() == 1, "one test player, got " + teammates.size());
                 TrackedPos p = teammates.get(0);
-                check("TestPlayer1".equals(PingHandler.displayName(client, p.id())),
-                        "named TestPlayer1, got " + PingHandler.displayName(client, p.id()));
+                check("TestPlayer1".equals(PlayerNames.displayName(client, p.id())),
+                        "named TestPlayer1, got " + PlayerNames.displayName(client, p.id()));
                 check(MathHelper.floor(p.x()) == at[0] && MathHelper.floor(p.z()) == at[2],
                         "where the player stood, got " + p.x() + ", " + p.z());
             });

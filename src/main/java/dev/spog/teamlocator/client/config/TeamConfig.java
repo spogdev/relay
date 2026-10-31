@@ -27,7 +27,6 @@ import java.util.UUID;
 public class TeamConfig {
     public enum Mode { SERVER, GLOBAL }
 
-    public enum AlertSound { ALARM, NOTEBLOCKS }
 
     /**
      * Horizontal alignment of each HUD row (head + text as a unit) within the widest row.
@@ -97,25 +96,6 @@ public class TeamConfig {
      * off stops it being sent at all, rather than merely hiding it locally.
      */
     public boolean shareHealth = true;
-    /** Receive attack pings (as toasts) from teammates on other servers or while at the menu. */
-    public boolean crossServerPings = true;
-    /**
-     * Master mute: when true, no incoming alert is shown at all — no toast, no sound, no HUD flash,
-     * from any teammate on any server. A blanket "do not disturb" that overrides everything below
-     * ({@link #crossServerPings}, per-player mutes, the cooldown), for when a player wants the
-     * sharing HUD without ever being interrupted by alerts. Does not affect whether OUR alerts reach
-     * others — only our own inbox.
-     */
-    public boolean hideAllAlerts = false;
-    /**
-     * Per-player client-side ping display cooldown, in seconds: a repeat alert from the same player
-     * is received but not shown again until it elapses. The slider offers 1s–10m
-     * ({@link dev.spog.spore.ui.widget.SporeSlider#DURATION_STEPS}); 0 (show every alert)
-     * remains valid if set in the config file directly.
-     */
-    public int pingCooldownSeconds = 15;
-    /** Which sound plays when an attack alert is received. Defaults to the new alarm. */
-    public AlertSound alertSound = AlertSound.ALARM;
     /**
      * Which of the five UUID-derived ping colours this player uses, 0-4. The palette itself is not
      * stored: it is derived from the account's UUID on demand, so it cannot drift out of sync with
@@ -140,9 +120,8 @@ public class TeamConfig {
     /**
      * Whether an arriving ping plays a sound.
      *
-     * <p>Separate from {@link #alertSound}, which governs help alerts: the two are different events
-     * and sharing a sound would mean having to look at the screen to tell them apart. On by default
-     * because a ping placed behind you is invisible until something draws your attention to it.
+     * <p>On by default because a ping placed behind you is invisible until something draws your
+     * attention to it.
      */
     public boolean mapPingSound = true;
 
@@ -326,7 +305,6 @@ public class TeamConfig {
         if (activeMode == null) activeMode = Mode.GLOBAL;
         if (serverModes == null) serverModes = new java.util.HashMap<>();
         serverModes.values().removeIf(java.util.Objects::isNull);
-        if (alertSound == null) alertSound = AlertSound.ALARM;
         if (pathFindingMode == null) pathFindingMode = PathFindingMode.UNDERGROUND;
         if (pathPearls == null) pathPearls = PathPearls.AUTO;
         if (hudScale < 0.5 || hudScale > 2.0) hudScale = 1.0;
@@ -343,10 +321,6 @@ public class TeamConfig {
         if (hudDurabilityDisplay == null) hudDurabilityDisplay = DurabilityDisplay.BAR;
         if (!isValidHex(hudPrimaryColor)) hudPrimaryColor = "#FFFFFF";
         if (!isValidHex(hudSecondaryColor)) hudSecondaryColor = "#AAAAAA";
-        // Upper bound matches the cooldown slider's longest step (10 minutes). It was 60 when the
-        // slider only went that high; leaving it there would silently reset any longer cooldown
-        // back to 15s on the next load.
-        if (pingCooldownSeconds < 0 || pingCooldownSeconds > 600) pingCooldownSeconds = 15;
         if (pingColorIndex < 0 || pingColorIndex >= 5) pingColorIndex = 0;
         // Clamp rather than reset: a hand-edited size outside the slider's range is still an
         // expressed preference for "small" or "large", so honour the nearest legal value.
@@ -585,10 +559,10 @@ public class TeamConfig {
     }
 
     /**
-     * The alert-trust set uploaded to the server: everyone on the global list plus the active
-     * list, hidden entries included ({@code hidden} withholds coordinates, not alerts), and
-     * independent of the share toggle. This is what keeps mutual-trust pings working at the menu,
-     * in singleplayer, or on another server — anywhere the sharing set is empty or server-scoped.
+     * The mutual-trust set uploaded to the relay (sent as {@code alertsWith}, its name from when it
+     * carried help alerts): everyone on the global list plus the active list, hidden entries
+     * included ({@code hidden} withholds coordinates, not this), and independent of the share
+     * toggle. Map pings and relay chat need it both ways round.
      */
     public Set<UUID> alertTrustSet() {
         Set<UUID> out = new HashSet<>();

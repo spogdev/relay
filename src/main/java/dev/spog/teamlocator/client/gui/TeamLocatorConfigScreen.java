@@ -94,7 +94,6 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
     private final SporeDropdown<TeamConfig.HudAlign> hudAlign;
     private final SporeDropdown<TeamConfig.ArmorDisplay> armorDisplay;
     private final SporeDropdown<TeamConfig.DurabilityDisplay> durabilityDisplay;
-    private final SporeDropdown<TeamConfig.AlertSound> alertSound;
     private final SporeDropdown<TeamConfig.Mode> activeMode;
     private final SporeDropdown<Integer> pingColor;
     private final SporeDropdown<TeamConfig.PathFindingMode> pathFinding;
@@ -129,10 +128,6 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         });
         durabilityDisplay = new SporeDropdown<>(value -> {
             config.hudDurabilityDisplay = value;
-            config.save();
-        });
-        alertSound = new SporeDropdown<>(value -> {
-            config.alertSound = value;
             config.save();
         });
         // Remembered for this server, so the next join restores it, and pushed to the relay now:
@@ -248,32 +243,6 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
         body.toggle(RelayLang.text("relay.config.share_health"), config.shareHealth,
                 RelayLang.text("relay.config.share_health.desc"), on -> {
                     config.shareHealth = on;
-                    config.save();
-                    TeamLocatorClient.syncToServer();
-                });
-
-        body.section(RelayLang.text("relay.config.section.pings"));
-        body.toggle(RelayLang.text("relay.config.enable_alerts"), !config.hideAllAlerts, null,
-                on -> {
-                    config.hideAllAlerts = !on;
-                    config.save();
-                });
-        body.toggle(RelayLang.text("relay.config.cross_server_pings"), config.crossServerPings,
-                RelayLang.text("relay.config.cross_server_pings.desc"), on -> {
-                    config.crossServerPings = on;
-                    config.save();
-                    TeamLocatorClient.syncToServer();
-                });
-
-        alertSound.setEnumEntries(TeamConfig.AlertSound.values(),
-                value -> alertSoundLabel(value).getString());
-        body.dropdown(RelayLang.text("relay.config.alert_sound"), alertSound, config.alertSound,
-                null);
-
-        body.slider(RelayLang.text("relay.config.alert_cooldown"), config.pingCooldownSeconds,
-                SporeSlider.DURATION_STEPS,
-                RelayLang.text("relay.config.alert_cooldown.desc"), value -> {
-                    config.pingCooldownSeconds = value;
                     config.save();
                     TeamLocatorClient.syncToServer();
                 });
@@ -875,11 +844,6 @@ public class TeamLocatorConfigScreen extends SporeConfigScreen<TeamLocatorConfig
                     nameInput.setValue("");
                     addStatus = null;
                 }));
-    }
-
-    private Text alertSoundLabel(TeamConfig.AlertSound sound) {
-        return RelayLang.text(sound == TeamConfig.AlertSound.ALARM
-                ? "relay.config.alert_sound.alarm" : "relay.config.alert_sound.noteblocks");
     }
 
     private Text hudAlignLabel(TeamConfig.HudAlign align) {

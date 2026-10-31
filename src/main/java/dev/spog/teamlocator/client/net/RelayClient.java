@@ -6,7 +6,7 @@ import com.google.gson.JsonParseException;
 import dev.spog.teamlocator.TeamLocatorConstants;
 import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.ClientState;
-import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PlayerNames;
 import dev.spog.teamlocator.client.PingPalette;
 import dev.spog.teamlocator.client.PingState;
 import dev.spog.teamlocator.client.RelayToasts;
@@ -54,14 +54,11 @@ import java.util.function.Supplier;
 public final class RelayClient {
     private static final Gson GSON = new Gson();
     /**
-     * 3 adds availability probes ({@code /available}). The relay accepts older clients from v1 up
-     * (and treats newer ones as its own version), so this no longer has to move in lockstep with
-     * the relay — but a relay older than the cross-version change still hard-rejects any mismatch,
-     * so the relay must be redeployed at least once before shipping this client version.
+     * 4 drops help alerts: a relay that knows it sends this client none, and leaves it out of the
+     * receivers it reports to older clients. The relay accepts older clients from v1 up (and treats
+     * newer ones as its own version), so this need not move in lockstep with the relay.
      */
-    private static final int PROTOCOL_VERSION = 3;
-    /** How long {@link #queryAvailability} waits for the relay's aggregate before giving up. */
-    private static final long AVAILABILITY_TIMEOUT_MS = 4_000L;
+    private static final int PROTOCOL_VERSION = 4;
     /**
      * Ceiling for reconnect backoff. 15s so a relay that goes down (reboot, redeploy) is picked up
      * again within ~15s of returning, rather than leaving clients dark for up to half a minute.
@@ -97,7 +94,7 @@ public final class RelayClient {
 
     /** Supplies the current position-sharing set from config (breaks a class cycle). */
     private final Supplier<Set<UUID>> sharingSet;
-    /** Supplies the current alert-trust set from config; gates ping delivery relay-side. */
+    /** Supplies the mutual-trust set from config; gates map pings and chat relay-side. */
     private final Supplier<Set<UUID>> alertSet;
     /**
      * Run once every time auth succeeds, including after a reconnect. Lets the client re-push state
@@ -362,8 +359,8 @@ public final class RelayClient {
         JsonObject o = new JsonObject();
         o.addProperty("type", "trust-update");
         o.add("sharingWith", uuidArray(sharingWith));
-        // Separate from sharingWith so the share toggle / menu state never kills alert delivery.
-        // An old relay simply ignores this field and keeps its single-set behavior.
+        // Separate from sharingWith so the share toggle never cuts off map pings and chat, which
+        // need trust both ways. An old relay simply ignores this field and keeps one set.
         o.add("alertsWith", uuidArray(alertsWith));
         sendIfReady(o);
         // Muted players ride along with every trust push, so the relay drops their chat, pings and
@@ -470,41 +467,6 @@ public final class RelayClient {
         o.addProperty("y", y);
         o.addProperty("z", z);
         o.addProperty("dimension", dimension);
-        sendIfReady(o);
-    }
-
-    public void sendAttackPing() {
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "ping");
-        sendIfReady(o);
-    }
-
-    /** The pending {@code /available} callback; one in flight at a time, newest wins. */
-    private volatile Consumer<List<UUID>> availabilityCallback;
-    private volatile ScheduledFuture<?> availabilityTimeout;
-
-    /**
-     * Ask the relay who would actually see our alert right now. {@code onResult} receives the
-     * verified receivers (possibly empty), or {@code null} if the relay never answered — an old
-     * relay ignores the query outright, so a timeout is the only way to notice. The callback runs
-     * on the relay executor thread; hop to the game thread before touching UI.
-     */
-    public void queryAvailability(Consumer<List<UUID>> onResult) {
-        ScheduledFuture<?> priorTimeout = availabilityTimeout;
-        if (priorTimeout != null) {
-            priorTimeout.cancel(false);
-        }
-        availabilityCallback = onResult;
-        availabilityTimeout = executor.schedule(() -> {
-            Consumer<List<UUID>> cb = availabilityCallback;
-            availabilityCallback = null;
-            if (cb != null) {
-                cb.accept(null);
-            }
-        }, AVAILABILITY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "availability-query");
         sendIfReady(o);
     }
 
@@ -760,14 +722,12 @@ public final class RelayClient {
             case "auth-ok" -> onAuthOk();
             case "auth-fail" -> onAuthFail(obj.has("reason") ? obj.get("reason").getAsString() : "?", gen);
             case "position-snapshot" -> onSnapshot(obj);
-            case "ping-broadcast" -> onPingBroadcast(obj);
-            case "ping-ack" -> onPingAck(obj);
-            case "availability-probe" -> onAvailabilityProbe(obj, gen);
+            // Help alerts from older clients ("ping-broadcast") are ignored: this client has none.
+            case "availability-probe" -> onAvailabilityProbe(obj);
             case "map-ping-broadcast" -> onMapPing(obj);
             case "map-ping-removed" -> onMapPingRemoved(obj);
             case "chat-broadcast" -> onChat(obj);
             case "waypoint-broadcast" -> onWaypoint(obj);
-            case "availability-result" -> onAvailabilityResult(obj);
             default -> { }
         }
     }
@@ -1018,93 +978,19 @@ public final class RelayClient {
         return List.copyOf(pieces);
     }
 
-    private void onPingBroadcast(JsonObject obj) {
-        try {
-            UUID attacker = UUID.fromString(obj.get("attacker").getAsString());
-            // An old relay omits mcServer; assume same-server, which was its only behavior.
-            String fromServer = obj.has("mcServer")
-                    ? obj.get("mcServer").getAsString() : mcServerKey;
-            PingHandler.onPing(attacker, fromServer, mcServerKey);
-        } catch (RuntimeException e) {
-            TeamLocatorConstants.LOGGER.debug("Bad ping broadcast: {}", e.toString());
-        }
-    }
-
     /**
-     * The relay asking, on another player's behalf, whether we would display their alert right
-     * now. Evaluated silently with the exact {@link PingHandler#wouldDisplay} gate a real ping
-     * would face — no toast, no sound — and answered with a yes/no. Runs on the executor because
-     * the known-server check may do DNS, which must not stall the WebSocket receive thread.
+     * The relay asking, on an older client's behalf, whether we would show their help alert. This
+     * client has no alerts, so the answer is always no -- given at once, so their {@code /available}
+     * is not left waiting on us until it times out.
      */
-    private void onAvailabilityProbe(JsonObject obj, long gen) {
-        if (!obj.has("probeId") || !obj.has("attacker")) {
+    private void onAvailabilityProbe(JsonObject obj) {
+        if (!obj.has("probeId")) {
             return;
         }
-        final String probeId = obj.get("probeId").getAsString();
-        final UUID attacker;
-        try {
-            attacker = UUID.fromString(obj.get("attacker").getAsString());
-        } catch (IllegalArgumentException e) {
-            return;
-        }
-        final String fromServer = obj.has("mcServer")
-                ? obj.get("mcServer").getAsString() : mcServerKey;
-        executor.execute(() -> {
-            if (gen != attempt.get()) {
-                return; // superseded socket; a reply would carry a stale probeId anyway
-            }
-            boolean available;
-            try {
-                available = PingHandler.wouldDisplay(attacker, fromServer, mcServerKey);
-            } catch (RuntimeException e) {
-                TeamLocatorConstants.LOGGER.debug("Availability probe evaluation failed: {}",
-                        e.toString());
-                available = false; // when in doubt, never promise a screen we can't verify
-            }
-            JsonObject r = new JsonObject();
-            r.addProperty("type", "availability-response");
-            r.addProperty("probeId", probeId);
-            r.addProperty("available", available);
-            sendJson(r);
-        });
-    }
-
-    /** The relay's aggregate answer to our own {@link #queryAvailability}. */
-    private void onAvailabilityResult(JsonObject obj) {
-        List<UUID> receivers = new ArrayList<>();
-        if (obj.has("receivers") && obj.get("receivers").isJsonArray()) {
-            for (var el : obj.getAsJsonArray("receivers")) {
-                try {
-                    receivers.add(UUID.fromString(el.getAsString()));
-                } catch (RuntimeException ignored) {
-                    // skip a malformed uuid rather than dropping the whole result
-                }
-            }
-        }
-        ScheduledFuture<?> timeout = availabilityTimeout;
-        if (timeout != null) {
-            timeout.cancel(false);
-        }
-        Consumer<List<UUID>> cb = availabilityCallback;
-        availabilityCallback = null;
-        if (cb != null) {
-            cb.accept(receivers);
-        }
-    }
-
-    /** The relay telling us who received our own ping (an old relay never sends this). */
-    private void onPingAck(JsonObject obj) {
-        if (!obj.has("receivers") || !obj.get("receivers").isJsonArray()) {
-            return;
-        }
-        List<UUID> receivers = new ArrayList<>();
-        for (var el : obj.getAsJsonArray("receivers")) {
-            try {
-                receivers.add(UUID.fromString(el.getAsString()));
-            } catch (RuntimeException ignored) {
-                // skip a malformed uuid rather than dropping the whole ack
-            }
-        }
-        PingHandler.onPingAck(receivers);
+        JsonObject r = new JsonObject();
+        r.addProperty("type", "availability-response");
+        r.addProperty("probeId", obj.get("probeId").getAsString());
+        r.addProperty("available", false);
+        sendJson(r);
     }
 }

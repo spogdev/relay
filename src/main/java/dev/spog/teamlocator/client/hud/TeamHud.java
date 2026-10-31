@@ -2,7 +2,7 @@ package dev.spog.teamlocator.client.hud;
 
 import dev.spog.teamlocator.client.ArmorPiece;
 import dev.spog.teamlocator.client.ClientState;
-import dev.spog.teamlocator.client.PingHandler;
+import dev.spog.teamlocator.client.PlayerNames;
 import dev.spog.teamlocator.client.RelayLang;
 import dev.spog.teamlocator.client.Skins;
 import dev.spog.teamlocator.client.TrackedPos;
@@ -27,8 +27,7 @@ import java.util.Locale;
  * Draws one row per tracked player: {@code <face> <name> <x>, <y>, <z>}, with the dimension
  * appended (in parentheses, prettified) only when that player is in a different dimension than the
  * local viewer. A player on another server of the network shows "Other server" in place of the
- * coordinates, which would point somewhere else entirely. A player flashes red while they are
- * signalling that they are under attack.
+ * coordinates, which would point somewhere else entirely.
  */
 @Environment(EnvType.CLIENT)
 public class TeamHud implements HudElement {
@@ -38,7 +37,6 @@ public class TeamHud implements HudElement {
     private static final int FACE_SIZE = 10;
     private static final int ROW_HEIGHT = 11;
     private static final int GAP = 2;
-    private static final int COLOR_ATTACKED = 0xFFFF5555;
     private static final int EDGE_MARGIN = 2;
     /** Shrinks the 16px item icon to sit inside a row without inflating it. */
     private static final float ARMOR_ICON_SCALE = 0.75f; // 16 * 0.75 = 12px, slightly over FACE_SIZE
@@ -139,16 +137,14 @@ public class TeamHud implements HudElement {
             // A teammate missing from OUR tab list is, on a proxy network, routinely on a different
             // backend rather than gone, so the row stays: the name comes from the trust list and the
             // face is fetched by UUID.
-            boolean attacked = ClientState.isUnderAttack(e.id());
-            int pri = attacked ? COLOR_ATTACKED : primary;
-            int sec = attacked ? COLOR_ATTACKED : secondary;
+            int pri = primary;
+            int sec = secondary;
             // The name alone carries the player's ping colour, so a row can be matched to the ping
             // that player left in the world. Everything else on the row keeps the configured
             // colours: tinting the coordinates too would drown the row in one hue and undo the
             // primary/secondary distinction. Falls back to primary for anyone not reporting a
-            // colour, and an attack still overrides it — knowing someone needs help outranks
-            // knowing whose ping is whose.
-            int nameColor = attacked ? COLOR_ATTACKED : e.nameColor(primary);
+            // colour.
+            int nameColor = e.nameColor(primary);
             List<Segment> segments = new ArrayList<>();
             // Trailing spaces only pad toward what follows; without coords the name would
             // otherwise carry a dangling gap before the armor icons.
@@ -158,7 +154,7 @@ public class TeamHud implements HudElement {
             // Same resolution order the in-world marker uses: the name stored against this player in
             // the trust list (always present for someone you trust), then the tab list, then a short
             // UUID so a row is never nameless.
-            String name = PingHandler.displayName(mc, e.id());
+            String name = PlayerNames.displayName(mc, e.id());
             Coords coords = null;
             segments.add(new Segment(showCoords || server != null ? name + "  " : name, nameColor));
             if (server != null) {

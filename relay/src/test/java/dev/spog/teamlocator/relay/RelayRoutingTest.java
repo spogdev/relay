@@ -91,22 +91,22 @@ class RelayRoutingTest {
         final List<JsonObject> waypointFrames = new ArrayList<>();
         private final Map<String, CountDownLatch> waiters = new ConcurrentHashMap<>();
 
-        TestClient(String name, String mcServer) throws Exception {
+        TestClient(String name, String mcServer, int version) throws Exception {
             super(new URI("ws://127.0.0.1:" + port));
             this.name = name;
             this.uuid = uuidOf(name);
             this.mcServer = mcServer;
+            this.version = version;
         }
 
         private final String mcServer;
+        private final int version;
 
         @Override
         public void onOpen(ServerHandshake handshake) {
             JsonObject hello = new JsonObject();
             hello.addProperty("type", "hello");
-            // Track the real constant: a version bump should not silently fail every test with an
-            // auth rejection, which is what a hardcoded number here produces.
-            hello.addProperty("protocolVersion", Messages.PROTOCOL_VERSION);
+            hello.addProperty("protocolVersion", version);
             hello.addProperty("mcServer", mcServer);
             hello.addProperty("profileName", name);
             send(GSON.toJson(hello));
@@ -395,8 +395,21 @@ class RelayRoutingTest {
         }
     }
 
+    /**
+     * A current client. Tracks the real constant: a version bump should not silently fail every
+     * test with an auth rejection, which is what a hardcoded number here produces.
+     */
     private TestClient connect(String name, String mcServer) throws Exception {
-        TestClient c = new TestClient(name, mcServer);
+        return connect(name, mcServer, Messages.PROTOCOL_VERSION);
+    }
+
+    /** A client from before alerts were removed, which still sends and shows them. */
+    private TestClient connectWithAlerts(String name, String mcServer) throws Exception {
+        return connect(name, mcServer, Messages.NO_ALERTS_VERSION - 1);
+    }
+
+    private TestClient connect(String name, String mcServer, int version) throws Exception {
+        TestClient c = new TestClient(name, mcServer, version);
         clients.add(c);
         assertTrue(c.connectBlocking(5, TimeUnit.SECONDS), "connect failed for " + name);
         c.awaitAuth();
@@ -579,10 +592,39 @@ class RelayRoutingTest {
     }
 
     @Test
-    void pingRequiresMutualTrust() throws Exception {
-        TestClient alice = connect("alice", "play.example.net");
+    void clientsWithoutAlertsAreSentNoneAndNotCountedAsReceivers() throws Exception {
+        TestClient alice = connectWithAlerts("alice", "play.example.net");
         TestClient bob = connect("bob", "play.example.net");
-        TestClient carol = connect("carol", "play.example.net");
+        TestClient carol = connectWithAlerts("carol", "play.example.net");
+        alice.sendTrust("bob", "carol");
+        bob.sendTrust("alice");
+        carol.sendTrust("alice");
+        settle();
+
+        // Bob's client has no alerts: Alice's older client is told only Carol received hers.
+        CountDownLatch carolPing = carol.expect("ping");
+        CountDownLatch aliceAck = alice.expect("ping-ack");
+        alice.sendAttackPing();
+        assertTrue(carolPing.await(5, TimeUnit.SECONDS), "an older client still gets alerts");
+        assertTrue(aliceAck.await(5, TimeUnit.SECONDS));
+        settle();
+        assertFalse(bob.sawPingFrom(alice), "a client without alerts must not be sent one");
+        synchronized (alice.pingAcks) {
+            assertEquals(List.of(carol.uuid.toString()), alice.pingAcks.get(0),
+                    "a client without alerts must not be named as a receiver");
+        }
+
+        // Everything else between them still works: the same trust carries chat.
+        CountDownLatch bobChat = bob.expect("chat");
+        alice.sendChat("hi");
+        assertTrue(bobChat.await(5, TimeUnit.SECONDS), "chat still reaches a client without alerts");
+    }
+
+    @Test
+    void pingRequiresMutualTrust() throws Exception {
+        TestClient alice = connectWithAlerts("alice", "play.example.net");
+        TestClient bob = connectWithAlerts("bob", "play.example.net");
+        TestClient carol = connectWithAlerts("carol", "play.example.net");
 
         // Alice <-> Bob is mutual. Alice -> Carol is one-way (Carol does not trust Alice back).
         alice.sendTrust("bob", "carol");
@@ -606,8 +648,8 @@ class RelayRoutingTest {
 
     @Test
     void blockListSuppressesPings() throws Exception {
-        TestClient alice = connect("alice", "play.example.net");
-        TestClient bob = connect("bob", "play.example.net");
+        TestClient alice = connectWithAlerts("alice", "play.example.net");
+        TestClient bob = connectWithAlerts("bob", "play.example.net");
 
         // Mutual trust, but Bob has blocked Alice's pings.
         alice.sendTrust("bob");
@@ -661,10 +703,10 @@ class RelayRoutingTest {
 
     @Test
     void pingCrossesServersAndCarriesTheAttackersServer() throws Exception {
-        TestClient alice = connect("alice", "play.example.net");
-        TestClient bob = connect("bob", "other.example.net");
-        TestClient menuFriend = connect("carol", "menu");
-        TestClient stranger = connect("mallory", "other.example.net");
+        TestClient alice = connectWithAlerts("alice", "play.example.net");
+        TestClient bob = connectWithAlerts("bob", "other.example.net");
+        TestClient menuFriend = connectWithAlerts("carol", "menu");
+        TestClient stranger = connectWithAlerts("mallory", "other.example.net");
 
         // Alice mutually trusts Bob (another server) and Carol (sitting at the main menu).
         alice.sendTrust("bob", "carol");
@@ -698,8 +740,8 @@ class RelayRoutingTest {
     void alertTrustDeliversPingsWhenSharingSetsAreEmpty() throws Exception {
         // A client at the menu (or with "Share My Coordinates" off) uploads an empty sharing set
         // but keeps its alert trust from the global list; pings must still be delivered.
-        TestClient alice = connect("alice", "play.example.net");
-        TestClient bob = connect("bob", "menu");
+        TestClient alice = connectWithAlerts("alice", "play.example.net");
+        TestClient bob = connectWithAlerts("bob", "menu");
 
         alice.sendTrustAndAlerts(new String[] {}, new String[] {"bob"});
         bob.sendTrustAndAlerts(new String[] {}, new String[] {"alice"});

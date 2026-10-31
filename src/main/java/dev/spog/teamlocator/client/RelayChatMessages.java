@@ -48,7 +48,7 @@ public final class RelayChatMessages {
                         new HoverEvent.ShowText(recipientTooltip(mc, recipients))));
 
         RelayChat.send(prefix
-                .append(Text.literal(" <" + PingHandler.displayName(mc, sender) + "> ")
+                .append(Text.literal(" <" + PlayerNames.displayName(mc, sender) + "> ")
                         .formatted(PREFIX_COLOR))
                 .append(Text.literal(text).formatted(BODY_COLOR)));
     }
@@ -62,7 +62,7 @@ public final class RelayChatMessages {
      */
     public static void showWaypoint(MinecraftClient mc, UUID sender, String name,
                                     int x, int y, int z, String dimension) {
-        String who = PingHandler.displayName(mc, sender);
+        String who = PlayerNames.displayName(mc, sender);
         // Quote the name so one containing spaces still parses as a single argument.
         String command = "/relaywaypoint \"" + name.replace("\"", "") + "\" "
                 + x + " " + y + " " + z + " " + dimension;
@@ -100,7 +100,7 @@ public final class RelayChatMessages {
         MutableText tooltip = Text.literal("Received by:\n")
                 .formatted(Formatting.GRAY);
         for (int i = 0; i < recipients.size(); i++) {
-            tooltip.append(Text.literal(PingHandler.displayName(mc, recipients.get(i)))
+            tooltip.append(Text.literal(PlayerNames.displayName(mc, recipients.get(i)))
                     .formatted(Formatting.WHITE));
             if (i < recipients.size() - 1) {
                 tooltip.append(Text.literal("\n").formatted(Formatting.GRAY));

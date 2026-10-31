@@ -292,12 +292,19 @@ public final class TeammateIconRenderer implements HudElement {
             }
         }
 
-        // 2) The ping-colour frame: a filled rect one border wider than the face on every side. The
-        //    face is painted over its middle, leaving the 1px ring Xaero draws (white; here the ping
-        //    colour).
+        // 2) The ping-colour frame: the ring Xaero draws (white; here the ping colour), as four strips
+        //    around the face. Not one filled square under it: while the marker idles see-through, that
+        //    square showed through the face and tinted the skin the ping colour.
         int rgb = teammate.nameColor(0xFFFFFFFF) & 0xFFFFFF;
-        graphics.fill(faceX - BORDER, faceY - BORDER,
-                faceX + faceSize + BORDER, faceY + faceSize + BORDER, (alpha << 24) | rgb);
+        int frame = (alpha << 24) | rgb;
+        int left = faceX - BORDER;
+        int top = faceY - BORDER;
+        int right = faceX + faceSize + BORDER;
+        int bottom = faceY + faceSize + BORDER;
+        graphics.fill(left, top, right, faceY, frame);
+        graphics.fill(left, faceY + faceSize, right, bottom, frame);
+        graphics.fill(left, faceY, faceX, faceY + faceSize, frame);
+        graphics.fill(faceX + faceSize, faceY, right, faceY + faceSize, frame);
 
         // 3) The face, drawn by vanilla's own player-face helper — the same one the mod's HUD rows
         //    use — so the skin is sampled correctly with no hand-built quads or render layers. The

@@ -26,6 +26,9 @@ public final class Messages {
      *   <li>v3 — availability probes ({@code availability-query} / {@code -probe} / {@code -response}
      *       / {@code -result}), backing the client's {@code /available} command. The relay only
      *       probes v3+ sessions, so older clients never see an unknown frame.</li>
+     *   <li>v4 — the client has no help alerts. The relay sends a v4+ session no pings or
+     *       availability probes, and so never names it among an older client's receivers; v1-v3
+     *       clients keep sending and receiving alerts among themselves as before.</li>
      * </ul>
      *
      * <p>Every field added since v1 is <em>optional</em> on the wire, and every message a client
@@ -36,10 +39,13 @@ public final class Messages {
      * <em>non</em>-additive change (renaming or removing a field, or changing its meaning) would
      * break this and would need a real negotiation, not just a version bump.
      */
-    public static final int PROTOCOL_VERSION = 3;
+    public static final int PROTOCOL_VERSION = 4;
 
     /** The lowest protocol version whose clients understand availability probes. */
     public static final int AVAILABILITY_MIN_VERSION = 3;
+
+    /** The first protocol version whose clients have no help alerts, and so are sent none. */
+    public static final int NO_ALERTS_VERSION = 4;
 
     /**
      * The oldest client protocol the relay still accepts. The relay serves anything in

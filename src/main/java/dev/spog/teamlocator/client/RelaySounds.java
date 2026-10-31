@@ -11,15 +11,7 @@ import net.minecraft.sounds.SoundEvent;
 /** Custom relay sound events. {@link #register()} must be called once at client init. */
 @Environment(EnvType.CLIENT)
 public final class RelaySounds {
-    public static final Identifier ALARM_ID =
-            Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "alarm");
-    public static final SoundEvent ALARM = SoundEvent.createVariableRangeEvent(ALARM_ID);
-
-    /**
-     * Played when a map ping arrives. Kept separate from the alert sound rather than folded into
-     * that setting: a ping and a call for help are different events, and sharing one sound would
-     * mean having to look at the screen to tell which just happened.
-     */
+    /** Played when a map ping arrives. */
     public static final Identifier PING_ID =
             Identifier.fromNamespaceAndPath(TeamLocatorConstants.MOD_ID, "ping");
     public static final SoundEvent PING = SoundEvent.createVariableRangeEvent(PING_ID);
@@ -27,7 +19,6 @@ public final class RelaySounds {
     private RelaySounds() {}
 
     public static void register() {
-        Registry.register(BuiltInRegistries.SOUND_EVENT, ALARM_ID, ALARM);
         Registry.register(BuiltInRegistries.SOUND_EVENT, PING_ID, PING);
     }
 }

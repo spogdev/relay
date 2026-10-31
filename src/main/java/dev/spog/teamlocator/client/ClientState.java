@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -116,15 +117,21 @@ public final class ClientState {
         };
     }
 
-    /** Current non-stale positions in a stable order for HUD rendering. */
+    /**
+     * Current non-stale positions in a stable order for HUD rendering, less anyone muted. A mute
+     * hides a player everywhere -- the HUD, markers, routes and maps all read from here -- not only
+     * their pings.
+     */
     public static List<TrackedPos> latest() {
         long now = System.currentTimeMillis();
+        Set<UUID> muted = TeamLocatorClient.CONFIG != null
+                ? TeamLocatorClient.CONFIG.mutedPingSet() : Set.of();
         List<TrackedPos> out = new ArrayList<>();
         for (Map.Entry<UUID, Timestamped> e : positions.entrySet()) {
             if (now - e.getValue().atMillis() > POSITION_EXPIRE_MS) {
                 positions.remove(e.getKey(), e.getValue());
                 interp.remove(e.getKey());
-            } else {
+            } else if (!muted.contains(e.getKey())) {
                 out.add(e.getValue().pos());
             }
         }

@@ -6,6 +6,7 @@ import dev.spog.teamlocator.client.TeamLocatorClient;
 import dev.spog.teamlocator.client.TrackedPos;
 import dev.spog.teamlocator.client.WorldIdentity;
 import dev.spog.teamlocator.client.config.TeamConfig;
+import dev.spog.teamlocator.client.config.TrustEntry;
 import dev.spog.teamlocator.client.path.PathTracker;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -64,6 +65,17 @@ public class HudGameTest implements FabricClientGameTest {
                         "a teammate on ours, or not saying, still is");
                 check(PathTracker.route(DINNERBONE) == null,
                         "no route to a teammate on another server, however close");
+
+                // A mute hides them everywhere, not only their pings: everything that draws
+                // teammates reads this list.
+                TrustEntry muted = new TrustEntry(JEB, "jeb_");
+                muted.mutePings = true;
+                TeamLocatorClient.CONFIG.global.trusted.add(muted);
+                check(ClientState.latest().stream().noneMatch(p -> p.id().equals(JEB)),
+                        "a muted teammate is not shown");
+                TeamLocatorClient.CONFIG.global.trusted.remove(muted);
+                check(ClientState.latest().stream().anyMatch(p -> p.id().equals(JEB)),
+                        "and is back once unmuted");
             });
             shoot(context, "hud-table-coords");
 

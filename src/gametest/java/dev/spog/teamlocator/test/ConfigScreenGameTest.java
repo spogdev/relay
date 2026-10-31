@@ -70,5 +70,8 @@ public class ConfigScreenGameTest implements FabricClientGameTest {
         // test cannot leave a screen open for the next to trip over.
         context.setScreen(TitleScreen::new);
         context.waitForScreen(TitleScreen.class);
+        // A muted player is hidden everywhere, so leaving Notch muted would hide him from the tests
+        // that follow.
+        context.runOnClient(client -> TeamLocatorClient.CONFIG.global.trusted.clear());
     }
 }
